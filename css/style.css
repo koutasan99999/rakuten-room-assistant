@@ -219,3 +219,126 @@ textarea:focus {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* 今日の投稿候補 */
+.picks {
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-header h2,
+.section-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.section-title {
+  margin-bottom: 8px;
+}
+
+.picks-date {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.section-note {
+  margin: 4px 0 12px;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+
+.picks-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px 16px 16px;
+}
+
+.genre-badge {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #eeeeee;
+  color: #444;
+}
+
+.genre-storage { background: #e6efe8; color: #2e5e3a; }
+.genre-kitchen { background: #fbeee2; color: #8a4b12; }
+.genre-cleaning { background: #e4f0f6; color: #1f5a78; }
+.genre-car { background: #ebe8f5; color: #4a3f80; }
+.genre-disaster { background: #fbe7e7; color: #8f2424; }
+
+.pick-name {
+  margin: 8px 0 6px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.pick-features {
+  flex: 1;
+  margin: 0 0 12px;
+  padding-left: 1.2em;
+  font-size: 0.88rem;
+  color: #444;
+}
+
+.pick-features li + li {
+  margin-top: 2px;
+}
+
+.btn-outline {
+  background: #fff;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.btn-outline:hover {
+  background: #fff5f5;
+}
+
+.prefill-status {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+}
+
+#intro-form {
+  scroll-margin-top: 12px;
+}
+
+#intro-form.is-prefilled {
+  animation: prefill-flash 1.2s ease;
+}
+
+@keyframes prefill-flash {
+  0% { box-shadow: 0 0 0 3px rgba(191, 0, 0, 0.35); }
+  100% { box-shadow: 0 0 0 3px rgba(191, 0, 0, 0); }
+}
+
+@media (min-width: 560px) {
+  .picks-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}

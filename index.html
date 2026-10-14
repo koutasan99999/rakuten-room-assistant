@@ -9,11 +9,23 @@
 <body>
   <header class="header">
     <h1>Rakuten ROOM Assistant</h1>
-    <p class="lead">商品情報を入力すると、楽天ROOM向けの紹介文のたたき台を作ります。投稿前に内容を確認・調整してください。</p>
+    <p class="lead">今日の投稿候補から選ぶか、商品情報を入力すると、楽天ROOM向けの紹介文のたたき台を作ります。投稿前に内容を確認・調整してください。</p>
   </header>
 
   <main class="container">
+    <section class="picks" aria-labelledby="picks-title">
+      <div class="section-header">
+        <h2 id="picks-title">今日の投稿候補</h2>
+        <span id="picks-date" class="picks-date"></span>
+      </div>
+      <p class="section-note">生活がちょっと楽になる便利グッズを、ジャンルごとに1件ずつ表示しています（現在は仮データです）。</p>
+      <ul id="picks-list" class="picks-list"></ul>
+    </section>
+
+    <h2 class="section-title">紹介文を作る</h2>
     <form id="intro-form" class="card" novalidate>
+      <p id="prefill-status" class="prefill-status" role="status" hidden></p>
+
       <div class="field">
         <label for="product-name">商品名 <span class="required">必須</span></label>
         <input type="text" id="product-name" name="productName" placeholder="例：ステンレス製 真空断熱タンブラー 420ml" autocomplete="off" required>
@@ -55,5 +67,7 @@
   </footer>
 
   <script src="js/app.js"></script>
+  <script src="js/candidates-data.js"></script>
+  <script src="js/candidates.js"></script>
 </body>
 </html>
