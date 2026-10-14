@@ -4,13 +4,56 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Rakuten ROOM Assistant</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>Rakuten ROOM Assistant</h1>
-  <p>楽天市場の商品情報を取得し、
-  楽天ROOM向けの紹介文作成を支援する
-  個人用ツールです。</p>
-  <p>商品候補の選定と紹介文の作成を支援し、
-  投稿は利用者本人が確認して行います。</p>
+  <header class="header">
+    <h1>Rakuten ROOM Assistant</h1>
+    <p class="lead">商品情報を入力すると、楽天ROOM向けの紹介文のたたき台を作ります。投稿前に内容を確認・調整してください。</p>
+  </header>
+
+  <main class="container">
+    <form id="intro-form" class="card" novalidate>
+      <div class="field">
+        <label for="product-name">商品名 <span class="required">必須</span></label>
+        <input type="text" id="product-name" name="productName" placeholder="例：ステンレス製 真空断熱タンブラー 420ml" autocomplete="off" required>
+      </div>
+
+      <div class="field">
+        <label for="features">商品の特徴 <span class="required">必須</span></label>
+        <textarea id="features" name="features" rows="4" placeholder="1行に1つずつ入力&#10;例：保温・保冷が長時間続く&#10;例：結露しにくい&#10;例：食洗機に対応している" required></textarea>
+        <p class="hint">1行に1つずつ書くと、文章に組み込みやすくなります（最大3つまで使用）。</p>
+      </div>
+
+      <div class="field">
+        <label for="cautions">注意点 <span class="optional">任意</span></label>
+        <textarea id="cautions" name="cautions" rows="2" placeholder="例：電子レンジには使えない"></textarea>
+      </div>
+
+      <p id="form-error" class="error" role="alert" hidden></p>
+
+      <button type="submit" class="btn btn-primary">紹介文を作る</button>
+    </form>
+
+    <section class="card result" aria-labelledby="result-title">
+      <div class="result-header">
+        <h2 id="result-title">生成された紹介文</h2>
+        <span id="char-count" class="char-count">0字</span>
+      </div>
+      <textarea id="output" rows="9" placeholder="ここに紹介文が表示されます。表示後に直接編集もできます。"></textarea>
+      <p id="warning" class="warning" hidden></p>
+      <div class="actions">
+        <button type="button" id="copy-btn" class="btn btn-secondary" disabled>コピー</button>
+        <button type="button" id="regenerate-btn" class="btn btn-ghost" disabled>別の言い回しで作る</button>
+      </div>
+      <p id="copy-status" class="copy-status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>このツールは紹介文の作成を補助するものです。投稿は内容を確認したうえでご自身で行ってください。</p>
+  </footer>
+
+  <script src="js/app.js"></script>
 </body>
 </html>
