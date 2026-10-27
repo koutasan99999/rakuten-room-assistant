@@ -18,9 +18,24 @@
   <main class="container">
     <button type="button" id="discover-btn" class="btn btn-discover">商品を発掘する</button>
 
+    <div class="curate-box">
+      <p class="curate-lead">「結局どれを買えばいい？」に答える、選び方のまとめを作ります。</p>
+      <label class="sr-only" for="curate-type">まとめの型</label>
+      <select id="curate-type" class="select">
+        <option value="">型はおまかせ</option>
+        <option value="first_pick">まず1個買うなら</option>
+        <option value="beginner">初心者向け</option>
+        <option value="premium_budget">本命＋安い代替</option>
+        <option value="budget_tiers">予算別</option>
+        <option value="gift">プレゼント</option>
+        <option value="use_case">用途別</option>
+      </select>
+      <button type="button" id="curate-btn" class="btn btn-curate">選び方まとめを作る</button>
+    </div>
+
     <div id="loading" class="loading" hidden>
       <div class="spinner" aria-hidden="true"></div>
-      <p>商品を探しています…<br><span class="sub">AIが選ぶまで10〜30秒ほどかかります</span></p>
+      <p>商品を探しています…<br><span class="sub">AIが選ぶまで10〜40秒ほどかかります</span></p>
     </div>
 
     <div id="message" class="message" role="alert" hidden></div>

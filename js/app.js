@@ -6,6 +6,8 @@
   var RECENT_KEY = 'room-recent-items';
   var MAX_RECENT = 20;
   var discoverBtn = document.getElementById('discover-btn');
+  var curateBtn = document.getElementById('curate-btn');
+  var curateType = document.getElementById('curate-type');
   var loading = document.getElementById('loading');
   var message = document.getElementById('message');
   var genreEl = document.getElementById('genre');
@@ -100,8 +102,37 @@
     return node;
   }
 
-  function renderCard(p, genreId) {
+  function copyButton(label, getText, onCopied) {
+    var btn = el('button', 'btn btn-secondary', label);
+    btn.type = 'button';
+    btn.addEventListener('click', function () {
+      copyText(getText()).then(function () {
+        if (onCopied) onCopied();
+        btn.textContent = 'コピーしました';
+        btn.classList.add('done');
+        showToast(label.replace('をコピー', '') + 'をコピーしました');
+        setTimeout(function () {
+          btn.textContent = label;
+          btn.classList.remove('done');
+        }, 2000);
+      }, function () {
+        showToast('コピーできませんでした。文章を長押しして選択してください');
+      });
+    });
+    return btn;
+  }
+
+  function addSection(card, label, text, className) {
+    if (!text) return;
+    card.appendChild(el('p', 'label', label));
+    card.appendChild(el('p', className || 'reason', text));
+  }
+
+  // opts.genreId: 発掘モードのジャンル記録用 / opts.curation: まとめモードの表示
+  function renderCard(p, opts) {
+    opts = opts || {};
     var card = el('article', 'card');
+    if (p.role) card.appendChild(el('p', 'role', p.role));
 
     var top = el('div', 'card-top');
     if (p.image) {
@@ -118,10 +149,14 @@
     top.appendChild(info);
     card.appendChild(top);
 
-    card.appendChild(el('p', 'label', '選定理由'));
-    card.appendChild(el('p', 'reason', p.reason));
-    card.appendChild(el('p', 'label', 'ROOM紹介文'));
-    card.appendChild(el('p', 'intro', p.intro));
+    if (opts.curation) {
+      addSection(card, 'こんな人に', p.forWho);
+      addSection(card, 'この位置の理由', p.why);
+      addSection(card, '価格差の中身', p.tradeoff);
+    } else {
+      addSection(card, '選定理由', p.reason);
+    }
+    addSection(card, 'ROOM紹介文', p.intro, 'intro');
     card.appendChild(el('p', 'count', p.intro.length + '字'));
 
     var actions = el('div', 'actions');
@@ -129,49 +164,68 @@
     link.href = p.url;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.addEventListener('click', function () { recordStat(genreId, 'clicked'); });
+    link.addEventListener('click', function () { recordStat(opts.genreId, 'clicked'); });
     actions.appendChild(link);
-
-    var copyBtn = el('button', 'btn btn-secondary', '紹介文をコピー');
-    copyBtn.type = 'button';
-    copyBtn.addEventListener('click', function () {
-      copyText(p.intro).then(function () {
-        recordStat(genreId, 'copied');
-        copyBtn.textContent = 'コピーしました';
-        copyBtn.classList.add('done');
-        showToast('紹介文をコピーしました');
-        setTimeout(function () {
-          copyBtn.textContent = '紹介文をコピー';
-          copyBtn.classList.remove('done');
-        }, 2000);
-      }, function () {
-        showToast('コピーできませんでした。紹介文を長押しして選択してください');
-      });
-    });
-    actions.appendChild(copyBtn);
+    actions.appendChild(copyButton('紹介文をコピー', function () { return p.intro; }, function () {
+      recordStat(opts.genreId, 'copied');
+    }));
     card.appendChild(actions);
     return card;
   }
 
-  function setLoading(on) {
-    discoverBtn.disabled = on;
-    discoverBtn.textContent = on ? '探しています…' : 'もう一度発掘する';
+  // まとめ全体を1つの文章にする（ROOMのコレクション説明やSNS投稿用）
+  function curationText(d) {
+    var marks = ['①', '②', '③', '④', '⑤'];
+    var lines = [d.title, ''];
+    if (d.lead) lines.push(d.lead, '');
+    d.products.forEach(function (p, i) {
+      lines.push(marks[i] + ' ' + p.role + '：' + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
+      if (p.forWho) lines.push('・' + p.forWho);
+      if (p.why) lines.push('・' + p.why);
+      if (p.tradeoff) lines.push('・' + p.tradeoff);
+      lines.push('');
+    });
+    if (d.verdict) lines.push(d.verdict);
+    return lines.join('\n').trim();
+  }
+
+  function renderCurationHeader(d) {
+    var card = el('article', 'card curation-head');
+    card.appendChild(el('p', 'type-chip', d.typeName));
+    card.appendChild(el('h2', 'curation-title', d.title));
+    if (d.lead) card.appendChild(el('p', 'reason', d.lead));
+    if (d.verdict) card.appendChild(el('p', 'verdict', d.verdict));
+    var actions = el('div', 'actions');
+    actions.appendChild(copyButton('まとめ文をコピー', function () { return curationText(d); }));
+    card.appendChild(actions);
+    return card;
+  }
+
+  var buttonLabels = {};
+  function setLoading(on, activeBtn) {
+    [discoverBtn, curateBtn].forEach(function (b) {
+      if (!buttonLabels[b.id]) buttonLabels[b.id] = b.textContent;
+      b.disabled = on;
+      if (b === activeBtn) b.textContent = on ? '作っています…' : buttonLabels[b.id];
+    });
+    if (!on) discoverBtn.textContent = 'もう一度発掘する';
     loading.hidden = !on;
   }
 
-  function discover() {
+  // APIを呼ぶ共通処理（合言葉の入力・エラー表示・時間切れを含む）
+  function request(path, body, btn, onSuccess) {
     message.hidden = true;
     genreEl.hidden = true;
     results.innerHTML = '';
-    setLoading(true);
+    setLoading(true, btn);
 
     var controller = window.AbortController ? new AbortController() : null;
     var timer = setTimeout(function () { if (controller) controller.abort(); }, 70000);
 
-    return fetch('api/discover', {
+    return fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
-      body: JSON.stringify({ stats: loadStats(), recent: loadRecent() }),
+      body: JSON.stringify(body),
       signal: controller ? controller.signal : undefined
     })
       .then(function (res) {
@@ -186,7 +240,7 @@
           if (input) {
             setPass(input.trim());
             resetBtn.hidden = false;
-            return discover();
+            return request(path, body, btn, onSuccess);
           }
           showMessage('合言葉を入力すると使えるようになります。', true);
           return;
@@ -196,18 +250,8 @@
           return;
         }
         var products = r.data.products || [];
-        if (r.data.genre && products.length) {
-          genreEl.innerHTML = '';
-          genreEl.appendChild(document.createTextNode('今回のジャンル：'));
-          genreEl.appendChild(el('strong', null, r.data.genre));
-          genreEl.hidden = false;
-        }
         if (r.data.notice) showMessage(r.data.notice, products.length === 0, r.data.detail);
-        if (products.length) {
-          recordStat(r.data.genreId, 'shown');
-          rememberProducts(products);
-        }
-        products.forEach(function (p) { results.appendChild(renderCard(p, r.data.genreId)); });
+        onSuccess(r.data, products);
       })
       .catch(function (e) {
         var timeout = e && e.name === 'AbortError';
@@ -216,11 +260,36 @@
       })
       .then(function () {
         clearTimeout(timer);
-        setLoading(false);
+        setLoading(false, btn);
       });
   }
 
+  function discover() {
+    request('api/discover', { stats: loadStats(), recent: loadRecent() }, discoverBtn, function (data, products) {
+      if (data.genre && products.length) {
+        genreEl.innerHTML = '';
+        genreEl.appendChild(document.createTextNode('今回のジャンル：'));
+        genreEl.appendChild(el('strong', null, data.genre));
+        genreEl.hidden = false;
+      }
+      if (products.length) {
+        recordStat(data.genreId, 'shown');
+        rememberProducts(products);
+      }
+      products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
+    });
+  }
+
+  function curate() {
+    request('api/curate', { type: curateType.value }, curateBtn, function (data, products) {
+      if (!products.length) return;
+      results.appendChild(renderCurationHeader(data));
+      products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true })); });
+    });
+  }
+
   discoverBtn.addEventListener('click', discover);
+  curateBtn.addEventListener('click', curate);
   resetBtn.hidden = !getPass();
   resetBtn.addEventListener('click', function () {
     setPass('');

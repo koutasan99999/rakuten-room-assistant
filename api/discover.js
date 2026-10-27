@@ -1,6 +1,6 @@
 // 「商品を発掘する」ボタンから呼ばれるAPI。
 // APIキーはVercelの環境変数に保存し、ブラウザには一切渡さない。
-import crypto from 'node:crypto';
+import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { pickGenres, sanitizeStats, shuffle } from '../lib/genres.js';
 import { searchCandidates, nameKey } from '../lib/rakuten.js';
 import { selectWithAI, fallbackPicks, maskSecrets } from '../lib/ai.js';
@@ -8,46 +8,13 @@ import { selectWithAI, fallbackPicks, maskSecrets } from '../lib/ai.js';
 const MAX_CANDIDATES = 30;
 const MAX_RECENT = 20;
 
-function send(res, status, body) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify(body));
-}
-
-function safeEqual(a, b) {
-  const x = crypto.createHash('sha256').update(String(a)).digest();
-  const y = crypto.createHash('sha256').update(String(b)).digest();
-  return crypto.timingSafeEqual(x, y);
-}
-
-// Vercelでは req.body が用意されるが、手元の簡易サーバーでは自分で読む
-async function readBody(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  if (typeof req.body === 'string') { try { return JSON.parse(req.body); } catch { return {}; } }
-  if (typeof req.on !== 'function') return {};
-  let raw = '';
-  for await (const chunk of req) {
-    raw += chunk;
-    if (raw.length > 20000) break;
-  }
-  try { return JSON.parse(raw); } catch { return {}; }
-}
-
 export default async function handler(req, res, env = process.env) {
   const startedAt = Date.now();
   if (req.method !== 'POST') return send(res, 405, { error: 'POSTで呼び出してください' });
 
-  // 合言葉（APP_PASSCODE）を設定している場合は、知っている人だけが使えるようにする
-  if (env.APP_PASSCODE && !safeEqual(req.headers['x-app-passcode'] || '', env.APP_PASSCODE)) {
-    return send(res, 401, { error: '合言葉が違います', needPasscode: true });
-  }
-  if (!env.RAKUTEN_APP_ID || !env.OPENAI_API_KEY) {
-    return send(res, 500, { error: 'サーバーの設定（APIキー）がまだ完了していません' });
-  }
+  if (!checkAccess(req, res, env)) return;
 
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
-  const referer = env.RAKUTEN_REFERER || `https://${host}/`;
+  const referer = requestReferer(req, env);
 
   // ジャンルを（反応の良さを加味して）ランダムに選び、商品が少なすぎたら別ジャンルでもう一度
   const body = await readBody(req);
