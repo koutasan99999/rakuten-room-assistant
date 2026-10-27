@@ -139,3 +139,40 @@ test('偽物・正規品の断定や「劣化版」扱いは文章から取り�
   assert.equal(data.products[0].intro, GOOD_INTRO);
   assert.equal(data.products[0].tradeoff, '');
 });
+
+test('AIの応答の形が揺れても読み取る（キー名・入れ子・全角番号・"候補3"）', async () => {
+  const variants = [
+    { picks: CURATION.items },
+    { curation: { title: 't', items: CURATION.items } },
+    { ...CURATION, items: CURATION.items.map((x) => ({ ...x, id: `候補${x.id}` })) },
+    { ...CURATION, items: CURATION.items.map((x) => ({ ...x, id: String(x.id).replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xFEE0)) })) },
+    CURATION.items
+  ];
+  for (const v of variants) {
+    mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(v) });
+    const { data } = await call({ type: 'premium_budget' });
+    mock.restore();
+    assert.equal(data.products.length, 2, JSON.stringify(v).slice(0, 60));
+    assert.equal(data.notice, '', JSON.stringify(v).slice(0, 60));
+  }
+  mock = null;
+});
+
+test('紹介文が短くても商品は残し、書き直しでも足りなければ予備の文にする', async () => {
+  const short = { ...CURATION, items: CURATION.items.map((x) => ({ ...x, intro: '愛用しています。' })) };
+  mock = installFetchMock({
+    rakuten: rakutenByPrice,
+    openai: (body, n) => n === 1 ? aiReply(short) : aiReply({ fixes: [{ id: 0, reason: CURATION.items[0].why, intro: GOOD_INTRO }] })
+  });
+  const { data } = await call({ type: 'premium_budget' });
+  assert.equal(data.products.length, 2);
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+  assert.ok(data.products[1].intro.length >= 60); // 予備の文
+  assert.equal(data.notice, '');
+});
+
+test('組み立てに失敗したときは、何が足りなかったかを原因に書く', async () => {
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ title: 't', items: [{ id: 999 }, { id: 0 }, { id: 0 }] }) });
+  const { data } = await call({ type: 'premium_budget' });
+  assert.match(data.detail, /項目3件・番号不正1・重複1/);
+});
