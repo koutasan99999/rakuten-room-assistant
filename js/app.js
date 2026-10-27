@@ -4,6 +4,7 @@
   var PASS_KEY = 'room-passcode';
   var STATS_KEY = 'room-genre-stats';
   var RECENT_KEY = 'room-recent-items';
+  var LAST_KEY = 'room-last-result';
   var MAX_RECENT = 20;
   var discoverBtn = document.getElementById('discover-btn');
   var curateBtn = document.getElementById('curate-btn');
@@ -95,6 +96,11 @@
     });
   }
 
+  // 楽天ROOMの「この商品を投稿する」画面のURL（itemCode は「ショップ:商品番号」の形）
+  function roomUrl(code) {
+    return 'https://room.rakuten.co.jp/mix?itemcode=' + encodeURIComponent(code).replace(/%3A/gi, ':') + '&scid=we_room_upc60';
+  }
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -167,7 +173,22 @@
     card.appendChild(el('p', 'count', p.intro.length + '字'));
 
     var actions = el('div', 'actions');
-    var link = el('a', 'btn btn-primary', '楽天で商品を見る');
+    // ROOMの投稿画面を直接開く（ROOMアプリが入っていればアプリで開くことがある）。
+    // 押した瞬間に紹介文もコピーしておくので、投稿画面で貼り付けるだけで済む
+    if (p.code) {
+      var room = el('a', 'btn btn-primary', '紹介文をコピーしてROOMに投稿');
+      room.href = roomUrl(p.code);
+      room.target = '_blank';
+      room.rel = 'noopener';
+      room.addEventListener('click', function () {
+        // 画面を移る前に確実にコピーするため、同期的にコピーできる方法を使う
+        legacyCopy(p.intro).then(function () { showToast('紹介文をコピーしました。ROOMで貼り付けてください'); }, function () {});
+        recordStat(opts.genreId, 'copied');
+      });
+      actions.appendChild(room);
+    }
+
+    var link = el('a', 'btn btn-secondary', '楽天で商品を見る');
     link.href = p.url;
     link.target = '_blank';
     link.rel = 'noopener';
@@ -272,30 +293,56 @@
       });
   }
 
+  // 楽天やROOMに移って戻ったとき、iPhoneがページを読み込み直しても結果が消えないよう保存しておく
+  function saveLast(mode, data) {
+    try { localStorage.setItem(LAST_KEY, JSON.stringify({ mode: mode, data: data, at: Date.now() })); } catch (e) {}
+  }
+  function restoreLast() {
+    var last;
+    try { last = JSON.parse(localStorage.getItem(LAST_KEY)); } catch (e) { return; }
+    if (!last || !last.data || !(last.data.products || []).length) return;
+    if (Date.now() - last.at > 24 * 60 * 60 * 1000) return; // 1日以上前の結果は出さない
+    if (last.mode === 'curate') renderCuration(last.data);
+    else renderDiscover(last.data);
+    discoverBtn.textContent = 'もう一度発掘する';
+  }
+
+  function renderDiscover(data) {
+    var products = data.products || [];
+    if (data.genre && products.length) {
+      genreEl.innerHTML = '';
+      genreEl.appendChild(document.createTextNode('今回のジャンル：'));
+      genreEl.appendChild(el('strong', null, data.genre));
+      genreEl.hidden = false;
+    }
+    products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
+  }
+
+  function renderCuration(data) {
+    results.appendChild(renderCurationHeader(data));
+    data.products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true })); });
+  }
+
   function discover() {
     request('api/discover', { stats: loadStats(), recent: loadRecent() }, discoverBtn, function (data, products) {
-      if (data.genre && products.length) {
-        genreEl.innerHTML = '';
-        genreEl.appendChild(document.createTextNode('今回のジャンル：'));
-        genreEl.appendChild(el('strong', null, data.genre));
-        genreEl.hidden = false;
-      }
       if (products.length) {
         recordStat(data.genreId, 'shown');
         rememberProducts(products);
+        saveLast('discover', data);
       }
-      products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
+      renderDiscover(data);
     });
   }
 
   function curate() {
     request('api/curate', { type: curateType.value }, curateBtn, function (data, products) {
       if (!products.length) return;
-      results.appendChild(renderCurationHeader(data));
-      products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true })); });
+      saveLast('curate', data);
+      renderCuration(data);
     });
   }
 
+  restoreLast();
   discoverBtn.addEventListener('click', discover);
   curateBtn.addEventListener('click', curate);
   resetBtn.hidden = !getPass();
