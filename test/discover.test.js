@@ -212,3 +212,22 @@ test('応答が空なら次のモデルを試す', async () => {
   assert.equal(data.products.length, 1);
   assert.equal(data.detail, undefined);
 });
+
+test('ハッシュタグや強い断定（神・必須）も取り除く', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, reason: 'r', intro: GOOD_INTRO + 'これは必須レベル。 #楽天ROOM #インテリア' }] })
+  });
+  const { data } = await call();
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+});
+
+test('紹介文の書き方ルールをAIに伝えている', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, reason: 'r', intro: GOOD_INTRO }] })
+  });
+  await call();
+  const system = mock.calls.openai[0].messages[0].content;
+  for (const phrase of ['ハッシュタグ', '1〜2個', '定型表現', '良い例', '悪い例']) assert.ok(system.includes(phrase), phrase);
+});
