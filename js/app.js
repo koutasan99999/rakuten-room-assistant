@@ -187,7 +187,7 @@
           genreEl.appendChild(el('strong', null, r.data.genre));
           genreEl.hidden = false;
         }
-        if (r.data.notice) showMessage(r.data.notice, products.length === 0);
+        if (r.data.notice) showMessage(r.data.notice, products.length === 0, r.data.detail);
         if (products.length) recordStat(r.data.genreId, 'shown');
         products.forEach(function (p) { results.appendChild(renderCard(p, r.data.genreId)); });
       })
