@@ -229,7 +229,7 @@ test('紹介文の書き方ルールをAIに伝えている', async () => {
   });
   await call();
   const system = mock.calls.openai[0].messages[0].content;
-  for (const phrase of ['ハッシュタグ', '1〜2個', '定型表現', '良い例', '悪い例']) assert.ok(system.includes(phrase), phrase);
+  for (const phrase of ['ハッシュタグ', '必要なら2つまで', '使わない表現', '良い例', '悪い例', '体験は作らない']) assert.ok(system.includes(phrase), phrase);
 });
 
 const STOCK_INTRO = '体重計のデザインが生活感を出しにくいタイプだと、部屋に置きっぱなしでも気になりにくいかなと思います。' +
@@ -281,6 +281,59 @@ test('「〜そう」「〜かも」を連発した紹介文は書き直しに�
   for (const req of mock.calls.openai) {
     const system = req.messages[0].content;
     assert.ok(system.includes('「絵になりそう」→「絵になる」'));
-    assert.ok(system.includes('断定しないもの'));
+    assert.ok(system.includes('断定しない'));
   }
+});
+
+test('欲しい度（want）の高い順に並べ、低いものは外す（最低3件は残す）', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [
+      { id: 0, want: 5, reason: '面倒が減る', intro: GOOD_INTRO },
+      { id: 1, want: 9, reason: '面倒が減る', intro: GOOD_INTRO },
+      { id: 2, want: 7, reason: '面倒が減る', intro: GOOD_INTRO },
+      { id: 3, want: 8, reason: '面倒が減る', intro: GOOD_INTRO },
+      { id: 4, want: 3, reason: '面倒が減る', intro: GOOD_INTRO }
+    ] })
+  });
+  const { data } = await call();
+  assert.equal(data.products.length, 3);
+  const system = mock.calls.openai[0].messages[0].content;
+  assert.ok(system.includes('運営者本人が欲しくなる商品'));
+  assert.doesNotMatch(mock.calls.openai[0].messages[1].content, /レビュー/); // 売れ筋で選ばせない
+});
+
+test('最近出した商品は候補から外し、AIにも伝える', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, want: 8, reason: '面倒が減る', intro: GOOD_INTRO }] })
+  });
+  const req = { method: 'POST', headers: { host: 'x.app' }, body: { recent: ['商品3 おしゃれな収納ボックス タイプ3', 123, '別の商品'] } };
+  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+  await handler(req, res, ENV);
+  const user = mock.calls.openai[0].messages[1].content;
+  assert.match(user, /最近出した商品.*別の商品/);
+  assert.doesNotMatch(user.split('候補:')[1], /商品3 /);
+});
+
+test('運営者目線の選定理由（SNS映え・人気など）は書き直しに回す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? aiReply({ picks: [{ id: 0, want: 8, reason: '実用性が高く、SNSでも紹介しやすい人気商品です。', intro: GOOD_INTRO }] })
+      : aiReply({ fixes: [{ id: 0, reason: 'ケーブルをまとめて隠せて、デスク下のごちゃつきが一気に片づく。', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  assert.equal(data.products[0].reason, 'ケーブルをまとめて隠せて、デスク下のごちゃつきが一気に片づく。');
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+});
+
+test('使用経験が必要な表現（これに変えてから・座り心地が良い）は取り除く', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, want: 8, reason: '面倒が減る', intro: 'これに変えてから朝が楽。座り心地が良いのもポイント。' + GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(data.products[0].intro, GOOD_INTRO);
 });
