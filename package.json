@@ -1,0 +1,10 @@
+{
+  "name": "rakuten-room-assistant",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "node scripts/dev-server.js"
+  }
+}
