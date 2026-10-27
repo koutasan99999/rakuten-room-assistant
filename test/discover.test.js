@@ -231,3 +231,36 @@ test('紹介文の書き方ルールをAIに伝えている', async () => {
   const system = mock.calls.openai[0].messages[0].content;
   for (const phrase of ['ハッシュタグ', '1〜2個', '定型表現', '良い例', '悪い例']) assert.ok(system.includes(phrase), phrase);
 });
+
+const STOCK_INTRO = '体重計のデザインが生活感を出しにくいタイプだと、部屋に置きっぱなしでも気になりにくいかなと思います。' +
+  'こちらはホワイトカラーで統一感があり、底面を全面カバーする新設計が特徴。測定項目の表示もわかりやすい方向性なので、' +
+  'ヘルスチェックを習慣化したい人のきっかけ作りに相性が良さそうです。';
+
+test('定型表現の多い紹介文は、その商品だけAIに書き直してもらう', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? aiReply({ picks: [{ id: 0, reason: 'r', intro: GOOD_INTRO }, { id: 1, reason: 'r', intro: STOCK_INTRO }] })
+      : aiReply({ intros: [{ id: 1, intro: GOOD_INTRO.replace('シンプル', 'すっきり') }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  const rewriteReq = mock.calls.openai[1].messages[1].content;
+  assert.match(rewriteReq, /id: 1/);
+  assert.doesNotMatch(rewriteReq, /id: 0/); // 問題ない紹介文は送らない（料金節約）
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+  assert.match(data.products[1].intro, /^すっきりな見た目/);
+});
+
+test('書き直しに失敗しても元の紹介文で表示する', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? aiReply({ picks: [{ id: 0, reason: 'r', intro: STOCK_INTRO }] })
+      : json(500, { error: { message: 'server error' } })
+  });
+  const { status, data } = await call();
+  assert.equal(status, 200);
+  assert.equal(data.products[0].intro, STOCK_INTRO);
+  assert.equal(data.detail, undefined);
+});
