@@ -264,3 +264,23 @@ test('書き直しに失敗しても元の紹介文で表示する', async () =>
   assert.equal(data.products[0].intro, STOCK_INTRO);
   assert.equal(data.detail, undefined);
 });
+
+test('「〜そう」「〜かも」を連発した紹介文は書き直しに回し、断定のルールをAIに伝える', async () => {
+  const hedgy = 'ガラスと木の組み合わせがきれいで、キッチンに出しておいても絵になりそう。一杯分ずつ淹れられるサイズ感なので、朝にちょっとだけ飲みたいときにちょうど良さそう。' +
+    '形がシンプルなので洗うのも面倒じゃないかも。見た目も落ち着いた色味で、ほかのキッチン道具ともなじむと思います。豆の味は好み次第。';
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? aiReply({ picks: [{ id: 0, reason: 'r', intro: hedgy }] })
+      : aiReply({ intros: [{ id: 0, intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  assert.match(mock.calls.openai[1].messages[1].content, /多すぎる/);
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+  for (const req of mock.calls.openai) {
+    const system = req.messages[0].content;
+    assert.ok(system.includes('「絵になりそう」→「絵になる」'));
+    assert.ok(system.includes('断定しないもの'));
+  }
+});
