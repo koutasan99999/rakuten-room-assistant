@@ -3,6 +3,8 @@
 
   var PASS_KEY = 'room-passcode';
   var STATS_KEY = 'room-genre-stats';
+  var RECENT_KEY = 'room-recent-items';
+  var MAX_RECENT = 20;
   var discoverBtn = document.getElementById('discover-btn');
   var loading = document.getElementById('loading');
   var message = document.getElementById('message');
@@ -30,6 +32,19 @@
     var s = stats[genreId] || (stats[genreId] = {});
     s[action] = (s[action] || 0) + 1;
     try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) {}
+  }
+
+  // 最近表示した商品名を覚えておき、似た商品ばかりにならないようにする
+  function loadRecent() {
+    try {
+      var list = JSON.parse(localStorage.getItem(RECENT_KEY));
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+  function rememberProducts(products) {
+    var names = products.map(function (p) { return String(p.name).slice(0, 60); });
+    var list = names.concat(loadRecent()).slice(0, MAX_RECENT);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) {}
   }
 
   function showMessage(text, isError, detail) {
@@ -156,7 +171,7 @@
     return fetch('api/discover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
-      body: JSON.stringify({ stats: loadStats() }),
+      body: JSON.stringify({ stats: loadStats(), recent: loadRecent() }),
       signal: controller ? controller.signal : undefined
     })
       .then(function (res) {
@@ -188,7 +203,10 @@
           genreEl.hidden = false;
         }
         if (r.data.notice) showMessage(r.data.notice, products.length === 0, r.data.detail);
-        if (products.length) recordStat(r.data.genreId, 'shown');
+        if (products.length) {
+          recordStat(r.data.genreId, 'shown');
+          rememberProducts(products);
+        }
         products.forEach(function (p) { results.appendChild(renderCard(p, r.data.genreId)); });
       })
       .catch(function (e) {
