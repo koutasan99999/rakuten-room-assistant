@@ -1,5 +1,10 @@
 {
   "functions": {
-    "api/discover.js": { "maxDuration": 60 }
+    "api/discover.js": {
+      "maxDuration": 60
+    },
+    "api/curate.js": {
+      "maxDuration": 60
+    }
   }
 }
