@@ -167,9 +167,19 @@ body {
   overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;
 }
 
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.gift-class {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+}
 .role {
   display: inline-block;
-  margin: 0 0 10px;
+  margin: 0;
   padding: 2px 10px;
   border-radius: 999px;
   background: var(--red);
