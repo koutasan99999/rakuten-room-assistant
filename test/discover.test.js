@@ -384,3 +384,12 @@ test('「安いから」が理由の選定理由は書き直しに回す', async
   assert.equal(mock.calls.openai.length, 2);
   assert.equal(data.products[0].reason, '取っ手が畳めて、引き出しにそのまま入る形が良い。');
 });
+
+test('商品ごとに楽天の商品コード（ROOM投稿画面を開くのに使う）を返す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, want: 8, reason: '面倒が減る', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.match(data.products[0].code, /^shop:/);
+});
