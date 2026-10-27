@@ -2,6 +2,7 @@
   'use strict';
 
   var PASS_KEY = 'room-passcode';
+  var STATS_KEY = 'room-genre-stats';
   var discoverBtn = document.getElementById('discover-btn');
   var loading = document.getElementById('loading');
   var message = document.getElementById('message');
@@ -16,6 +17,19 @@
   }
   function setPass(v) {
     try { if (v) localStorage.setItem(PASS_KEY, v); else localStorage.removeItem(PASS_KEY); } catch (e) {}
+  }
+
+  // ジャンルごとの反応（表示・クリック・コピー）をこの端末に記録し、
+  // 次回以降、反応の良いジャンルを少し優先して選んでもらう
+  function loadStats() {
+    try { return JSON.parse(localStorage.getItem(STATS_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function recordStat(genreId, action) {
+    if (!genreId) return;
+    var stats = loadStats();
+    var s = stats[genreId] || (stats[genreId] = {});
+    s[action] = (s[action] || 0) + 1;
+    try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) {}
   }
 
   function showMessage(text, isError, detail) {
@@ -71,7 +85,7 @@
     return node;
   }
 
-  function renderCard(p) {
+  function renderCard(p, genreId) {
     var card = el('article', 'card');
 
     var top = el('div', 'card-top');
@@ -100,12 +114,14 @@
     link.href = p.url;
     link.target = '_blank';
     link.rel = 'noopener';
+    link.addEventListener('click', function () { recordStat(genreId, 'clicked'); });
     actions.appendChild(link);
 
     var copyBtn = el('button', 'btn btn-secondary', '紹介文をコピー');
     copyBtn.type = 'button';
     copyBtn.addEventListener('click', function () {
       copyText(p.intro).then(function () {
+        recordStat(genreId, 'copied');
         copyBtn.textContent = 'コピーしました';
         copyBtn.classList.add('done');
         showToast('紹介文をコピーしました');
@@ -140,7 +156,7 @@
     return fetch('api/discover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
-      body: '{}',
+      body: JSON.stringify({ stats: loadStats() }),
       signal: controller ? controller.signal : undefined
     })
       .then(function (res) {
@@ -172,7 +188,8 @@
           genreEl.hidden = false;
         }
         if (r.data.notice) showMessage(r.data.notice, products.length === 0);
-        products.forEach(function (p) { results.appendChild(renderCard(p)); });
+        if (products.length) recordStat(r.data.genreId, 'shown');
+        products.forEach(function (p) { results.appendChild(renderCard(p, r.data.genreId)); });
       })
       .catch(function (e) {
         var timeout = e && e.name === 'AbortError';

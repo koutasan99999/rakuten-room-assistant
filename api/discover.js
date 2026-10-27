@@ -1,7 +1,7 @@
 // 「商品を発掘する」ボタンから呼ばれるAPI。
 // APIキーはVercelの環境変数に保存し、ブラウザには一切渡さない。
 import crypto from 'node:crypto';
-import { GENRES, GENRE_NAMES, pickRandom } from '../lib/genres.js';
+import { pickGenres, sanitizeStats, shuffle } from '../lib/genres.js';
 import { searchCandidates } from '../lib/rakuten.js';
 import { selectWithAI, fallbackPicks } from '../lib/ai.js';
 
@@ -20,13 +20,17 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(x, y);
 }
 
-function shuffle(list) {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+// Vercelでは req.body が用意されるが、手元の簡易サーバーでは自分で読む
+async function readBody(req) {
+  if (req.body && typeof req.body === 'object') return req.body;
+  if (typeof req.body === 'string') { try { return JSON.parse(req.body); } catch { return {}; } }
+  if (typeof req.on !== 'function') return {};
+  let raw = '';
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > 20000) break;
   }
-  return a;
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 export default async function handler(req, res, env = process.env) {
@@ -43,14 +47,15 @@ export default async function handler(req, res, env = process.env) {
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
   const referer = env.RAKUTEN_REFERER || `https://${host}/`;
 
-  // ジャンルをランダムに選び、商品が少なすぎたら別ジャンルでもう一度
-  const genreOrder = shuffle(GENRE_NAMES);
+  // ジャンルを（反応の良さを加味して）ランダムに選び、商品が少なすぎたら別ジャンルでもう一度
+  const body = await readBody(req);
+  const stats = sanitizeStats(body.stats);
   let genre = null;
   let items = [];
   try {
-    for (const g of genreOrder.slice(0, 2)) {
+    for (const g of pickGenres(2, stats)) {
       genre = g;
-      const keywords = shuffle(GENRES[g]);
+      const keywords = shuffle(g.keywords);
       items = await searchCandidates({ keywords, env, referer });
       if (items.length >= 3) break;
     }
@@ -59,14 +64,14 @@ export default async function handler(req, res, env = process.env) {
     return send(res, 502, { error: '楽天市場の商品を取得できませんでした。少し時間をおいてもう一度お試しください。', detail: e.message });
   }
   if (items.length === 0) {
-    return send(res, 200, { genre, products: [], notice: '条件に合う商品が見つかりませんでした。もう一度押してみてください。' });
+    return send(res, 200, { genre: genre.name, genreId: genre.id, products: [], notice: '条件に合う商品が見つかりませんでした。もう一度押してみてください。' });
   }
 
   const candidates = shuffle(items).slice(0, MAX_CANDIDATES);
   let picks;
   let notice = '';
   try {
-    picks = await selectWithAI({ items: candidates, genre, env });
+    picks = await selectWithAI({ items: candidates, genre: genre.name, env });
   } catch (e) {
     console.error('[openai]', e.message);
     picks = fallbackPicks(candidates);
@@ -78,5 +83,5 @@ export default async function handler(req, res, env = process.env) {
     const it = candidates[p.index];
     return { name: it.name, price: it.price, url: it.url, image: it.image, shop: it.shop, reason: p.reason, intro: p.intro };
   });
-  return send(res, 200, { genre, products, notice });
+  return send(res, 200, { genre: genre.name, genreId: genre.id, products, notice });
 }

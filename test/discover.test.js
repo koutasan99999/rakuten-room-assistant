@@ -145,3 +145,17 @@ test('APIキー未設定でも落ちずにエラーを返す', async () => {
   assert.equal(status, 500);
   assert.match(data.error, /設定/);
 });
+
+test('ジャンル記録を受け取り、ジャンルIDを返す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, reason: 'r', intro: GOOD_INTRO }] })
+  });
+  const req = { method: 'POST', headers: { host: 'x.app' }, body: { stats: { coffee: { shown: 1, copied: 50 } } } };
+  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+  await handler(req, res, ENV);
+  const data = JSON.parse(res.body);
+  assert.equal(res.statusCode, 200);
+  assert.match(data.genreId, /^[a-z_]+$/);
+  assert.ok(data.genre);
+});
