@@ -19,7 +19,9 @@ if (process.env.MOCK) {
       const items = makeItems(20, url.searchParams.get('keyword').split(' ')[0]).map((it, i) => ({ ...it, itemPrice: min + i * 100 }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('選び方まとめ')
+    openai: (body) => body.messages[0].content.includes('検索プラン')
+      ? aiReply({ summary: '30代男性が最初に買う香水。仕事でも使いやすいもの', title: '30代男性の最初の香水', audience: '30代男性', maxPrice: 10000, brand: true, keywords: ['メンズ 香水'], slots: [{ label: '最初の1本', keyword: 'メンズ 香水', maxPrice: 8000 }, { label: '2本目', keyword: 'オードパルファム', maxPrice: 10000 }] })
+      : body.messages[0].content.includes('選び方まとめ')
       ? aiReply({
         title: '迷ったらこの順で選べばいい', lead: 'まずは無難な1つ目で十分。物足りなくなったら2つ目、こだわりたくなったら3つ目、という順番にしています。',
         verdict: '迷ったら、最初の1つだけ買っておけば困らない。',
