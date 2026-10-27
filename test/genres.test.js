@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { GENRES, pickGenres, genreWeight, sanitizeStats } from '../lib/genres.js';
 
 test('ジャンルは30種類、IDは重複なし、各ジャンルにキーワードが複数ある', () => {
-  assert.equal(GENRES.length, 33);
+  assert.equal(GENRES.length, 34);
   assert.equal(new Set(GENRES.map((g) => g.id)).size, GENRES.length);
   for (const g of GENRES) {
     assert.ok(g.keywords.length >= 4, g.name);

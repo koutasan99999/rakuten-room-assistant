@@ -16,26 +16,58 @@
   </header>
 
   <main class="container">
-    <button type="button" id="discover-btn" class="btn btn-discover">商品を発掘する</button>
+    <section class="search-box" aria-label="発掘条件">
+      <label class="field">
+        <span class="field-label">ジャンル</span>
+        <select id="genre-select" class="select">
+          <option value="">おまかせ</option>
+          <option value="useful">便利グッズ</option>
+          <option value="appliance">家電</option>
+          <option value="gadget">ガジェット</option>
+          <option value="interior">インテリア</option>
+          <option value="storage">収納</option>
+          <option value="kitchen">キッチン</option>
+          <option value="tableware">食器</option>
+          <option value="fashion">ファッション</option>
+          <option value="shoes">靴</option>
+          <option value="bag">バッグ</option>
+          <option value="perfume">香水</option>
+          <option value="beauty">美容</option>
+          <option value="health">健康・ダイエット</option>
+          <option value="travel">旅行</option>
+          <option value="outdoor">アウトドア</option>
+          <option value="gift">プレゼント</option>
+          <option value="food">食品</option>
+          <option value="other">その他</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">選び方の型</span>
+        <select id="curate-type" class="select">
+          <option value="">指定なし（単品で発掘）</option>
+          <option value="first_pick">まず1個買うなら</option>
+          <option value="beginner">初心者向け</option>
+          <option value="premium_budget">本命＋安い代替</option>
+          <option value="budget_tiers">予算別</option>
+          <option value="gift">プレゼント</option>
+          <option value="use_case">用途別</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">自由入力 <span class="optional">任意</span></span>
+        <textarea id="free-text" class="textarea" rows="2" maxlength="120" placeholder="例：30代男性へのプレゼント、1万円以下"></textarea>
+      </label>
+      <button type="button" id="search-btn" class="btn btn-discover">この条件で発掘する</button>
+    </section>
 
-    <div class="curate-box">
-      <p class="curate-lead">「結局どれを買えばいい？」に答える、選び方のまとめを作ります。</p>
-      <label class="sr-only" for="curate-type">まとめの型</label>
-      <select id="curate-type" class="select">
-        <option value="">型はおまかせ</option>
-        <option value="first_pick">まず1個買うなら</option>
-        <option value="beginner">初心者向け</option>
-        <option value="premium_budget">本命＋安い代替</option>
-        <option value="budget_tiers">予算別</option>
-        <option value="gift">プレゼント</option>
-        <option value="use_case">用途別</option>
-      </select>
-      <button type="button" id="curate-btn" class="btn btn-curate">選び方まとめを作る</button>
+    <div class="random-box">
+      <button type="button" id="discover-btn" class="btn btn-random">おまかせで発掘</button>
+      <p class="random-note">条件なしで、何が出るか分からない発掘をします</p>
     </div>
 
     <div id="loading" class="loading" hidden>
       <div class="spinner" aria-hidden="true"></div>
-      <p>商品を探しています…<br><span class="sub">AIが選ぶまで10〜40秒ほどかかります</span></p>
+      <p>商品を探しています…<br><span class="sub">AIが選ぶまで10〜50秒ほどかかります</span></p>
     </div>
 
     <div id="message" class="message" role="alert" hidden></div>

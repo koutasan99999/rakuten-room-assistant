@@ -2,6 +2,8 @@
 // テーマの枠ごとに楽天で商品を集め、AIが「どれを・なぜこの順番で・どんな人に」を組み立てる。
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { pickTheme, CURATION_TYPES } from '../lib/themes.js';
+import { resolveFilterGenre } from '../lib/genres.js';
+import { planSearch, sanitizeFreeText } from '../lib/planner.js';
 import { searchSlot } from '../lib/rakuten.js';
 import { buildCuration, fallbackCuration } from '../lib/curation.js';
 import { maskSecrets } from '../lib/ai.js';
@@ -14,8 +16,26 @@ export default async function handler(req, res, env = process.env) {
   if (!checkAccess(req, res, env)) return;
 
   const body = await readBody(req);
-  const type = CURATION_TYPES[body.type] ? body.type : null; // 未指定ならおまかせ
-  const theme = pickTheme(type);
+  const filterGenre = resolveFilterGenre(body.genre);
+  const free = sanitizeFreeText(body.free);
+  let type = CURATION_TYPES[body.type] ? body.type : null; // 未指定ならおまかせ
+  let theme;
+  if (filterGenre || free) {
+    // 条件の指定あり：AIが条件を読み取り、型に沿った枠（検索語・価格帯）を組み立てる
+    type = type || 'first_pick';
+    const plan = await planSearch({ genre: filterGenre, type, free, env, deadline: startedAt + 15000 });
+    theme = {
+      id: 'custom',
+      type,
+      title: plan.title || plan.summary,
+      audience: plan.audience,
+      brand: plan.brand || !!(filterGenre && filterGenre.brand),
+      request: [plan.summary && `探すもの: ${plan.summary}`, free && `ユーザーの言葉: ${free}`].filter(Boolean).join('\n'),
+      slots: plan.slots
+    };
+  } else {
+    theme = pickTheme(type);
+  }
   const referer = requestReferer(req, env);
 
   // 枠ごとに楽天で検索（楽天APIは1秒1リクエストまでなので間を空ける）
@@ -24,7 +44,14 @@ export default async function handler(req, res, env = process.env) {
   for (const [i, slot] of theme.slots.entries()) {
     if (i > 0) await sleep(1100);
     try {
-      slots.push({ ...slot, items: await searchSlot({ ...slot, env, referer }) });
+      let items = await searchSlot({ ...slot, env, referer });
+      const shorter = slot.keyword.split(' ').slice(0, 2).join(' ');
+      if (!items.length && theme.id === 'custom' && shorter !== slot.keyword) {
+        // 条件指定の検索語が細かすぎて0件のときは、語を減らして1回だけ取り直す
+        await sleep(1100);
+        items = await searchSlot({ ...slot, keyword: shorter, env, referer });
+      }
+      slots.push({ ...slot, items });
     } catch (e) {
       lastError = e;
       console.error('[rakuten]', e.message);
@@ -37,7 +64,7 @@ export default async function handler(req, res, env = process.env) {
     if (lastError && !filled.length) {
       return send(res, 502, { error: '楽天市場の商品を取得できませんでした。少し時間をおいてもう一度お試しください。', detail: lastError.message });
     }
-    return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, title: theme.title, products: [], notice: 'このテーマでは商品が十分に見つかりませんでした。もう一度押してみてください。' });
+    return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, title: theme.title, products: [], notice: theme.id === 'custom' ? 'この条件では商品が十分に見つかりませんでした。条件を少しゆるめてもう一度お試しください。' : 'このテーマでは商品が十分に見つかりませんでした。もう一度押してみてください。' });
   }
 
   let curation;

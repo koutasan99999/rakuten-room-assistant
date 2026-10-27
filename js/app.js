@@ -7,8 +7,12 @@
   var LAST_KEY = 'room-last-result';
   var MAX_RECENT = 20;
   var discoverBtn = document.getElementById('discover-btn');
-  var curateBtn = document.getElementById('curate-btn');
+  var searchBtn = document.getElementById('search-btn');
   var curateType = document.getElementById('curate-type');
+  var genreSelect = document.getElementById('genre-select');
+  var freeText = document.getElementById('free-text');
+  var COND_KEY = 'room-conditions';
+  var PLACEHOLDERS = ['例：30代男性へのプレゼント、1万円以下', '例：北欧っぽい白い食器', '例：仕事でも使いやすい香水', '例：旅行が楽になるもの', '例：最近流行ってる安いもの'];
   var loading = document.getElementById('loading');
   var message = document.getElementById('message');
   var genreEl = document.getElementById('genre');
@@ -232,12 +236,11 @@
 
   var buttonLabels = {};
   function setLoading(on, activeBtn) {
-    [discoverBtn, curateBtn].forEach(function (b) {
+    [searchBtn, discoverBtn].forEach(function (b) {
       if (!buttonLabels[b.id]) buttonLabels[b.id] = b.textContent;
       b.disabled = on;
       if (b === activeBtn) b.textContent = on ? '作っています…' : buttonLabels[b.id];
     });
-    if (!on) discoverBtn.textContent = 'もう一度発掘する';
     loading.hidden = !on;
   }
 
@@ -304,15 +307,16 @@
     if (Date.now() - last.at > 24 * 60 * 60 * 1000) return; // 1日以上前の結果は出さない
     if (last.mode === 'curate') renderCuration(last.data);
     else renderDiscover(last.data);
-    discoverBtn.textContent = 'もう一度発掘する';
   }
 
   function renderDiscover(data) {
     var products = data.products || [];
-    if (data.genre && products.length) {
+    // 条件を指定したときは読み取った条件を、ランダムのときはジャンルを表示
+    var shown = data.condition || data.genre;
+    if (shown && products.length) {
       genreEl.innerHTML = '';
-      genreEl.appendChild(document.createTextNode('今回のジャンル：'));
-      genreEl.appendChild(el('strong', null, data.genre));
+      genreEl.appendChild(document.createTextNode(data.condition ? '今回の条件：' : '今回のジャンル：'));
+      genreEl.appendChild(el('strong', null, shown));
       genreEl.hidden = false;
     }
     products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
@@ -323,8 +327,11 @@
     data.products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true })); });
   }
 
-  function discover() {
-    request('api/discover', { stats: loadStats(), recent: loadRecent() }, discoverBtn, function (data, products) {
+  // 単品の発掘。conditions を渡さなければ完全ランダム
+  function discover(conditions, btn) {
+    var body = { stats: loadStats(), recent: loadRecent() };
+    if (conditions) { body.genre = conditions.genre; body.free = conditions.free; }
+    request('api/discover', body, btn || discoverBtn, function (data, products) {
       if (products.length) {
         recordStat(data.genreId, 'shown');
         rememberProducts(products);
@@ -334,17 +341,42 @@
     });
   }
 
-  function curate() {
-    request('api/curate', { type: curateType.value }, curateBtn, function (data, products) {
+  function curate(conditions) {
+    request('api/curate', conditions, searchBtn, function (data, products) {
       if (!products.length) return;
       saveLast('curate', data);
       renderCuration(data);
     });
   }
 
+  function readConditions() {
+    return { genre: genreSelect.value, type: curateType.value, free: freeText.value.trim() };
+  }
+  function saveConditions() {
+    try { localStorage.setItem(COND_KEY, JSON.stringify(readConditions())); } catch (e) {}
+  }
+  function restoreConditions() {
+    var c;
+    try { c = JSON.parse(localStorage.getItem(COND_KEY)); } catch (e) { return; }
+    if (!c) return;
+    genreSelect.value = c.genre || '';
+    curateType.value = c.type || '';
+    freeText.value = c.free || '';
+  }
+
+  // 「この条件で発掘する」：型があれば選び方まとめ、なければ単品の発掘（ジャンル・自由入力つき）
+  function searchWithConditions() {
+    var c = readConditions();
+    saveConditions();
+    if (c.type) curate(c);
+    else discover({ genre: c.genre, free: c.free }, searchBtn);
+  }
+
   restoreLast();
-  discoverBtn.addEventListener('click', discover);
-  curateBtn.addEventListener('click', curate);
+  freeText.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
+  restoreConditions();
+  searchBtn.addEventListener('click', searchWithConditions);
+  discoverBtn.addEventListener('click', function () { discover(null, discoverBtn); });
   resetBtn.hidden = !getPass();
   resetBtn.addEventListener('click', function () {
     setPass('');
