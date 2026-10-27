@@ -338,10 +338,10 @@ test('使用経験が必要な表現（これに変えてから・座り心地�
   assert.equal(data.products[0].intro, GOOD_INTRO);
 });
 
-test('ブランド系ジャンル（香水など）ではブランド評価ルールとショップ名をAIに渡す', async () => {
+test('ブランド系ジャンル（香水など）ではブランド評価ルールを渡し、ショップ名は全ジャンルで渡す', async () => {
   const { GENRES } = await import('../lib/genres.js');
   const brandIds = GENRES.filter((g) => g.brand).map((g) => g.id);
-  assert.ok(brandIds.includes('fragrance') && brandIds.includes('watch') && !brandIds.includes('kitchen'));
+  assert.ok(brandIds.includes('fragrance') && brandIds.includes('watch') && brandIds.includes('interior') && !brandIds.includes('gadget'));
   mock = installFetchMock({
     rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
     openai: () => aiReply({ picks: [{ id: 0, want: 8, reason: '面倒が減る', intro: GOOD_INTRO }] })
@@ -352,7 +352,35 @@ test('ブランド系ジャンル（香水など）ではブランド評価ル�
     const user = mock.calls.openai[mock.calls.openai.length - 1].messages[1].content;
     const isBrand = brandIds.includes(data.genreId);
     assert.equal(user.includes('ブランド・プレゼント適性'), isBrand, data.genreId);
-    assert.equal(/販売: /.test(user), isBrand, data.genreId);
+    assert.match(user, /販売: /); // 作り手・販売元はどのジャンルでも判断材料にする
     if (isBrand) return;
   }
+});
+
+test('選んだ根拠（basis）を返し、リストにない値は表示しない', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [
+      { id: 0, want: 9, basis: 'ブランドで選ぶ', reason: '老舗メーカーの定番で、仕上げに理由がある。', intro: GOOD_INTRO },
+      { id: 1, want: 8, basis: 'トレンド枠', reason: '最近よく見るウェーブ形の器で、今の流れを手頃に試せる。', intro: GOOD_INTRO },
+      { id: 2, want: 7, basis: '安さで選ぶ', reason: '面倒が減る。', intro: GOOD_INTRO }
+    ] })
+  });
+  const { data } = await call();
+  assert.deepEqual(data.products.map((p) => p.basis), ['ブランドで選ぶ', 'トレンド枠', '']);
+  const system = mock.calls.openai[0].messages[0].content;
+  for (const phrase of ['基準ユーザー', 'トレンド枠', '値段を隠して見せても欲しいと思えるか', '根拠なく']) assert.ok(system.includes(phrase), phrase);
+  assert.ok(!system.includes('安いのに妙に欲しくなる'));
+});
+
+test('「安いから」が理由の選定理由は書き直しに回す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? aiReply({ picks: [{ id: 0, want: 8, reason: 'とにかく安いから試しやすい。', intro: GOOD_INTRO }] })
+      : aiReply({ fixes: [{ id: 0, reason: '取っ手が畳めて、引き出しにそのまま入る形が良い。', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  assert.equal(data.products[0].reason, '取っ手が畳めて、引き出しにそのまま入る形が良い。');
 });
