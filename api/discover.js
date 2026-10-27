@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { pickGenres, sanitizeStats, shuffle } from '../lib/genres.js';
 import { searchCandidates } from '../lib/rakuten.js';
-import { selectWithAI, fallbackPicks } from '../lib/ai.js';
+import { selectWithAI, fallbackPicks, maskSecrets } from '../lib/ai.js';
 
 const MAX_CANDIDATES = 30;
 
@@ -34,6 +34,7 @@ async function readBody(req) {
 }
 
 export default async function handler(req, res, env = process.env) {
+  const startedAt = Date.now();
   if (req.method !== 'POST') return send(res, 405, { error: 'POSTで呼び出してください' });
 
   // 合言葉（APP_PASSCODE）を設定している場合は、知っている人だけが使えるようにする
@@ -70,12 +71,15 @@ export default async function handler(req, res, env = process.env) {
   const candidates = shuffle(items).slice(0, MAX_CANDIDATES);
   let picks;
   let notice = '';
+  let detail;
   try {
-    picks = await selectWithAI({ items: candidates, genre: genre.name, env });
+    // Vercelの制限時間（60秒）内に収まるよう、AIに使える時間を決めておく
+    picks = await selectWithAI({ items: candidates, genre: genre.name, env, deadline: startedAt + 52000 });
   } catch (e) {
-    console.error('[openai]', e.message);
+    console.error('[openai] fallback:', e.message);
     picks = fallbackPicks(candidates);
     notice = 'AIでの選定に失敗したため、簡易的な選び方で表示しています。紹介文は投稿前に見直してください。';
+    detail = `原因: ${maskSecrets(e.message)}`.slice(0, 400);
   }
   if (picks.length < 5 && !notice) notice = `今回は${picks.length}件見つかりました。`;
 
@@ -83,5 +87,5 @@ export default async function handler(req, res, env = process.env) {
     const it = candidates[p.index];
     return { name: it.name, price: it.price, url: it.url, image: it.image, shop: it.shop, reason: p.reason, intro: p.intro };
   });
-  return send(res, 200, { genre: genre.name, genreId: genre.id, products, notice });
+  return send(res, 200, { genre: genre.name, genreId: genre.id, products, notice, detail });
 }

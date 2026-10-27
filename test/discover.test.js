@@ -159,3 +159,56 @@ test('ジャンル記録を受け取り、ジャンルIDを返す', async () => 
   assert.match(data.genreId, /^[a-z_]+$/);
   assert.ok(data.genre);
 });
+
+test('APIキー前後の空白・改行を取り除いて送る', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, reason: 'r', intro: GOOD_INTRO }] })
+  });
+  let auth;
+  const orig = globalThis.fetch;
+  globalThis.fetch = (url, opts) => { if (String(url).includes('openai')) auth = opts.headers.Authorization; return orig(url, opts); };
+  try {
+    const { data } = await call({ ...ENV, OPENAI_API_KEY: '  sk-test\n' });
+    assert.equal(auth, 'Bearer sk-test');
+    assert.equal(data.notice, '今回は1件見つかりました。');
+  } finally { globalThis.fetch = orig; }
+});
+
+test('使えない設定（reasoning_effortなど）は外して同じモデルでやり直す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body) => 'reasoning_effort' in body
+      ? json(400, { error: { message: "Unsupported value: 'reasoning_effort'", param: 'reasoning_effort', code: 'unsupported_value' } })
+      : aiReply({ picks: [{ id: '候補2', reason: 'r', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  assert.equal(mock.calls.openai[0].model, mock.calls.openai[1].model);
+  assert.equal(data.products.length, 1);
+});
+
+test('認証エラーは他モデルを試さず、伏せ字の原因を画面用に返す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => json(401, { error: { message: 'Incorrect API key provided: sk-proj-abcd1234. You can find your API key at ...', code: 'invalid_api_key' } })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 1);
+  assert.equal(data.products.length, 5);
+  assert.match(data.detail, /401/);
+  assert.doesNotMatch(data.detail, /abcd1234/);
+});
+
+test('応答が空なら次のモデルを試す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: (body, n) => n === 1
+      ? json(200, { choices: [{ message: { content: '' }, finish_reason: 'length' }] })
+      : aiReply({ picks: [{ id: 1, reason: 'r', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call();
+  assert.equal(mock.calls.openai.length, 2);
+  assert.equal(data.products.length, 1);
+  assert.equal(data.detail, undefined);
+});
