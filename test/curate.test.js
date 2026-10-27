@@ -123,12 +123,13 @@ test('分類リストにない giftClass は表示しない', async () => {
   assert.ok(data.products.every((p) => p.giftClass === ''));
 });
 
-test('ブランドが関係ない型ではブランド評価ルールを付けない（料金節約）', async () => {
+test('ブランドが関係ない型ではプレゼント向けブランド評価ルールを付けない（料金節約）', async () => {
   mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(CURATION) });
   await call({ type: 'budget_tiers' });
   const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
   assert.ok(!system.includes('ブランド・プレゼント適性'));
-  assert.doesNotMatch(user, /販売:/);
+  assert.match(user, /販売:/); // 作り手・販売元はどのテーマでも判断材料にする
+  assert.ok(system.includes('基準ユーザー'));
 });
 
 test('偽物・正規品の断定や「劣化版」扱いは文章から取り除く', async () => {

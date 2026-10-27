@@ -198,3 +198,14 @@ body {
   font-weight: 700;
   font-size: 15px;
 }
+.basis {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.basis.trend { background: #fff4e5; border-color: #f3d3a8; color: #a35a00; }

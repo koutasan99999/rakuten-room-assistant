@@ -58,7 +58,7 @@ export default async function handler(req, res, env = process.env) {
 
   const products = picks.map((p) => {
     const it = candidates[p.index];
-    return { name: it.name, price: it.price, url: it.url, image: it.image, shop: it.shop, reason: p.reason, intro: p.intro };
+    return { name: it.name, price: it.price, url: it.url, image: it.image, shop: it.shop, basis: p.basis || '', reason: p.reason, intro: p.intro };
   });
   return send(res, 200, { genre: genre.name, genreId: genre.id, products, notice, detail });
 }

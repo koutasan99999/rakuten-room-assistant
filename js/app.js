@@ -132,10 +132,11 @@
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
-    if (p.role || p.giftClass) {
+    if (p.role || p.giftClass || p.basis) {
       var chips = el('div', 'chips');
       if (p.role) chips.appendChild(el('span', 'role', p.role));
       if (p.giftClass) chips.appendChild(el('span', 'gift-class', p.giftClass));
+      if (p.basis) chips.appendChild(el('span', 'basis' + (p.basis === 'トレンド枠' ? ' trend' : ''), p.basis));
       card.appendChild(chips);
     }
 
