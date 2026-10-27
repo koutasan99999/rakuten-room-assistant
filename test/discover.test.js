@@ -300,7 +300,7 @@ test('欲しい度（want）の高い順に並べ、低いものは外す（最�
   assert.equal(data.products.length, 3);
   const system = mock.calls.openai[0].messages[0].content;
   assert.ok(system.includes('運営者本人が欲しくなる商品'));
-  assert.doesNotMatch(mock.calls.openai[0].messages[1].content, /レビュー/); // 売れ筋で選ばせない
+  assert.doesNotMatch(mock.calls.openai[0].messages[1].content.split('候補:')[1], /レビュー/); // 売れ筋で選ばせない
 });
 
 test('最近出した商品は候補から外し、AIにも伝える', async () => {
@@ -336,4 +336,23 @@ test('使用経験が必要な表現（これに変えてから・座り心地�
   });
   const { data } = await call();
   assert.equal(data.products[0].intro, GOOD_INTRO);
+});
+
+test('ブランド系ジャンル（香水など）ではブランド評価ルールとショップ名をAIに渡す', async () => {
+  const { GENRES } = await import('../lib/genres.js');
+  const brandIds = GENRES.filter((g) => g.brand).map((g) => g.id);
+  assert.ok(brandIds.includes('fragrance') && brandIds.includes('watch') && !brandIds.includes('kitchen'));
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(20), pageCount: 3 }),
+    openai: () => aiReply({ picks: [{ id: 0, want: 8, reason: '面倒が減る', intro: GOOD_INTRO }] })
+  });
+  // ジャンルはランダムなので、ブランド系が選ばれるまで繰り返す
+  for (let i = 0; i < 30; i++) {
+    const { data } = await call();
+    const user = mock.calls.openai[mock.calls.openai.length - 1].messages[1].content;
+    const isBrand = brandIds.includes(data.genreId);
+    assert.equal(user.includes('ブランド・プレゼント適性'), isBrand, data.genreId);
+    assert.equal(/販売: /.test(user), isBrand, data.genreId);
+    if (isBrand) return;
+  }
 });

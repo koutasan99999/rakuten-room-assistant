@@ -132,7 +132,12 @@
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
-    if (p.role) card.appendChild(el('p', 'role', p.role));
+    if (p.role || p.giftClass) {
+      var chips = el('div', 'chips');
+      if (p.role) chips.appendChild(el('span', 'role', p.role));
+      if (p.giftClass) chips.appendChild(el('span', 'gift-class', p.giftClass));
+      card.appendChild(chips);
+    }
 
     var top = el('div', 'card-top');
     if (p.image) {
@@ -153,6 +158,7 @@
       addSection(card, 'こんな人に', p.forWho);
       addSection(card, 'この位置の理由', p.why);
       addSection(card, '価格差の中身', p.tradeoff);
+      addSection(card, 'ブランド・贈り物として', p.brandNote);
     } else {
       addSection(card, '選定理由', p.reason);
     }
@@ -179,10 +185,11 @@
     var lines = [d.title, ''];
     if (d.lead) lines.push(d.lead, '');
     d.products.forEach(function (p, i) {
-      lines.push(marks[i] + ' ' + p.role + '：' + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
+      lines.push(marks[i] + ' ' + p.role + (p.giftClass ? '（' + p.giftClass + '）' : '') + '：' + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
       if (p.forWho) lines.push('・' + p.forWho);
       if (p.why) lines.push('・' + p.why);
       if (p.tradeoff) lines.push('・' + p.tradeoff);
+      if (p.brandNote) lines.push('・' + p.brandNote);
       lines.push('');
     });
     if (d.verdict) lines.push(d.verdict);

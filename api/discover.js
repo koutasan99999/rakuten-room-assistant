@@ -47,7 +47,7 @@ export default async function handler(req, res, env = process.env) {
   let detail;
   try {
     // Vercelの制限時間（60秒）内に収まるよう、AIに使える時間を決めておく
-    picks = await selectWithAI({ items: candidates, genre: genre.name, env, recent, deadline: startedAt + 52000 });
+    picks = await selectWithAI({ items: candidates, genre: genre.name, brand: !!genre.brand, env, recent, deadline: startedAt + 52000 });
   } catch (e) {
     console.error('[openai] fallback:', e.message);
     picks = fallbackPicks(candidates);

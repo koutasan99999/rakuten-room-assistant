@@ -100,3 +100,41 @@ test('合言葉が違えば401', async () => {
   const { status } = await call({}, { ...ENV, APP_PASSCODE: 'x' });
   assert.equal(status, 401);
 });
+
+test('プレゼントの型ではブランド評価・相手・ショップ名をAIに渡し、分類と評価を返す', async () => {
+  const withBrand = {
+    ...CURATION,
+    items: CURATION.items.map((x, i) => ({ ...x, brandNote: '老舗の革小物ブランドで、30代に渡しても若すぎない落ち着いたデザイン。', giftClass: i ? '価格を抑えたい場合の候補' : '外しにくい王道' }))
+  };
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(withBrand) });
+  const { data } = await call({ type: 'gift' });
+  const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
+  assert.ok(system.includes('この人にこのブランドを贈る理由があるか'));
+  assert.ok(system.includes('劣化版'));
+  assert.ok(system.includes('プレゼントの相手'));
+  assert.match(user, /販売: テストショップ/);
+  assert.equal(data.products[0].giftClass, '外しにくい王道');
+  assert.ok(data.products[0].brandNote.includes('老舗'));
+});
+
+test('分類リストにない giftClass は表示しない', async () => {
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ ...CURATION, items: CURATION.items.map((x) => ({ ...x, giftClass: '最強ギフト' })) }) });
+  const { data } = await call({ type: 'gift' });
+  assert.ok(data.products.every((p) => p.giftClass === ''));
+});
+
+test('ブランドが関係ない型ではブランド評価ルールを付けない（料金節約）', async () => {
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(CURATION) });
+  await call({ type: 'budget_tiers' });
+  const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
+  assert.ok(!system.includes('ブランド・プレゼント適性'));
+  assert.doesNotMatch(user, /販売:/);
+});
+
+test('偽物・正規品の断定や「劣化版」扱いは文章から取り除く', async () => {
+  const items = CURATION.items.map((x) => ({ ...x, tradeoff: '本物と違い劣化版です。', intro: 'これは正規品なので安心。' + GOOD_INTRO }));
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ ...CURATION, items }) });
+  const { data } = await call({ type: 'premium_budget' });
+  assert.equal(data.products[0].intro, GOOD_INTRO);
+  assert.equal(data.products[0].tradeoff, '');
+});
