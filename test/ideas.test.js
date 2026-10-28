@@ -1,7 +1,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, POST_TYPES, sampleIdeaSeeds } from '../lib/catalog.js';
-import { normalizeIdea, fallbackIdea, ideaToTheme } from '../lib/ideas.js';
+import { normalizeIdea, fallbackIdea, ideaToTheme, MUST_BUY_SUBTITLES } from '../lib/ideas.js';
+import { buildHashtags } from '../lib/hashtags.js';
 import ideasApi from '../api/ideas.js';
 import curate from '../api/curate.js';
 import instagram from '../api/instagram.js';
@@ -30,9 +31,11 @@ function seededRandom(seed) {
   };
 }
 
-test('企画データベース：10ジャンル・20の投稿の型', () => {
-  assert.equal(CATALOG.length, 10);
-  assert.equal(POST_TYPES.length, 20);
+test('企画データベース：12ジャンル・21の投稿の型（防災グッズ・便利グッズ・まずこれ買っとけ）', () => {
+  assert.equal(CATALOG.length, 12);
+  assert.equal(POST_TYPES.length, 21);
+  assert.ok(CATALOG.find((c) => c.id === 'disaster').note.includes('煽'));
+  assert.ok(POST_TYPES.find((t) => t.name === 'まずこれ買っとけ'));
   assert.ok(CATALOG.find((c) => c.name === '香り・美容').brands.includes('Aesop'));
 });
 
@@ -110,22 +113,65 @@ test('選んだ企画で商品を探す：企画の枠で検索し、ブラン�
   assert.ok(mock.calls.openai[0].messages[0].content.includes('くまの一言メモ'));
 });
 
-test('キャプション：AIの文に広告・アフィリエイト表記を必ず付け、AIが付けた#PRは重ねない', async () => {
+const ROOM_BLOCK = '紹介したものは楽天ROOMにまとめています。\nプロフィールのリンクからどうぞ。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。';
+
+function tagsOf(caption) {
+  const last = caption.trim().split('\n').pop();
+  return last.split(' ');
+}
+
+test('キャプション：本文→ROOM誘導→URL→アフィリエイト表記→ハッシュタグの順で必ず付ける', async () => {
   mock = installFetchMock({
     rakuten: () => json(500, {}),
-    openai: () => aiReply({ items: [{ id: 0, shortName: 'a', memo: '迷ったらまずこれでいい枠。' }], caption: '本文です。\n\n#眼科医くま\n\n#PR 広告' })
+    openai: () => aiReply({
+      items: [{ id: 0, shortName: 'a', memo: '迷ったらまずこれでいい枠。' }],
+      caption: '本文です。\n\n保存しておいてください。\n\n紹介したものはプロフィールの楽天ROOMにまとめています。\nhttps://example.com\n#眼科医くま #出産祝い\n\n#PR 広告',
+      hashtags: ['#出産祝いギフト', 'ベビーギフト', '#出産 祝い', '#a/b', '#名入れギフト']
+    })
   });
-  const { data } = await call(instagram, { theme: '出産祝い', needCaption: true, items: [{ name: '商品A', price: 1000, memo: 'ブランド込みで贈るならこっち。' }] });
-  assert.match(data.caption, /^本文です。/);
-  assert.equal((data.caption.match(/#PR/g) || []).length, 1);
-  assert.match(data.caption, /アフィリエイトリンクが含まれます。$/);
+  const { data } = await call(instagram, { theme: '出産祝い', category: '出産祝い', needCaption: true, items: [{ name: '商品A', price: 1000, memo: 'ブランド込みで贈るならこっち。' }] });
+  const c = data.caption;
+  assert.match(c, /^本文です。\n\n保存しておいてください。\n\n紹介したものは楽天ROOMにまとめています。/);
+  assert.ok(c.includes(ROOM_BLOCK + '\n\n#'), c);
+  assert.equal((c.match(/room\.rakuten\.co\.jp/g) || []).length, 1);
+  assert.ok(!c.includes('example.com') && !c.includes('#PR'));
+  const tags = tagsOf(c);
+  assert.ok(tags.length >= 15 && tags.length <= 25, String(tags.length));
+  assert.equal(new Set(tags).size, tags.length);
+  assert.ok(tags.every((t) => /^#[^#\s]+$/.test(t)), tags.join(' '));
+  assert.ok(!tags.includes('#a/b'));
+  for (const t of ['#楽天ROOM', '#名入れギフト', '#出産祝い', '#ベビーギフト', '#出産祝いギフト', '#プレゼント迷子', '#ganka_kuma', '#眼科医くま']) assert.ok(tags.includes(t), t);
+  assert.ok(!tags.includes('#防災'));
   assert.equal(data.items[0].memo, 'ブランド込みで贈るならこっち。'); // まとめで作った一言メモを優先
-  // AIが失敗しても、予備のキャプション＋表記
+  // AIが失敗しても、予備の本文＋ROOM誘導・URL・表記・ハッシュタグ
   mock.restore();
   mock = installFetchMock({ rakuten: () => json(500, {}), openai: () => aiReply('だめ') });
-  const fb = (await call(instagram, { theme: '出産祝い', needCaption: true, items: [{ name: '商品A', price: 1000 }] })).data;
-  assert.match(fb.caption, /楽天ROOM/);
-  assert.match(fb.caption, /#PR/);
+  const fb = (await call(instagram, { theme: '出産祝い', needCaption: true, collection: '出産祝い｜本気出して考えてみた', items: [{ name: '商品A', price: 1000 }] })).data;
+  assert.ok(fb.caption.includes('紹介したものは楽天ROOMの「出産祝い｜本気出して考えてみた」にまとめています。\nプロフィールのリンクからどうぞ。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。'));
+  assert.ok(tagsOf(fb.caption).length >= 15);
+});
+
+test('ハッシュタグ：テーマごとに中身が変わり、15〜25個・アカウントのタグ入り', () => {
+  const bousai = buildHashtags({ topic: '防災グッズ、まずこれ買っとけ', genre: '防災グッズ', postType: 'まずこれ買っとけ', aiTags: ['#停電対策', '#防災備蓄'] });
+  const kosui = buildHashtags({ topic: '香水初心者の最初の3本', genre: '香り・美容' });
+  for (const tags of [bousai, kosui, buildHashtags({ topic: 'なにか' })]) {
+    assert.ok(tags.length >= 15 && tags.length <= 25, tags.join(' '));
+    assert.equal(new Set(tags).size, tags.length);
+    assert.ok(tags.includes('#ganka_kuma') && tags.includes('#眼科医くま'));
+  }
+  for (const t of ['#防災', '#防災グッズ', '#防災リュック', '#備蓄', '#まずこれ', '#何を買えばいい', '#防災備蓄', '#便利グッズ']) assert.ok(bousai.includes(t), t);
+  for (const t of ['#香水', '#香水初心者', '#フレグランス', '#香水選び']) assert.ok(kosui.includes(t), t);
+  assert.ok(!kosui.includes('#防災') && !kosui.includes('#便利グッズ'));
+  // AIのタグが多すぎても25個まで、アカウントのタグは残る
+  const many = buildHashtags({ topic: '防災', aiTags: Array.from({ length: 30 }, (_, i) => `#タグ${i}`) });
+  assert.ok(many.length <= 25 && many.includes('#眼科医くま'));
+});
+
+test('「まずこれ買っとけ」型の予備企画は、表紙サブタイトルを3種類から選ぶ', () => {
+  const seed = { genre: CATALOG.find((c) => c.id === 'disaster'), type: POST_TYPES.find((t) => t.id === 'must_buy'), items: ['最低限これだけの防災グッズ'] };
+  const idea = fallbackIdea(seed);
+  assert.ok(MUST_BUY_SUBTITLES.some((x) => idea.subtitle === `― ${x} ―`), idea.subtitle);
+  assert.match(ideaToTheme(idea).request, /煽/);
 });
 
 test('企画→まとめのテーマ変換', () => {

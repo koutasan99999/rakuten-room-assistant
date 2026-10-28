@@ -396,7 +396,7 @@ test('商品ごとに楽天の商品コード（ROOM投稿画面を開くのに�
 
 test('候補を多めに集めてAIに見比べさせ、役割つきで最大6件', async () => {
   mock = installFetchMock({
-    rakuten: (url) => json(200, { items: makeItems(30, url.searchParams.get('keyword').slice(0, 4)), pageCount: 10 }),
+    rakuten: (url) => json(200, { items: makeItems(30, url.searchParams.get('keyword')), pageCount: 10 }),
     openai: () => aiReply({ picks: [0, 1, 2, 3, 4, 5, 6].map((id, i) => ({ id, want: 9, role: `役割${i}`, reason: '面倒が減る', intro: GOOD_INTRO })) })
   });
   const { data } = await call();
