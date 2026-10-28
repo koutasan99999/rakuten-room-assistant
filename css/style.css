@@ -375,3 +375,21 @@ body {
 .side-alt { background: #9A8573; }
 .pick-line { margin: 12px 0 0; font-size: 16px; font-weight: 800; color: var(--text); }
 .pick-line::before { content: '→ '; color: var(--red); }
+
+/* 企画（最初の10投稿） */
+.plans-box { background: var(--card); border-radius: 14px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
+.plans-box summary { font-weight: 800; font-size: 16px; cursor: pointer; padding: 4px 0; }
+.plans-list { display: grid; gap: 10px; margin-top: 10px; }
+.plan-row { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 6px; }
+.plan-row.next { border: 2px solid var(--red); }
+.plan-row.done { opacity: 0.6; }
+.plan-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.plan-no { width: 28px; height: 28px; border-radius: 50%; background: var(--text); color: #fff; font-weight: 800; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.plan-type { font-size: 12px; font-weight: 700; color: var(--red); border: 1px solid var(--red); border-radius: 999px; padding: 1px 8px; }
+.plan-next { font-size: 12px; font-weight: 800; color: #fff; background: var(--red); border-radius: 999px; padding: 1px 8px; }
+.plan-title { margin: 0; font-weight: 800; font-size: 15px; line-height: 1.5; }
+.plan-roles { margin: 0; font-size: 12px; color: var(--muted); }
+.plan-actions { display: flex; gap: 8px; align-items: center; }
+.plan-actions .btn { min-height: 40px; font-size: 14px; flex: 1; }
+.plan-done { font-size: 13px; font-weight: 700; color: #1f6f43; }
+.plans-box summary .tab-count { margin-left: 6px; color: var(--muted); }
