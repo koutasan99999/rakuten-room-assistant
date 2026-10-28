@@ -5,21 +5,31 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import handler from '../api/discover.js';
 import curateHandler from '../api/curate.js';
+import instagramHandler from '../api/instagram.js';
+import imageHandler from '../api/image.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' };
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
 let env = process.env;
 
 if (process.env.MOCK) {
+  const sampleImage = await fs.readFile(path.join(root, 'test/fixtures/sample-product.png'));
   const { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } = await import('../test/mock.js');
   installFetchMock({
     // 価格帯の指定があれば、その範囲の価格で偽の商品を返す
     rakuten: (url) => {
+      // 商品画像の中継（api/image）用に、余白つきの見本画像を返す
+      if (url.hostname.startsWith('thumbnail')) return new Response(sampleImage, { status: 200, headers: { 'Content-Type': 'image/png' } });
       const min = Number(url.searchParams.get('minPrice')) || 1000;
       const items = makeItems(20, url.searchParams.get('keyword').split(' ')[0]).map((it, i) => ({ ...it, itemPrice: min + i * 100 }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('検索プラン')
+    openai: (body) => body.messages[0].content.includes('眼科医くま')
+      ? aiReply({
+        topicSlug: 'shussan-iwai', category: '出産祝い',
+        items: [0, 1, 2, 3, 4, 5].map((id) => ({ id, slug: ['towel', 'bib', 'blanket', 'bottle', 'toy', 'set'][id], shortName: ['今治ガーゼタオル', 'スタイ3枚セット', 'ベビーブランケット', 'ストローマグ', '木のおもちゃ', 'おむつケーキ'][id], subline: '名入れ対応、箱入りで渡しやすい', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。', '安く済ませたいなら、このへんがちょうどいい。', '迷ったらまずこれでいい枠。', '高いけど、ブランドごと贈る意味があるやつ。'][id] }))
+      })
+      : body.messages[0].content.includes('検索プラン')
       ? aiReply({ summary: '30代男性が最初に買う香水。仕事でも使いやすいもの', title: '30代男性の最初の香水', audience: '30代男性', maxPrice: 10000, brand: true, keywords: ['メンズ 香水'], slots: [{ label: '最初の1本', keyword: 'メンズ 香水', maxPrice: 8000 }, { label: '2本目', keyword: 'オードパルファム', maxPrice: 10000 }] })
       : body.messages[0].content.includes('選び方まとめ')
       ? aiReply({
@@ -36,6 +46,8 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/discover') return handler(req, res, env);
   if (url.pathname === '/api/curate') return curateHandler(req, res, env);
+  if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
+  if (url.pathname === '/api/image') return imageHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

@@ -321,3 +321,46 @@ body {
 .manage-card.selected { outline: 3px solid var(--red); }
 .manage-empty { text-align: center; color: var(--muted); font-size: 14px; margin: 24px 0; }
 .manage-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
+
+/* Instagram画像づくり */
+.back-link { display: inline-block; margin: 4px 0 8px; color: var(--muted); font-size: 14px; text-decoration: none; }
+.compose-title { margin: 0 0 12px; font-size: 20px; }
+.compose-sub { margin: 20px 0 6px; font-size: 16px; }
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+}
+.hint { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.ig-items { display: grid; gap: 10px; margin: 10px 0 16px; }
+.ig-item {
+  display: grid;
+  grid-template-columns: 28px 56px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.ig-num { font-weight: 800; color: var(--accent, #9A8573); text-align: center; }
+.ig-item img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: var(--soft); }
+.ig-item-name { margin: 0 0 6px; font-size: 13px; font-weight: 700; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ig-item .input { min-height: 36px; font-size: 14px; }
+.ig-move { display: grid; gap: 4px; }
+.ig-move button {
+  width: 40px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--soft); font-size: 14px; color: var(--text); font-family: inherit;
+}
+.ig-move button:disabled { opacity: 0.35; }
+.ig-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.ig-preview figure { margin: 0; }
+.ig-preview img { width: 100%; height: auto; display: block; border-radius: 8px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+.ig-preview figcaption { font-size: 11px; color: var(--muted); margin-top: 2px; word-break: break-all; }

@@ -273,7 +273,8 @@
   var igCreate = document.getElementById('ig-create');
   var MANAGE_TABS = ['room_candidate', 'room_posted', 'ig_waiting', 'ig_posted'];
   var currentTab = 'room_candidate';
-  var igSelected = {}; // Instagram投稿待ちでチェックした商品（id → 商品）
+  var igSelected = {}; // Instagram用にチェックした商品（id → 商品）
+  var PICK_TABS = ['ig_waiting', 'room_posted']; // チェックして選べるタブ
 
   function updateManageCount() {
     Store.counts().then(function (c) {
@@ -306,12 +307,12 @@
     igSelectedText.textContent = n + '件選択中' + (n ? '' : '（Instagramにまとめたい商品にチェック）');
     igCopy.disabled = n === 0;
     igDone.disabled = n === 0;
-    igCreate.disabled = true; // 次の段階で、カルーセル投稿の構成・文章の自動生成につなげる
+    igCreate.disabled = n === 0;
   }
 
   function manageCard(item) {
     var card = el('article', 'card manage-card');
-    if (currentTab === 'ig_waiting') {
+    if (PICK_TABS.indexOf(currentTab) !== -1) {
       var pick = el('label', 'pick');
       var box = el('input');
       box.type = 'checkbox';
@@ -362,7 +363,7 @@
 
     // 状態を変えたら、その商品は別のタブへ移るので一覧を描き直す
     card.appendChild(statusBox(item, function (status) {
-      if (status !== 'ig_waiting') delete igSelected[item.id];
+      if (PICK_TABS.indexOf(status) === -1) delete igSelected[item.id];
       renderManage();
     }));
     return card;
@@ -370,12 +371,13 @@
 
   function renderManage() {
     Store.counts().then(renderStatusTabs);
-    igBar.hidden = currentTab !== 'ig_waiting';
+    igBar.hidden = PICK_TABS.indexOf(currentTab) === -1;
     Store.list(currentTab).then(function (items) {
       manageList.innerHTML = '';
       // 他のタブへ移った商品は選択から外す
-      var ids = items.map(function (x) { return x.id; });
-      Object.keys(igSelected).forEach(function (id) { if (ids.indexOf(id) === -1) delete igSelected[id]; });
+      Object.keys(igSelected).forEach(function (id) {
+        if (PICK_TABS.indexOf(igSelected[id].status) === -1) delete igSelected[id];
+      });
       items.forEach(function (item) { manageList.appendChild(manageCard(item)); });
       manageEmpty.hidden = items.length > 0;
       manageEmpty.textContent = '「' + Store.statusLabel(currentTab) + '」の商品はまだありません。商品発掘の画面で、各商品の下のボタンから追加できます。';
@@ -410,14 +412,260 @@
 
   // 画面の切り替え（#manage で投稿管理）
   function showView() {
-    var manage = location.hash === '#manage';
-    manageView.hidden = !manage;
-    discoverView.hidden = manage;
+    var view = location.hash === '#manage' ? 'manage' : location.hash === '#compose' ? 'compose' : 'discover';
+    manageView.hidden = view !== 'manage';
+    discoverView.hidden = view !== 'discover';
+    composeView.hidden = view !== 'compose';
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
-      t.classList.toggle('active', (t.getAttribute('data-view') === 'manage') === manage);
+      t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' ? 'manage' : view));
     });
-    if (manage) renderManage();
+    if (view === 'manage') renderManage();
+    if (view === 'compose') renderCompose();
+    window.scrollTo(0, 0);
   }
+
+  // ---- Instagram画像づくり ----
+  var composeView = document.getElementById('view-compose');
+  var igTheme = document.getElementById('ig-theme');
+  var igCategory = document.getElementById('ig-category');
+  var igCta = document.getElementById('ig-cta');
+  var igItemsEl = document.getElementById('ig-items');
+  var igCount = document.getElementById('ig-count');
+  var igGenerate = document.getElementById('ig-generate');
+  var igLoading = document.getElementById('ig-loading');
+  var igMessage = document.getElementById('ig-message');
+  var igResult = document.getElementById('ig-result');
+  var igPreview = document.getElementById('ig-preview');
+  var DRAFT_KEY = 'room-ig-draft';
+  var BEAR_SRC = 'assets/kuma.png';
+  var draft = { theme: '', category: '', cta: 0, items: [] };
+  var lastOutput = null; // { files: [{ name, blob }], folder }
+
+  window.IgRender.CTA_MESSAGES.forEach(function (m, i) {
+    var o = el('option', null, m.replace(/\n/g, ''));
+    o.value = String(i);
+    igCta.appendChild(o);
+  });
+
+  function loadDraft() {
+    try { draft = Object.assign(draft, JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}); } catch (e) {}
+  }
+  function saveDraft() {
+    draft.theme = igTheme.value.trim();
+    draft.category = igCategory.value.trim();
+    draft.cta = Number(igCta.value) || 0;
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+  }
+
+  igCreate.addEventListener('click', function () {
+    loadDraft();
+    draft.items = selectedList().map(function (x) {
+      return { id: x.id, code: x.code, name: x.name, price: x.price, image: x.image, url: x.url, reason: x.reason || x.why || '', intro: x.intro || '', role: x.role || '' };
+    });
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+    location.hash = '#compose';
+  });
+
+  function renderCompose() {
+    loadDraft();
+    igTheme.value = draft.theme || '';
+    igCategory.value = draft.category || '';
+    igCta.value = String(draft.cta || 0);
+    renderComposeItems();
+  }
+
+  function renderComposeItems() {
+    igItemsEl.innerHTML = '';
+    igCount.textContent = '（' + draft.items.length + '件）';
+    if (!draft.items.length) {
+      igItemsEl.appendChild(el('p', 'manage-empty', '商品が選ばれていません。投稿管理の「ROOM投稿済み」か「Instagram投稿待ち」で商品にチェックを入れて「Instagram画像を作る」を押してください。'));
+    }
+    draft.items.forEach(function (it, i) {
+      var row = el('div', 'ig-item');
+      row.appendChild(el('span', 'ig-num', String(i + 1)));
+      var img = el('img');
+      img.src = it.image || '';
+      img.alt = '';
+      row.appendChild(img);
+      var mid = el('div');
+      mid.appendChild(el('p', 'ig-item-name', it.name));
+      var role = el('input', 'input');
+      role.type = 'text';
+      role.maxLength = 14;
+      role.placeholder = '役割（任意）例：迷ったらこれ';
+      role.value = it.role || '';
+      role.addEventListener('input', function () { it.role = role.value; saveDraft(); });
+      mid.appendChild(role);
+      row.appendChild(mid);
+      var move = el('div', 'ig-move');
+      [['▲', -1], ['▼', 1], ['×', 0]].forEach(function (b) {
+        var btn = el('button', null, b[0]);
+        btn.type = 'button';
+        btn.setAttribute('aria-label', b[1] < 0 ? '上へ' : b[1] > 0 ? '下へ' : '外す');
+        if ((b[1] < 0 && i === 0) || (b[1] > 0 && i === draft.items.length - 1)) btn.disabled = true;
+        btn.addEventListener('click', function () {
+          if (b[1] === 0) draft.items.splice(i, 1);
+          else draft.items.splice(i + b[1], 0, draft.items.splice(i, 1)[0]);
+          saveDraft();
+          renderComposeItems();
+        });
+        move.appendChild(btn);
+      });
+      row.appendChild(move);
+      igItemsEl.appendChild(row);
+    });
+  }
+  [igTheme, igCategory, igCta].forEach(function (x) { x.addEventListener('change', saveDraft); });
+
+  function showIgMessage(text, isError, detail) {
+    igMessage.textContent = text;
+    igMessage.className = 'message' + (isError ? ' error' : '');
+    if (detail) igMessage.appendChild(el('span', 'detail', detail));
+    igMessage.hidden = false;
+  }
+
+  // 合言葉つきでAPIを呼ぶ（合言葉が違えば1回だけ入れ直してもらう）
+  function postJson(path, body, retried) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (res.status === 401 && data.needPasscode && !retried) {
+          var input = window.prompt('合言葉を入力してください');
+          if (input) { setPass(input.trim()); resetBtn.hidden = false; return postJson(path, body, true); }
+        }
+        return { status: res.status, data: data };
+      });
+    });
+  }
+
+  // 楽天の商品画像は、このアプリのサーバー経由で読み込む（余白の切り取りに必要）
+  function loadProductImage(url) {
+    if (!url) return Promise.resolve(null);
+    return fetch('api/image?url=' + encodeURIComponent(url), { headers: { 'X-App-Passcode': getPass() } })
+      .then(function (res) { if (!res.ok) throw new Error('image'); return res.blob(); })
+      .then(function (blob) { return window.IgRender.loadImage(URL.createObjectURL(blob)); })
+      .then(function (img) { return window.IgRender.trimImage(img); })
+      .catch(function () { return null; });
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise(function (resolve) { canvas.toBlob(resolve, 'image/png'); });
+  }
+
+  function today() {
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  igGenerate.addEventListener('click', function () {
+    saveDraft();
+    igMessage.hidden = true;
+    if (!draft.theme) { showIgMessage('投稿テーマを入れてください（例：出産祝い）', true); return; }
+    if (!draft.items.length) { showIgMessage('商品が選ばれていません', true); return; }
+    igGenerate.disabled = true;
+    igLoading.hidden = false;
+    igResult.hidden = true;
+
+    var copyReq = postJson('api/instagram', {
+      theme: draft.theme,
+      category: draft.category,
+      items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro }; })
+    });
+    var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
+    var bear = window.IgRender.loadImage(BEAR_SRC).catch(function () { return null; });
+
+    Promise.all([copyReq, images, bear]).then(function (r) {
+      var res = r[0];
+      if (res.status !== 200) {
+        showIgMessage(res.data.error || '画像を作れませんでした。もう一度お試しください。', true, res.data.detail);
+        return;
+      }
+      var copy = res.data;
+      var slides = window.IgRender.renderPost({
+        topic: copy.topic,
+        category: draft.category || copy.category,
+        subtitle: '迷ったので整理しました',
+        bear: r[2],
+        ctaMessage: window.IgRender.CTA_MESSAGES[draft.cta || 0],
+        items: draft.items.map(function (it, i) {
+          var c = copy.items[i] || {};
+          return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, slug: c.slug };
+        })
+      });
+      var notes = [];
+      if (copy.notice) notes.push(copy.notice);
+      if (!r[2]) notes.push('くまのアイコン画像（assets/kuma.png）がまだ無いため、仮のクマで作りました。');
+      var missing = r[1].filter(function (x) { return !x; }).length;
+      if (missing) notes.push(missing + '件の商品画像を読み込めませんでした。');
+      if (notes.length) showIgMessage(notes.join(' '), false, copy.detail);
+
+      return Promise.all(slides.map(function (s) { return canvasToBlob(s.canvas); })).then(function (blobs) {
+        lastOutput = {
+          folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post'),
+          files: slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; })
+        };
+        igPreview.innerHTML = '';
+        lastOutput.files.forEach(function (f) {
+          var fig = el('figure');
+          var img = el('img');
+          img.src = URL.createObjectURL(f.blob);
+          img.alt = f.name;
+          fig.appendChild(img);
+          fig.appendChild(el('figcaption', null, f.name));
+          igPreview.appendChild(fig);
+        });
+        igResult.hidden = false;
+        igResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }).catch(function () {
+      showIgMessage('通信できませんでした。電波の良い場所でもう一度お試しください。', true);
+    }).then(function () {
+      igGenerate.disabled = false;
+      igLoading.hidden = true;
+    });
+  });
+
+  function downloadBlob(blob, name) {
+    var a = el('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // iPhoneでは共有シートの「画像を保存」で、全部まとめて写真アプリに入る
+  document.getElementById('ig-share').addEventListener('click', function () {
+    if (!lastOutput) return;
+    var files = lastOutput.files.map(function (f) { return new File([f.blob], f.name, { type: 'image/png' }); });
+    if (navigator.canShare && navigator.canShare({ files: files })) {
+      navigator.share({ files: files }).catch(function () {});
+    } else {
+      lastOutput.files.forEach(function (f) { downloadBlob(f.blob, f.name); });
+    }
+  });
+
+  // 投稿ごとのフォルダ（generated_posts/日付_テーマ/）に入れたZIPにする
+  document.getElementById('ig-zip').addEventListener('click', function () {
+    if (!lastOutput) return;
+    Promise.all(lastOutput.files.map(function (f) { return f.blob.arrayBuffer(); })).then(function (bufs) {
+      var zip = window.MiniZip.buildZip(lastOutput.files.map(function (f, i) {
+        return { path: lastOutput.folder + '/' + f.name, data: new Uint8Array(bufs[i]) };
+      }));
+      downloadBlob(new Blob([zip], { type: 'application/zip' }), lastOutput.folder.split('/').pop() + '.zip');
+    });
+  });
+
+  document.getElementById('ig-mark').addEventListener('click', function () {
+    Promise.all(draft.items.map(function (it) { return Store.setStatus(it, 'ig_posted'); })).then(function () {
+      updateManageCount();
+      showToast(draft.items.length + '商品を「Instagram投稿済み」にしました');
+    });
+  });
   window.addEventListener('hashchange', showView);
 
   // まとめ全体を1つの文章にする（ROOMのコレクション説明やSNS投稿用）

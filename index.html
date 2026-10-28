@@ -87,12 +87,54 @@
       <div class="ig-actions">
         <button type="button" id="ig-copy" class="btn btn-secondary" disabled>まとめてコピー</button>
         <button type="button" id="ig-done" class="btn btn-secondary" disabled>投稿済みにする</button>
-        <button type="button" id="ig-create" class="btn btn-primary" disabled>Instagram投稿を作る（準備中）</button>
+        <button type="button" id="ig-create" class="btn btn-primary" disabled>Instagram画像を作る</button>
       </div>
     </div>
     <div id="manage-list" class="results"></div>
     <p id="manage-empty" class="manage-empty" hidden></p>
     <p class="manage-note">記録はこのiPhoneのブラウザに保存されます。別の端末やブラウザとは共有されません。</p>
+  </main>
+
+  <main class="container" id="view-compose" hidden>
+    <a href="#manage" class="back-link">← 投稿管理に戻る</a>
+    <h2 class="compose-title">Instagram画像を作る</h2>
+    <section class="search-box">
+      <label class="field">
+        <span class="field-label">投稿テーマ</span>
+        <input id="ig-theme" class="input" type="text" maxlength="40" placeholder="例：出産祝い">
+        <span class="hint">「◯◯について本気出して考えてみた」の◯◯を入れます</span>
+      </label>
+      <label class="field">
+        <span class="field-label">カテゴリ <span class="optional">任意</span></span>
+        <input id="ig-category" class="input" type="text" maxlength="10" placeholder="空欄ならテーマと同じ（商品カード左上の小ラベル）">
+      </label>
+      <label class="field">
+        <span class="field-label">最後のROOM誘導の文言</span>
+        <select id="ig-cta" class="select"></select>
+      </label>
+    </section>
+
+    <h3 class="compose-sub">使う商品 <span id="ig-count" class="tab-count"></span></h3>
+    <p class="hint">▲▼で並び順を変えられます。役割（迷ったらこれ・本命・安い代替 など）は任意です。基本は5〜6商品です。</p>
+    <div id="ig-items" class="ig-items"></div>
+
+    <button type="button" id="ig-generate" class="btn btn-discover">画像を作る</button>
+    <div id="ig-loading" class="loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p>画像を作っています…<br><span class="sub">商品名とくまの一言メモをAIで作るので、10〜20秒ほどかかります</span></p>
+    </div>
+    <div id="ig-message" class="message" role="alert" hidden></div>
+
+    <section id="ig-result" class="ig-result" hidden>
+      <h3 class="compose-sub">できあがり</h3>
+      <div id="ig-preview" class="ig-preview"></div>
+      <div class="actions">
+        <button type="button" id="ig-share" class="btn btn-primary">写真に保存（まとめて）</button>
+        <button type="button" id="ig-zip" class="btn btn-secondary">ZIPでまとめてダウンロード</button>
+        <button type="button" id="ig-mark" class="btn btn-secondary">この商品をInstagram投稿済みにする</button>
+      </div>
+      <p class="hint">「写真に保存」で出てくる画面の「画像を保存」を選ぶと、全部まとめて写真アプリに入ります。1枚ずつなら、画像を長押しして保存もできます。</p>
+    </section>
   </main>
 
   <footer class="footer">
@@ -103,6 +145,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/store.js"></script>
+  <script src="js/zip.js"></script>
+  <script src="js/ig-render.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
