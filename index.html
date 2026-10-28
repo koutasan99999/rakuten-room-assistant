@@ -13,9 +13,13 @@
   <header class="header">
     <h1>ROOM商品発掘</h1>
     <p class="lead">楽天市場から投稿向きの商品を探して、紹介文まで用意します。</p>
+    <nav class="view-tabs" aria-label="画面の切り替え">
+      <a href="#discover" class="view-tab" data-view="discover">商品発掘</a>
+      <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+    </nav>
   </header>
 
-  <main class="container">
+  <main class="container" id="view-discover">
     <section class="search-box" aria-label="発掘条件">
       <label class="field">
         <span class="field-label">ジャンル</span>
@@ -76,6 +80,21 @@
     <div id="results" class="results"></div>
   </main>
 
+  <main class="container" id="view-manage" hidden>
+    <div class="status-tabs" id="status-tabs" role="tablist"></div>
+    <div id="ig-bar" class="ig-bar" hidden>
+      <p id="ig-selected" class="ig-selected">0件選択中</p>
+      <div class="ig-actions">
+        <button type="button" id="ig-copy" class="btn btn-secondary" disabled>まとめてコピー</button>
+        <button type="button" id="ig-done" class="btn btn-secondary" disabled>投稿済みにする</button>
+        <button type="button" id="ig-create" class="btn btn-primary" disabled>Instagram投稿を作る（準備中）</button>
+      </div>
+    </div>
+    <div id="manage-list" class="results"></div>
+    <p id="manage-empty" class="manage-empty" hidden></p>
+    <p class="manage-note">記録はこのiPhoneのブラウザに保存されます。別の端末やブラウザとは共有されません。</p>
+  </main>
+
   <footer class="footer">
     <p>紹介文は商品ページの情報と合っているか確認してから投稿してください。</p>
     <button type="button" id="reset-passcode" class="link-btn" hidden>合言葉を入れ直す</button>
@@ -83,6 +102,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <script src="js/store.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
