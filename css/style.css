@@ -393,3 +393,41 @@ body {
 .plan-actions .btn { min-height: 40px; font-size: 14px; flex: 1; }
 .plan-done { font-size: 13px; font-weight: 700; color: #1f6f43; }
 .plans-box summary .tab-count { margin-left: 6px; color: var(--muted); }
+
+/* 編集部（今日の企画） */
+.editor-box { margin-bottom: 12px; }
+.editor-box .btn-discover { min-height: 76px; font-size: 21px; }
+.editor-note { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
+.ideas { display: grid; gap: 12px; margin-top: 12px; }
+.idea-card { background: var(--card); border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 8px; }
+.idea-head { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.idea-no { font-weight: 800; color: var(--red); font-size: 14px; }
+.idea-title { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.5; }
+.idea-sub { margin: 0; font-size: 13px; color: var(--muted); }
+.idea-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+.idea-facts dt { color: var(--muted); font-weight: 700; }
+.idea-facts dd { margin: 0; }
+.idea-why { margin: 0; font-size: 14px; }
+.idea-roles { display: flex; flex-wrap: wrap; gap: 6px; }
+.idea-roles span { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); }
+.quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.quick { flex: 1 1 30%; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; font-weight: 700; text-decoration: none; font-family: inherit; }
+.cond-box .search-box { box-shadow: none; padding: 8px 0 0; }
+
+/* 採用・今回は外す */
+.adopt { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.adopt button { min-height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-size: 14px; font-weight: 800; font-family: inherit; color: var(--text); }
+.adopt .on-yes { background: #1f6f43; border-color: #1f6f43; color: #fff; }
+.adopt .on-no { background: #8a8a8a; border-color: #8a8a8a; color: #fff; }
+.card.excluded { opacity: 0.45; }
+.brand-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #fff; border: 1px solid var(--text); color: var(--text); }
+.memo-box { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); font-size: 14px; }
+.memo-box b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.adopt-count { margin: 8px 0 0; font-weight: 800; font-size: 14px; }
+
+/* 投稿履歴 */
+.history-card { background: var(--card); border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 4px; }
+.history-title { margin: 0; font-weight: 800; font-size: 15px; }
+.history-meta { margin: 0; font-size: 12px; color: var(--muted); }
+.history-status { font-size: 12px; font-weight: 800; color: #1f6f43; }
+.caption { font-size: 14px; line-height: 1.6; }

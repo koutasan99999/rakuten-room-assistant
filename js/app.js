@@ -142,8 +142,9 @@
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
-    if (p.role || p.giftClass || p.basis || p.side) {
+    if (p.role || p.giftClass || p.basis || p.side || p.brand) {
       var chips = el('div', 'chips');
+      if (p.brand) chips.appendChild(el('span', 'brand-chip', p.brand));
       if (p.side) chips.appendChild(el('span', 'side ' + (p.side === '本命' ? 'side-main' : 'side-alt'), p.side));
       if (p.role) chips.appendChild(el('span', 'role', p.role));
       if (p.giftClass) chips.appendChild(el('span', 'gift-class', p.giftClass));
@@ -175,6 +176,12 @@
     } else {
       addSection(card, '選定理由', p.reason);
     }
+    if (p.memo) {
+      var memoBox = el('div', 'memo-box');
+      memoBox.appendChild(el('b', null, 'くまの一言メモ'));
+      memoBox.appendChild(document.createTextNode(p.memo));
+      card.appendChild(memoBox);
+    }
     addSection(card, 'ROOM紹介文', p.intro, 'intro');
     card.appendChild(el('p', 'count', p.intro.length + '字'));
 
@@ -204,8 +211,28 @@
       recordStat(opts.genreId, 'copied');
     }));
     card.appendChild(actions);
+    if (opts.onAdopt) card.appendChild(adoptBox(p, card, opts.onAdopt));
     card.appendChild(statusBox(p));
     return card;
+  }
+
+  // 「採用」「今回は外す」：外した商品はInstagram投稿に使わない
+  function adoptBox(p, card, onChange) {
+    var box = el('div', 'adopt');
+    var yes = el('button', null, '採用');
+    var no = el('button', null, '今回は外す');
+    yes.type = no.type = 'button';
+    function show() {
+      yes.className = p.excluded ? '' : 'on-yes';
+      no.className = p.excluded ? 'on-no' : '';
+      card.classList.toggle('excluded', !!p.excluded);
+    }
+    yes.addEventListener('click', function () { p.excluded = false; show(); onChange(); });
+    no.addEventListener('click', function () { p.excluded = true; show(); onChange(); });
+    box.appendChild(yes);
+    box.appendChild(no);
+    show();
+    return box;
   }
 
   // ---- 投稿状態（ROOM・Instagram）の管理 ----
@@ -274,6 +301,7 @@
   var igDone = document.getElementById('ig-done');
   var igCreate = document.getElementById('ig-create');
   var MANAGE_TABS = ['room_candidate', 'room_posted', 'ig_waiting', 'ig_posted'];
+  var TAB_LABELS = { history: '投稿履歴' };
   var currentTab = 'room_candidate';
   var igSelected = {}; // Instagram用にチェックした商品（id → 商品）
   var PICK_TABS = ['ig_waiting', 'room_posted']; // チェックして選べるタブ
@@ -287,8 +315,9 @@
 
   function renderStatusTabs(counts) {
     statusTabs.innerHTML = '';
-    MANAGE_TABS.forEach(function (s) {
-      var tab = el('button', 'status-tab' + (s === currentTab ? ' active' : ''), Store.statusLabel(s) + '（' + (counts[s] || 0) + '）');
+    MANAGE_TABS.concat(['history']).forEach(function (s) {
+      var text = s === 'history' ? TAB_LABELS.history : Store.statusLabel(s) + '（' + (counts[s] || 0) + '）';
+      var tab = el('button', 'status-tab' + (s === currentTab ? ' active' : ''), text);
       tab.type = 'button';
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-selected', s === currentTab ? 'true' : 'false');
@@ -371,9 +400,46 @@
     return card;
   }
 
+  function historyDate(t) {
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  function renderHistory() {
+    History.list().then(function (posts) {
+      manageList.innerHTML = '';
+      posts.forEach(function (h) {
+        var card = el('article', 'history-card');
+        card.appendChild(el('p', 'history-status', History.STATUS_LABELS[h.status] || h.status));
+        card.appendChild(el('p', 'history-title', h.title || h.topic));
+        card.appendChild(el('p', 'history-meta', [historyDate(h.createdAt), h.postType, h.genre, h.target, h.priceBand].filter(Boolean).join('｜')));
+        if (h.brands && h.brands.length) card.appendChild(el('p', 'history-meta', 'ブランド：' + h.brands.join('・')));
+        if (h.products && h.products.length) card.appendChild(el('p', 'history-meta', '商品：' + h.products.map(function (x) { return x.name.slice(0, 18); }).join(' / ')));
+        var actions = el('div', 'plan-actions');
+        if (h.status !== 'posted') {
+          var done = el('button', 'link-btn', 'Instagram投稿済みにする');
+          done.type = 'button';
+          done.addEventListener('click', function () { History.update(h.id, { status: 'posted' }).then(renderHistory); });
+          actions.appendChild(done);
+        }
+        var del = el('button', 'link-btn', '履歴から消す');
+        del.type = 'button';
+        del.addEventListener('click', function () {
+          if (window.confirm('この履歴を消しますか？')) History.remove(h.id).then(renderHistory);
+        });
+        actions.appendChild(del);
+        card.appendChild(actions);
+        manageList.appendChild(card);
+      });
+      manageEmpty.hidden = posts.length > 0;
+      manageEmpty.textContent = 'まだ投稿履歴はありません。「今日の企画を考える」で企画を選ぶと記録されます。';
+    });
+  }
+
   function renderManage() {
     Store.counts().then(renderStatusTabs);
     igBar.hidden = PICK_TABS.indexOf(currentTab) === -1;
+    if (currentTab === 'history') { renderHistory(); return; }
     Store.list(currentTab).then(function (items) {
       manageList.innerHTML = '';
       // 他のタブへ移った商品は選択から外す
@@ -414,7 +480,10 @@
 
   // 画面の切り替え（#manage で投稿管理）
   function showView() {
-    var view = location.hash === '#manage' ? 'manage' : location.hash === '#compose' ? 'compose' : 'discover';
+    // #manage:ig_waiting のように、開くタブも指定できる
+    var parts = location.hash.split(':');
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : 'discover';
+    if (view === 'manage' && parts[1] && (MANAGE_TABS.indexOf(parts[1]) !== -1 || parts[1] === 'history')) currentTab = parts[1];
     manageView.hidden = view !== 'manage';
     discoverView.hidden = view !== 'discover';
     composeView.hidden = view !== 'compose';
@@ -440,6 +509,10 @@
   var igResult = document.getElementById('ig-result');
   var igPreview = document.getElementById('ig-preview');
   var DRAFT_KEY = 'room-ig-draft';
+  var igCaption = document.getElementById('ig-caption');
+  document.getElementById('ig-caption-copy').addEventListener('click', function () {
+    copyText(igCaption.value).then(function () { showToast('キャプションをコピーしました'); }, function () { showToast('コピーできませんでした'); });
+  });
   var BEAR_SRC = 'assets/kuma.png';
   var igSumOn = document.getElementById('ig-sum-on');
   var igSumFields = document.getElementById('ig-sum-fields');
@@ -481,6 +554,7 @@
     });
     draft.summary = emptySummary(); // 商品が変わったので2枚目はAIに作ってもらう
     draft.planId = '';
+    draft.postId = '';
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     location.hash = '#compose';
   });
@@ -488,10 +562,18 @@
   // 選び方まとめから、まとめの文章と商品をそのまま持って画像づくりへ
   function composeFromCuration(d) {
     loadDraft();
-    draft.items = d.products.map(function (p) {
+    var adopted = d.products.filter(function (p) { return !p.excluded; });
+    if (!adopted.length) { showToast('採用した商品がありません'); return; }
+    draft.items = adopted.map(function (p) {
       var reason = [p.pick, p.why || p.reason].filter(Boolean).join('。');
-      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '' };
+      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '', memo: p.memo || '', brand: p.brand || '' };
     });
+    draft.postId = currentPostId();
+    if (d.idea) {
+      draft.theme = d.idea.topic;
+      draft.subtitle = d.idea.subtitle || '';
+      draft.category = (d.idea.topic || '').length <= 8 ? d.idea.topic : d.idea.genre.split('・')[0];
+    }
     draft.summary = { enabled: true, typeName: d.typeName || '', title: d.title || '', lead: d.lead || '', verdict: d.verdict || '' };
     draft.planId = d.plan ? d.plan.id : '';
     if (d.plan) {
@@ -501,7 +583,13 @@
     }
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     // 投稿管理にも「Instagram投稿待ち」として入れておく
-    Promise.all(d.products.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount);
+    Promise.all(adopted.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount);
+    if (draft.postId) {
+      window.PostHistory.update(draft.postId, {
+        products: adopted.map(function (p) { return { name: p.name, brand: p.brand || '', price: p.price }; }),
+        brands: adopted.map(function (p) { return p.brand; }).filter(Boolean)
+      });
+    }
     location.hash = '#compose';
   }
 
@@ -622,7 +710,8 @@
       theme: draft.theme,
       category: draft.category,
       needSummary: needSummary,
-      items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro }; })
+      needCaption: true,
+      items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro, memo: it.memo }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
     var bear = window.IgRender.loadImage(BEAR_SRC).catch(function () { return null; });
@@ -658,8 +747,17 @@
       return Promise.all(slides.map(function (s) { return canvasToBlob(s.canvas); })).then(function (blobs) {
         lastOutput = {
           folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post'),
-          files: slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; })
+          files: slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; }),
+          caption: copy.caption || ''
         };
+        igCaption.value = lastOutput.caption;
+        if (draft.postId) {
+          History.update(draft.postId, {
+            status: 'generated',
+            topic: copy.topic,
+            products: draft.items.map(function (it) { return { name: it.name, brand: it.brand || '', price: it.price }; })
+          });
+        }
         igPreview.innerHTML = '';
         lastOutput.files.forEach(function (f) {
           var fig = el('figure');
@@ -705,9 +803,11 @@
   document.getElementById('ig-zip').addEventListener('click', function () {
     if (!lastOutput) return;
     Promise.all(lastOutput.files.map(function (f) { return f.blob.arrayBuffer(); })).then(function (bufs) {
-      var zip = window.MiniZip.buildZip(lastOutput.files.map(function (f, i) {
+      var entries = lastOutput.files.map(function (f, i) {
         return { path: lastOutput.folder + '/' + f.name, data: new Uint8Array(bufs[i]) };
-      }));
+      });
+      if (igCaption.value.trim()) entries.push({ path: lastOutput.folder + '/caption.txt', data: new TextEncoder().encode(igCaption.value) });
+      var zip = window.MiniZip.buildZip(entries);
       downloadBlob(new Blob([zip], { type: 'application/zip' }), lastOutput.folder.split('/').pop() + '.zip');
     });
   });
@@ -717,6 +817,7 @@
       updateManageCount();
       showToast(draft.items.length + '商品を「Instagram投稿済み」にしました');
       if (draft.planId) setPlanDone(draft.planId, true);
+      if (draft.postId) History.update(draft.postId, { status: 'posted' });
     });
   });
   window.addEventListener('hashchange', showView);
@@ -742,7 +843,7 @@
 
   function renderCurationHeader(d) {
     var card = el('article', 'card curation-head');
-    card.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.typeName));
+    card.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.idea ? '今日の企画｜' + d.idea.postType : d.typeName));
     card.appendChild(el('h2', 'curation-title', d.title));
     if (d.axis) {
       var axis = el('p', 'axis');
@@ -754,10 +855,11 @@
     if (d.verdict) card.appendChild(el('p', 'verdict', d.verdict));
     var actions = el('div', 'actions');
     actions.appendChild(copyButton('まとめ文をコピー', function () { return curationText(d); }));
-    var toIg = el('button', 'btn btn-primary', 'この内容でInstagram画像を作る');
+    var toIg = el('button', 'btn btn-primary', '採用した商品でInstagram投稿を作る');
     toIg.type = 'button';
     toIg.addEventListener('click', function () { composeFromCuration(d); });
     actions.appendChild(toIg);
+    card.appendChild(el('p', 'adopt-count'));
     card.appendChild(actions);
     return card;
   }
@@ -873,8 +975,16 @@
   }
 
   function renderCuration(data) {
-    results.appendChild(renderCurationHeader(data));
-    data.products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true })); });
+    var header = renderCurationHeader(data);
+    results.appendChild(header);
+    var count = header.querySelector('.adopt-count');
+    function onAdopt() {
+      var n = data.products.filter(function (p) { return !p.excluded; }).length;
+      count.textContent = '採用 ' + n + ' / ' + data.products.length + '商品（Instagram投稿は5〜6商品が目安）';
+      saveLast('curate', data);
+    }
+    data.products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true, onAdopt: onAdopt })); });
+    onAdopt();
   }
 
   // 単品の発掘。conditions を渡さなければ完全ランダム
@@ -892,12 +1002,115 @@
   }
 
   function curate(conditions) {
+    // 企画以外（条件指定・型だけ）で作ったまとめは、どの投稿にも結びつけない
+    if (!conditions.idea && !conditions.planId) setCurrentPostId('');
     request('api/curate', conditions, searchBtn, function (data, products) {
       if (!products.length) return;
+      if ((data.idea || data.plan) && currentPostId()) {
+        History.update(currentPostId(), { brands: products.map(function (p) { return p.brand; }).filter(Boolean) });
+      }
       saveLast('curate', data);
       renderCuration(data);
     });
   }
+
+  // ---- 今日の企画（編集部） ----
+  var CURRENT_POST_KEY = 'room-current-post';
+  var History = window.PostHistory;
+  var ideasBtn = document.getElementById('ideas-btn');
+  var ideasEl = document.getElementById('ideas');
+  var ideasLoading = document.getElementById('ideas-loading');
+  var ideasMessage = document.getElementById('ideas-message');
+
+  function currentPostId() {
+    try { return localStorage.getItem(CURRENT_POST_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setCurrentPostId(id) {
+    try { localStorage.setItem(CURRENT_POST_KEY, id || ''); } catch (e) {}
+  }
+
+  function renderIdea(idea, i) {
+    var card = el('article', 'idea-card');
+    var head = el('div', 'idea-head');
+    head.appendChild(el('span', 'idea-no', '案' + (i + 1)));
+    head.appendChild(el('span', 'plan-type', idea.postType));
+    card.appendChild(head);
+    card.appendChild(el('h3', 'idea-title', idea.title));
+    if (idea.subtitle) card.appendChild(el('p', 'idea-sub', idea.subtitle));
+    var dl = el('dl', 'idea-facts');
+    [['ターゲット', idea.target], ['価格帯', idea.priceBand], ['ジャンル', idea.genre], ['比較軸', idea.axis], ['ブランド', (idea.brands || []).join('・')]].forEach(function (f) {
+      if (!f[1]) return;
+      dl.appendChild(el('dt', null, f[0]));
+      dl.appendChild(el('dd', null, f[1]));
+    });
+    card.appendChild(dl);
+    if (idea.whyInteresting) card.appendChild(el('p', 'idea-why', idea.whyInteresting));
+    var roles = el('div', 'idea-roles');
+    idea.slots.forEach(function (sl) { roles.appendChild(el('span', null, sl.label)); });
+    card.appendChild(roles);
+    var go = el('button', 'btn btn-primary', 'この企画で作る');
+    go.type = 'button';
+    go.addEventListener('click', function () { startIdea(idea); });
+    card.appendChild(go);
+    return card;
+  }
+
+  function startIdea(idea) {
+    History.add({
+      title: idea.title, topic: idea.topic, subtitle: idea.subtitle, genre: idea.genre, postType: idea.postType,
+      target: idea.target, priceBand: idea.priceBand, brands: idea.brands || []
+    }).then(setCurrentPostId, function () {});
+    curate({ idea: idea });
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function thinkIdeas() {
+    ideasMessage.hidden = true;
+    ideasEl.innerHTML = '';
+    ideasLoading.hidden = false;
+    ideasBtn.disabled = true;
+    History.recentForIdeas().then(function (history) {
+      return postJson('api/ideas', { history: history });
+    }).then(function (r) {
+      if (r.status !== 200) {
+        ideasMessage.textContent = r.data.error || '企画を考えられませんでした。もう一度お試しください。';
+        ideasMessage.className = 'message error';
+        ideasMessage.hidden = false;
+        return;
+      }
+      if (r.data.notice) {
+        ideasMessage.textContent = r.data.notice;
+        ideasMessage.className = 'message';
+        if (r.data.detail) ideasMessage.appendChild(el('span', 'detail', r.data.detail));
+        ideasMessage.hidden = false;
+      }
+      (r.data.ideas || []).forEach(function (idea, i) { ideasEl.appendChild(renderIdea(idea, i)); });
+      try { localStorage.setItem('room-last-ideas', JSON.stringify(r.data.ideas || [])); } catch (e) {}
+    }).catch(function () {
+      ideasMessage.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+      ideasMessage.className = 'message error';
+      ideasMessage.hidden = false;
+    }).then(function () {
+      ideasLoading.hidden = true;
+      ideasBtn.disabled = false;
+      ideasBtn.textContent = '別の3案を考える';
+    });
+  }
+  ideasBtn.addEventListener('click', thinkIdeas);
+  document.getElementById('quick-random').addEventListener('click', function () {
+    discover(null, discoverBtn);
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.getElementById('quick-cond').addEventListener('click', function () {
+    var box = document.getElementById('cond-box');
+    box.open = true;
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  // 前回考えた企画を残しておく（ほかのアプリから戻っても消えないように）
+  try {
+    (JSON.parse(localStorage.getItem('room-last-ideas')) || []).forEach(function (idea, i) { ideasEl.appendChild(renderIdea(idea, i)); });
+    if (ideasEl.children.length) ideasBtn.textContent = '別の3案を考える';
+  } catch (e) {}
 
   // ---- 企画（最初の10投稿） ----
   var PLANS_DONE_KEY = 'room-plans-done';
@@ -942,6 +1155,8 @@
         make.type = 'button';
         make.addEventListener('click', function () {
           document.getElementById('plans-box').open = false;
+          History.add({ title: p.topic + 'について本気出して考えてみた', topic: p.topic, subtitle: p.subtitle, genre: p.category, postType: p.postType })
+            .then(setCurrentPostId, function () {});
           curate({ planId: p.id });
         });
         actions.appendChild(make);

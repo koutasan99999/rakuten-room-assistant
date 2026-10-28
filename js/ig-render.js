@@ -573,7 +573,7 @@
     post.items.forEach(function (it, i) {
       var page = i + 2 + offset;
       slides.push({
-        fileName: pad(page) + '_item_' + (it.slug || 'item' + (i + 1)) + '.png',
+        fileName: pad(page) + '_item_' + pad(i + 1) + '.png',
         canvas: render('item', {
           category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
           subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear

@@ -4,6 +4,7 @@ import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { pickTheme, CURATION_TYPES } from '../lib/themes.js';
 import { resolveFilterGenre } from '../lib/genres.js';
 import { findPlan, planToTheme } from '../lib/plans.js';
+import { normalizeIdea, ideaToTheme } from '../lib/ideas.js';
 import { planSearch, sanitizeFreeText } from '../lib/planner.js';
 import { searchSlot } from '../lib/rakuten.js';
 import { buildCuration, fallbackCuration } from '../lib/curation.js';
@@ -22,7 +23,12 @@ export default async function handler(req, res, env = process.env) {
   let type = CURATION_TYPES[body.type] ? body.type : null; // 未指定ならおまかせ
   let theme;
   const seriesPlan = findPlan(body.planId);
-  if (seriesPlan) {
+  const idea = body.idea ? normalizeIdea(body.idea) : null;
+  if (idea) {
+    // 「今日の企画を考える」で選んだ企画：企画の役割の枠で作る
+    theme = ideaToTheme(idea);
+    type = theme.type;
+  } else if (seriesPlan) {
     // 企画（最初の10投稿）：決めてある役割の枠で作る
     theme = planToTheme(seriesPlan);
     type = theme.type;
@@ -85,5 +91,5 @@ export default async function handler(req, res, env = process.env) {
     detail = `原因: ${maskSecrets(e.message)}`.slice(0, 400);
   }
   if (!notice && curation.warnings && curation.warnings.length) notice = curation.warnings.join('。') + '。';
-  return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, themeId: theme.id, plan: theme.plan || null, ...curation, notice, detail });
+  return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, themeId: theme.id, plan: theme.plan || null, idea: theme.idea || null, ...curation, notice, detail });
 }
