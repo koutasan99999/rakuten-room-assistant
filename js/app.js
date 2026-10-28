@@ -703,6 +703,8 @@
       return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '', memo: p.memo || '', brand: p.brand || '' };
     });
     draft.postId = currentPostId();
+    draft.genre = d.idea ? d.idea.genre : '';
+    draft.postType = d.idea ? d.idea.postType : d.plan ? d.plan.postType : '';
     if (d.idea) {
       draft.theme = d.idea.topic;
       draft.subtitle = d.idea.subtitle || '';
@@ -846,6 +848,8 @@
       needSummary: needSummary,
       needCaption: true,
       collection: History.collectionNameFor(draft.theme),
+      genre: draft.genre || '',
+      postType: draft.postType || '',
       items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro, memo: it.memo }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
