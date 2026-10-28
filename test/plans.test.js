@@ -1,8 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { SERIES_PLANS, planToTheme } from '../lib/plans.js';
+import { SERIES_PLANS } from '../lib/plans.js';
 import { CURATION_TYPES } from '../lib/themes.js';
-import curate from '../api/curate.js';
 import plansApi from '../api/plans.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
 
@@ -46,36 +45,10 @@ test('企画の一覧API', async () => {
   assert.equal(data.plans.length, 10);
   assert.deepEqual(data.plans[1].roles, ['ブランド込みの本命', '本命より少し手頃', 'コスパ代替', '普段使い向け', 'ギフト向け', '迷ったらこれ']);
   assert.equal(data.plans[1].subtitle, '― 高い本命と安い代替 ―');
+  // 選び方の型（12種類・説明つき）と企画データベースのジャンル名も返す
+  assert.equal(data.types.length, 12);
+  assert.ok(data.types.every((t) => t.name && t.desc));
+  assert.equal(data.types.find((t) => t.id === 'premium_budget').desc, 'ちゃんと高い理由がある本命と、価格を抑えた別解');
+  assert.ok(data.genres.includes('防災グッズ'));
 });
 
-test('企画で作ると、6枠で探し、役割・目的・「なぜ／誰なら」をAIに渡し、企画情報を返す', async () => {
-  mock = installFetchMock({
-    rakuten: (url) => {
-      const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 8);
-      const min = Number(url.searchParams.get('minPrice')) || 500;
-      return json(200, { items: makeItems(5, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}店${i}` })), pageCount: 1 });
-    },
-    openai: () => aiReply({
-      title: '出産祝い、迷ったらこの順', lead: '説明', verdict: '迷ったらタオル。',
-      items: [0, 5, 10, 15, 20, 25].map((id, i) => ({ id, role: ['迷ったらこれ', '実用性重視', 'もらうと嬉しい', 'センス重視', '価格を抑えるなら', '少し奮発するなら'][i], pick: '外しにくい実用品', forWho: '初めて贈る人に', why: '理由', intro: GOOD_INTRO }))
-    })
-  });
-  const { status, data } = await call(curate, { body: { planId: 'plan01_shussan' } });
-  assert.equal(status, 200);
-  assert.equal(mock.calls.rakuten.length, 6);
-  assert.equal(data.plan.no, 1);
-  assert.equal(data.plan.topic, '出産祝い');
-  assert.equal(data.products.length, 6);
-  assert.equal(data.products[0].pick, '外しにくい実用品');
-  const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
-  assert.ok(system.includes('"pick"'));
-  assert.match(user, /企画1「出産祝いについて本気出して考えてみた」/);
-  assert.match(user, /誰ならこれを選ぶべきか/);
-});
-
-test('企画のテーマ変換：サブタイトル・ルールを引き継ぐ', () => {
-  const t = planToTheme(SERIES_PLANS.find((p) => p.no === 7));
-  assert.equal(t.type, 'premium_budget');
-  assert.equal(t.plan.subtitle, '― 高い本命と安い代替 ―');
-  assert.match(t.request, /最大出力・ポート数・サイズ・ブランド信頼度・価格/);
-});

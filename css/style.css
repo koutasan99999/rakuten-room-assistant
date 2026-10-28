@@ -11,6 +11,9 @@
 
 * { box-sizing: border-box; }
 
+/* hidden を付けた要素は、display を指定したクラスより優先して隠す */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -415,19 +418,9 @@ body {
 .cond-box .search-box { box-shadow: none; padding: 8px 0 0; }
 
 /* 採用・今回は外す */
-.adopt { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-.adopt button { min-height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-size: 14px; font-weight: 800; font-family: inherit; color: var(--text); }
-.adopt .on-yes { background: #1f6f43; border-color: #1f6f43; color: #fff; }
-.adopt .on-no { background: #8a8a8a; border-color: #8a8a8a; color: #fff; }
-/* 外した商品は薄く。ただし「採用／外す」と「別の候補を出す」ははっきり見せる */
-.card.excluded > :not(.adopt):not(.replace-box) { opacity: 0.45; }
-.replace-box { margin-top: 8px; }
-.replace-box .btn { width: 100%; }
-.replace-note { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 .brand-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #fff; border: 1px solid var(--text); color: var(--text); }
 .memo-box { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); font-size: 14px; }
 .memo-box b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
-.adopt-count { margin: 8px 0 0; font-weight: 800; font-size: 14px; }
 
 /* 投稿履歴 */
 .history-card { background: var(--card); border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 4px; }
@@ -448,3 +441,74 @@ body {
 .room-state.done { color: #1f6f43; }
 .room-collection { margin-top: 16px; }
 .room-collection .compose-sub { margin-top: 0; }
+
+/* 探し方の切り替え（企画から／条件を指定して／完全ランダム） */
+.mode-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+.mode-tab { min-height: 48px; padding: 6px 4px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; font-weight: 800; font-family: inherit; line-height: 1.3; }
+.mode-tab.active { background: var(--red); border-color: var(--red); color: #fff; }
+.mode-panel { margin-bottom: 12px; }
+.mode-panel .btn-discover { min-height: 64px; font-size: 19px; }
+
+/* 企画候補（折りたたみ） */
+.ideas-panel { margin-top: 12px; }
+.ideas-toggle { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-family: inherit; color: var(--text); text-align: left; }
+.ideas-toggle-label { font-weight: 800; font-size: 15px; }
+.ideas-arrow { margin-left: auto; font-size: 13px; font-weight: 700; color: var(--red); }
+.ideas-chosen { flex-basis: 100%; order: 3; font-size: 12px; color: var(--muted); }
+.ideas-chosen:empty { display: none; }
+.idea-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+.idea-actions .btn { min-height: 48px; font-size: 15px; }
+.idea-edited { font-size: 11px; font-weight: 700; color: #fff; background: #1f6f43; border-radius: 999px; padding: 1px 8px; }
+.idea-edit .field { margin-bottom: 2px; }
+
+/* 選び方の型（説明つき） */
+.type-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.type-choice { display: grid; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-family: inherit; color: var(--text); }
+.type-choice strong { font-size: 14px; }
+.type-choice span { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.type-choice.active { border: 2px solid var(--red); background: #fff5f5; }
+.type-choice.active strong { color: var(--red); }
+
+/* 詳細条件（普段は閉じておく） */
+.detail-box { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; }
+.detail-box summary { font-weight: 700; font-size: 14px; cursor: pointer; }
+.detail-grid { display: grid; gap: 10px; margin-top: 10px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
+.seg input { accent-color: var(--red); }
+
+/* 商品候補一覧（15〜20件からユーザーが選ぶ） */
+.angles { margin-top: 8px; }
+.angles-label { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.angle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.angle-list li { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); }
+.angle-list li.empty { opacity: 0.45; text-decoration: line-through; }
+.pick-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 -4px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.96); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+.pick-count { margin: 0; font-weight: 800; font-size: 16px; white-space: nowrap; }
+.pick-bar.ok .pick-count { color: #1f6f43; }
+.pick-bar.over .pick-count { color: var(--red); }
+.pick-bar .btn { flex: 1; min-height: 44px; font-size: 14px; padding: 6px 10px; }
+.cand-view { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.cand-view .select { flex: 1; }
+.cand-list { display: grid; gap: 10px; }
+.cand-card { background: var(--card); border-radius: 14px; padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); border: 2px solid transparent; }
+.cand-card.picked { border-color: #1f6f43; background: #f6fbf8; }
+.cand-top { display: flex; gap: 10px; }
+.cand-thumb { width: 84px; height: 84px; object-fit: contain; border-radius: 8px; background: #fff; flex-shrink: 0; border: 1px solid var(--line); }
+.cand-info { min-width: 0; flex: 1; }
+.cand-info .chips { margin: 0 0 4px; gap: 4px; }
+.cand-info .role { font-size: 11px; padding: 1px 8px; }
+.tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.seen { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: #fff3d6; color: #8a5a00; }
+.cand-name { margin: 0; font-size: 15px; line-height: 1.4; font-weight: 800; }
+.cand-meta { margin: 2px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 14px; }
+.cand-brand { color: var(--muted); font-size: 13px; }
+.cand-reason { margin: 8px 0 0; font-size: 13px; line-height: 1.6; }
+.cand-memo { margin: 6px 0 0; font-size: 13px; padding: 6px 10px; border-radius: 10px; background: var(--soft); }
+.cand-memo b { color: var(--muted); font-size: 11px; }
+.cand-actions { display: grid; grid-template-columns: 3fr 2fr; gap: 8px; margin-top: 10px; }
+.cand-pick { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-weight: 800; font-size: 14px; }
+.cand-pick input { width: 22px; height: 22px; accent-color: #1f6f43; }
+.cand-card.picked .cand-pick { background: #1f6f43; color: #fff; border-color: #1f6f43; }
+.cand-link { min-height: 44px; font-size: 13px; padding: 6px; }
+.more-box { margin-top: 14px; text-align: center; }
+.more-box .btn { min-height: 52px; }

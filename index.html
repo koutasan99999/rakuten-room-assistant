@@ -20,39 +20,44 @@
   </header>
 
   <main class="container" id="view-discover">
-    <section class="editor-box">
+    <!-- 探し方は3つ。1つずつ開いて、画面が長くなりすぎないようにする -->
+    <nav class="mode-tabs" aria-label="探し方">
+      <button type="button" class="mode-tab" data-mode="idea">企画から探す</button>
+      <button type="button" class="mode-tab" data-mode="cond">条件を指定して探す</button>
+      <button type="button" class="mode-tab" data-mode="random">完全ランダム</button>
+    </nav>
+
+    <section class="mode-panel" id="mode-idea" hidden>
       <button type="button" id="ideas-btn" class="btn btn-discover">今日の企画を考える</button>
-      <p class="editor-note">商品より先に、Instagram投稿の企画を3案考えます。1つ選ぶと、その企画で商品を探します。</p>
+      <p class="editor-note">商品より先に、Instagram投稿の企画を3案考えます。AIの案はたたき台なので、「編集」で自由に直してから探せます。</p>
       <div id="ideas-loading" class="loading" hidden>
         <div class="spinner" aria-hidden="true"></div>
         <p>企画を考えています…<br><span class="sub">20〜40秒ほどかかります</span></p>
       </div>
       <div id="ideas-message" class="message" role="alert" hidden></div>
-      <div id="ideas" class="ideas"></div>
+      <div id="ideas-panel" class="ideas-panel" hidden>
+        <button type="button" id="ideas-toggle" class="ideas-toggle" aria-expanded="true">
+          <span class="ideas-toggle-label">企画候補</span>
+          <span id="ideas-chosen" class="ideas-chosen"></span>
+          <span id="ideas-arrow" class="ideas-arrow">▲ 折りたたむ</span>
+        </button>
+        <div id="ideas" class="ideas"></div>
+      </div>
+
+      <details class="plans-box" id="plans-box">
+        <summary>最初の10投稿の企画<span id="plans-progress" class="tab-count"></span></summary>
+        <p class="hint">「○○について 本気出して考えてみた」シリーズ。上から順に作るのがおすすめの順番です。</p>
+        <div id="plans-list" class="plans-list"></div>
+      </details>
     </section>
 
-    <nav class="quick-links" aria-label="ほかの使い方">
-      <button type="button" class="quick" id="quick-random">ランダム発掘</button>
-      <button type="button" class="quick" id="quick-cond">条件指定で発掘</button>
-      <a class="quick" href="#manage:room_candidate">ROOM候補</a>
-      <a class="quick" href="#manage:ig_waiting">Instagram投稿待ち</a>
-      <a class="quick" href="#manage:history">投稿履歴</a>
-    </nav>
-
-    <details class="plans-box" id="plans-box">
-      <summary>企画から作る（最初の10投稿）<span id="plans-progress" class="tab-count"></span></summary>
-      <p class="hint">「○○について 本気出して考えてみた」シリーズ。決めてある役割の枠で、選び方まとめを作ります。投稿タイプが続かないよう、上から順に作るのがおすすめの順番です。</p>
-      <div id="plans-list" class="plans-list"></div>
-    </details>
-
-    <details class="plans-box cond-box" id="cond-box">
-      <summary>条件指定で発掘</summary>
-    <section class="search-box" aria-label="発掘条件">
+    <section class="mode-panel search-box" id="mode-cond" hidden aria-label="条件を指定して探す">
       <label class="field">
         <span class="field-label">ジャンル</span>
         <select id="genre-select" class="select">
           <option value="">おまかせ</option>
           <option value="useful">便利グッズ</option>
+          <option value="disaster">防災グッズ</option>
           <option value="appliance">家電</option>
           <option value="gadget">ガジェット</option>
           <option value="interior">インテリア</option>
@@ -72,34 +77,53 @@
           <option value="other">その他</option>
         </select>
       </label>
-      <label class="field">
+      <div class="field">
         <span class="field-label">選び方の型</span>
-        <select id="curate-type" class="select">
-          <option value="">指定なし（単品で発掘）</option>
-          <option value="first_pick">まず1個買うなら</option>
-          <option value="beginner">初心者向け</option>
-          <option value="premium_budget">本命＋安い代替</option>
-          <option value="budget_tiers">予算別</option>
-          <option value="gift">プレゼント</option>
-          <option value="use_case">用途別</option>
-        </select>
-      </label>
+        <div id="type-choices" class="type-choices" role="radiogroup" aria-label="選び方の型"></div>
+      </div>
       <label class="field">
         <span class="field-label">自由入力 <span class="optional">任意</span></span>
         <textarea id="free-text" class="textarea" rows="2" maxlength="120" placeholder="例：30代男性へのプレゼント、1万円以下"></textarea>
       </label>
-      <button type="button" id="search-btn" class="btn btn-discover">この条件で発掘する</button>
+      <details class="detail-box" id="detail-box">
+        <summary>詳細条件 <span class="optional">任意</span></summary>
+        <div class="detail-grid">
+          <label class="field"><span class="field-label">価格の下限（円）</span><input id="d-min" class="input" type="number" inputmode="numeric" min="0" step="500" placeholder="例：3000"></label>
+          <label class="field"><span class="field-label">価格の上限（円）</span><input id="d-max" class="input" type="number" inputmode="numeric" min="0" step="500" placeholder="例：10000"></label>
+          <label class="field"><span class="field-label">ターゲット</span><input id="d-target" class="input" type="text" maxlength="40" placeholder="例：職場の先輩、一人暮らしの弟"></label>
+          <label class="field"><span class="field-label">年齢</span>
+            <select id="d-age" class="select">
+              <option value="">指定なし</option><option>10代</option><option>20代</option><option>30代</option><option>40代</option><option>50代以上</option>
+            </select>
+          </label>
+          <div class="field"><span class="field-label">誰が使う？</span>
+            <div class="seg" role="radiogroup">
+              <label><input type="radio" name="d-purpose" value="" checked> 指定なし</label>
+              <label><input type="radio" name="d-purpose" value="gift"> プレゼント</label>
+              <label><input type="radio" name="d-purpose" value="self"> 自分用</label>
+            </div>
+          </div>
+          <label class="pick"><input type="checkbox" id="d-brand"> 有名ブランド重視</label>
+          <label class="pick"><input type="checkbox" id="d-trend"> トレンド重視</label>
+        </div>
+      </details>
+      <button type="button" id="search-btn" class="btn btn-discover">この条件で探す</button>
     </section>
-    </details>
 
-    <div class="random-box">
+    <section class="mode-panel random-box" id="mode-random" hidden>
       <button type="button" id="discover-btn" class="btn btn-random">おまかせで発掘</button>
-      <p class="random-note">条件なしで、何が出るか分からない発掘をします</p>
-    </div>
+      <p class="random-note">条件なしで、何が出るか分からない発掘をします（5商品前後・紹介文つき）</p>
+    </section>
+
+    <nav class="quick-links" aria-label="投稿管理">
+      <a class="quick" href="#manage:room_candidate">ROOM候補</a>
+      <a class="quick" href="#manage:ig_waiting">Instagram投稿待ち</a>
+      <a class="quick" href="#manage:history">投稿履歴</a>
+    </nav>
 
     <div id="loading" class="loading" hidden>
       <div class="spinner" aria-hidden="true"></div>
-      <p>商品を探しています…<br><span class="sub">AIが選ぶまで10〜50秒ほどかかります</span></p>
+      <p id="loading-text">商品を探しています…<br><span class="sub">いくつかの方向から探すので、30〜60秒ほどかかります</span></p>
     </div>
 
     <div id="message" class="message" role="alert" hidden></div>

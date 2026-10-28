@@ -4,12 +4,12 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import handler from '../api/discover.js';
-import curateHandler from '../api/curate.js';
+import exploreHandler from '../api/explore.js';
+import introsHandler from '../api/intros.js';
 import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
-import replaceHandler from '../api/replace.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -24,10 +24,23 @@ if (process.env.MOCK) {
       // 商品画像の中継（api/image）用に、余白つきの見本画像を返す
       if (url.hostname.startsWith('thumbnail')) return new Response(sampleImage, { status: 200, headers: { 'Content-Type': 'image/png' } });
       const min = Number(url.searchParams.get('minPrice')) || 1000;
-      const items = makeItems(20, url.searchParams.get('keyword').split(' ')[0]).map((it, i) => ({ ...it, itemPrice: min + i * 100 }));
+      const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 10) + (url.searchParams.get('page') || '');
+      const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('編集長')
+    openai: (body) => body.messages[0].content.includes('探索係')
+      ? aiReply({ angles: [['王道ブランド', '今治タオル ギフト'], ['価格を抑えた代替', 'ガーゼ スタイ'], ['SNSで話題', 'おむつケーキ'], ['記念品', '名入れ 木製'], ['実用品', 'ベビー 食器'], ['新興ブランド', 'オーガニック ベビー'], ['ママ向け', 'ママ ハンドクリーム'], ['変わり種', 'ベビー 写真 ボード']].map(([label, keyword]) => ({ label, keyword: (body.messages[1].content.includes('避ける角度') ? 'さらに ' : '') + keyword, minPrice: null, maxPrice: null })) })
+      : body.messages[0].content.includes('リサーチ担当')
+      ? aiReply({ items: Array.from({ length: body.messages[0].content.includes('10個') ? 10 : 18 }, (_, i) => ({
+        id: i * 4, role: ['本命', '2番手', 'コスパ', '安い代替', '変わり種', 'トレンド枠', 'プレゼント向き', '実用品', 'ブランド枠', '少し奮発', '失敗しても許せる価格', '知っておきたい', '王道', '個人的に気になる', '本命', 'コスパ', '変わり種', 'トレンド枠'][i],
+        tags: i % 3 === 0 ? ['プレゼント向き'] : [], shortName: ['今治ガーゼタオル', 'スタイ3枚セット', 'おむつケーキ', '名入れフォトフレーム', '木のおもちゃ', 'ベビー食器セット', 'ママ用ハンドクリーム', 'ベビーブランケット', '授乳クッション', 'ベビーシューズ', '沐浴剤', 'ベビー綿棒', 'おくるみ', '手形スタンプ', 'ベビーカー用フック', '歯固め', 'ベビー写真ボード', 'ガラガラ'][i],
+        brand: ['今治', 'MARLMARL', '', 'ハンドメイド工房', 'BorneLund', 'KINTO', 'L\'OCCITANE', 'エイデンアンドアネイ', '', 'ファミリア', '', '', 'エイデンアンドアネイ', '', '', '', '', ''][i],
+        kind: ['タオル', 'スタイ', 'おむつケーキ', '記念品', 'おもちゃ', '食器', 'ママケア', 'ブランケット', '授乳グッズ', '靴', '沐浴', '日用品', 'おくるみ', '記念品', 'ベビーカー用品', 'おもちゃ', '記念品', 'おもちゃ'][i],
+        reason: '自分ではなかなか買わないけど、もらうと毎日使える。箱入りで渡しやすい。', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。'][i % 3]
+      })) })
+      : body.messages[0].content.includes('紹介文を書く担当')
+      ? aiReply({ items: Array.from({ length: 10 }, (_, id) => ({ id, intro: GOOD_INTRO })) })
+      : body.messages[0].content.includes('編集長')
       ? aiReply({ ideas: [
         { topic: '30代男性への5,000円プレゼント', postType: 'プレゼントならコレ', target: '30代男性の友人・同僚に贈る人', priceBand: '4,000〜6,000円', genre: 'プレゼント', brands: ['IL BISONTE', 'STANLEY'], whyInteresting: '5,000円は安っぽく見えやすい予算。選び方の基準を作ると迷わない', slots: ['迷ったらこれ', '王道', 'センス枠', '実用性重視', '価格を抑えるなら', '少し奮発するなら'].map((label) => ({ label, keyword: label + ' ギフト', minPrice: 3000, maxPrice: 7000 })) },
         { topic: 'タンブラー', subtitle: '― 高い本命と安い代替 ―', postType: '本命＋安い代替', target: '毎日コーヒーを持ち歩く人', priceBand: '1,500〜6,000円', genre: '旅行・アウトドア', brands: ['STANLEY', 'THERMOS', 'Hydro Flask'], axis: '所有満足感 vs 実用性', whyInteresting: '値段差が大きいのに見た目が似ているので、違いを整理する価値がある', slots: ['本命ブランド', '本命の中では買いやすい', 'コスパ代替', 'まず試す代替', '用途違いの別解', '一番バランスが良い'].map((label) => ({ label, keyword: 'タンブラー 真空断熱' })) },
@@ -56,8 +69,8 @@ if (process.env.MOCK) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/discover') return handler(req, res, env);
-  if (url.pathname === '/api/curate') return curateHandler(req, res, env);
-  if (url.pathname === '/api/replace') return replaceHandler(req, res, env);
+  if (url.pathname === '/api/explore') return exploreHandler(req, res, env);
+  if (url.pathname === '/api/intros') return introsHandler(req, res, env);
   if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
