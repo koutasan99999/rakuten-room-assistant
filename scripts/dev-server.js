@@ -7,6 +7,7 @@ import handler from '../api/discover.js';
 import curateHandler from '../api/curate.js';
 import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
+import plansHandler from '../api/plans.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -49,6 +50,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/curate') return curateHandler(req, res, env);
   if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
+  if (url.pathname === '/api/plans') return plansHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

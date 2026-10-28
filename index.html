@@ -20,6 +20,12 @@
   </header>
 
   <main class="container" id="view-discover">
+    <details class="plans-box" id="plans-box">
+      <summary>企画から作る（最初の10投稿）<span id="plans-progress" class="tab-count"></span></summary>
+      <p class="hint">「○○について 本気出して考えてみた」シリーズ。決めてある役割の枠で、選び方まとめを作ります。投稿タイプが続かないよう、上から順に作るのがおすすめの順番です。</p>
+      <div id="plans-list" class="plans-list"></div>
+    </details>
+
     <section class="search-box" aria-label="発掘条件">
       <label class="field">
         <span class="field-label">ジャンル</span>
@@ -103,6 +109,10 @@
         <span class="field-label">投稿テーマ</span>
         <input id="ig-theme" class="input" type="text" maxlength="40" placeholder="例：出産祝い">
         <span class="hint">「◯◯について本気出して考えてみた」の◯◯を入れます</span>
+      </label>
+      <label class="field">
+        <span class="field-label">表紙のサブタイトル <span class="optional">任意</span></span>
+        <input id="ig-subtitle" class="input" type="text" maxlength="24" placeholder="空欄なら「迷ったので整理しました」">
       </label>
       <label class="field">
         <span class="field-label">カテゴリ <span class="optional">任意</span></span>

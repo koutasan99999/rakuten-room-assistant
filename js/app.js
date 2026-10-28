@@ -430,6 +430,7 @@
   var composeView = document.getElementById('view-compose');
   var igTheme = document.getElementById('ig-theme');
   var igCategory = document.getElementById('ig-category');
+  var igSubtitle = document.getElementById('ig-subtitle');
   var igCta = document.getElementById('ig-cta');
   var igItemsEl = document.getElementById('ig-items');
   var igCount = document.getElementById('ig-count');
@@ -461,6 +462,7 @@
   function saveDraft() {
     draft.theme = igTheme.value.trim();
     draft.category = igCategory.value.trim();
+    draft.subtitle = igSubtitle.value.trim();
     draft.cta = Number(igCta.value) || 0;
     draft.summary = Object.assign(draft.summary || emptySummary(), {
       enabled: igSumOn.checked,
@@ -478,6 +480,7 @@
       return { id: x.id, code: x.code, name: x.name, price: x.price, image: x.image, url: x.url, reason: x.reason || x.why || '', intro: x.intro || '', role: x.role || '' };
     });
     draft.summary = emptySummary(); // 商品が変わったので2枚目はAIに作ってもらう
+    draft.planId = '';
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     location.hash = '#compose';
   });
@@ -490,6 +493,12 @@
       return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '' };
     });
     draft.summary = { enabled: true, typeName: d.typeName || '', title: d.title || '', lead: d.lead || '', verdict: d.verdict || '' };
+    draft.planId = d.plan ? d.plan.id : '';
+    if (d.plan) {
+      draft.theme = d.plan.topic;
+      draft.subtitle = d.plan.subtitle || '';
+      draft.category = d.plan.category || '';
+    }
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     // 投稿管理にも「Instagram投稿待ち」として入れておく
     Promise.all(d.products.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount);
@@ -500,6 +509,7 @@
     loadDraft();
     igTheme.value = draft.theme || '';
     igCategory.value = draft.category || '';
+    igSubtitle.value = draft.subtitle || '';
     igCta.value = String(draft.cta || 0);
     var sum = draft.summary || emptySummary();
     igSumOn.checked = sum.enabled !== false;
@@ -551,7 +561,7 @@
       igItemsEl.appendChild(row);
     });
   }
-  [igTheme, igCategory, igCta, igSumOn, igSumTitle, igSumLead, igSumVerdict].forEach(function (x) { x.addEventListener('change', saveDraft); });
+  [igTheme, igCategory, igSubtitle, igCta, igSumOn, igSumTitle, igSumLead, igSumVerdict].forEach(function (x) { x.addEventListener('change', saveDraft); });
 
   function showIgMessage(text, isError, detail) {
     igMessage.textContent = text;
@@ -627,7 +637,7 @@
       var slides = window.IgRender.renderPost({
         topic: copy.topic,
         category: draft.category || copy.category,
-        subtitle: '迷ったので整理しました',
+        subtitle: draft.subtitle || '迷ったので整理しました',
         bear: r[2],
         ctaMessage: window.IgRender.CTA_MESSAGES[draft.cta || 0],
         summary: !sum.enabled ? null : needSummary
@@ -706,6 +716,7 @@
     Promise.all(draft.items.map(function (it) { return Store.setStatus(it, 'ig_posted'); })).then(function () {
       updateManageCount();
       showToast(draft.items.length + '商品を「Instagram投稿済み」にしました');
+      if (draft.planId) setPlanDone(draft.planId, true);
     });
   });
   window.addEventListener('hashchange', showView);
@@ -731,7 +742,7 @@
 
   function renderCurationHeader(d) {
     var card = el('article', 'card curation-head');
-    card.appendChild(el('p', 'type-chip', d.typeName));
+    card.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.typeName));
     card.appendChild(el('h2', 'curation-title', d.title));
     if (d.axis) {
       var axis = el('p', 'axis');
@@ -887,6 +898,63 @@
       renderCuration(data);
     });
   }
+
+  // ---- 企画（最初の10投稿） ----
+  var PLANS_DONE_KEY = 'room-plans-done';
+  var plansList = document.getElementById('plans-list');
+  var plansProgress = document.getElementById('plans-progress');
+  var plans = [];
+
+  function plansDone() {
+    try { return JSON.parse(localStorage.getItem(PLANS_DONE_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function setPlanDone(id, done) {
+    var d = plansDone();
+    if (done) d[id] = Date.now(); else delete d[id];
+    try { localStorage.setItem(PLANS_DONE_KEY, JSON.stringify(d)); } catch (e) {}
+    renderPlans();
+  }
+
+  function renderPlans() {
+    if (!plans.length) return;
+    var done = plansDone();
+    var next = plans.filter(function (p) { return !done[p.id]; })[0];
+    plansProgress.textContent = Object.keys(done).filter(function (id) { return plans.some(function (p) { return p.id === id; }); }).length + '/' + plans.length;
+    plansList.innerHTML = '';
+    plans.forEach(function (p) {
+      var row = el('div', 'plan-row' + (done[p.id] ? ' done' : '') + (next && next.id === p.id ? ' next' : ''));
+      var head = el('div', 'plan-head');
+      head.appendChild(el('span', 'plan-no', String(p.no)));
+      head.appendChild(el('span', 'plan-type', p.postType));
+      if (next && next.id === p.id) head.appendChild(el('span', 'plan-next', '次はこれ'));
+      row.appendChild(head);
+      row.appendChild(el('p', 'plan-title', p.topic + 'について本気出して考えてみた' + (p.subtitle ? ' ' + p.subtitle : '')));
+      row.appendChild(el('p', 'plan-roles', p.purpose + '｜' + p.roles.join('・')));
+      var actions = el('div', 'plan-actions');
+      if (done[p.id]) {
+        actions.appendChild(el('span', 'plan-done', '✓ 投稿済み'));
+        var undo = el('button', 'link-btn', '取り消す');
+        undo.type = 'button';
+        undo.addEventListener('click', function () { setPlanDone(p.id, false); });
+        actions.appendChild(undo);
+      } else {
+        var make = el('button', 'btn btn-primary', 'この企画で作る');
+        make.type = 'button';
+        make.addEventListener('click', function () {
+          document.getElementById('plans-box').open = false;
+          curate({ planId: p.id });
+        });
+        actions.appendChild(make);
+      }
+      row.appendChild(actions);
+      plansList.appendChild(row);
+    });
+  }
+
+  fetch('api/plans').then(function (r) { return r.json(); }).then(function (d) {
+    plans = d.plans || [];
+    renderPlans();
+  }).catch(function () {});
 
   function readConditions() {
     return { genre: genreSelect.value, type: curateType.value, free: freeText.value.trim() };
