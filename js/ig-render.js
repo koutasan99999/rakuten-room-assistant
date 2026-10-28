@@ -24,7 +24,13 @@
     accent: '#9A8573',
     pill: '#7A7A7A',
     line: '#D6D6D6',
-    memoBg: '#FFFFFF'
+    memoBg: '#FFFFFF',
+    // 2枚目「まとめ」だけ少しポップに（派手にしすぎない落ち着いた色）
+    popBg: '#FBF1E1',
+    popDot: 'rgba(229,142,109,0.10)',
+    popCoral: '#E58E6D',
+    popMarker: '#F7DC8A',
+    popInk: '#2B2B2B'
   };
 
   var FONT = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "IPAGothic", sans-serif';
@@ -264,6 +270,74 @@
     ctx.textAlign = 'left';
   }
 
+  // 2枚目「まとめ」の本文。draw が false のときは描かずに、下端の位置だけ返す
+  function summaryBody(ctx, d, k, draw) {
+    var W = SIZE.width;
+    var maxW = W - M * 2;
+    var y = 250;
+    ctx.fillStyle = C.popInk;
+    var title = fitText(ctx, d.title, { size: Math.round(70 * k), minSize: 40, weight: 800, maxWidth: maxW, maxLines: 3 });
+    ctx.font = font(title.size, 800);
+    if (draw) drawLines(ctx, title.lines, M, y, title.size * 1.3);
+    y += title.lines.length * title.size * 1.3;
+
+    if (d.lead) {
+      var pad = Math.round(44 * k);
+      var lead = fitText(ctx, d.lead, { size: Math.round(36 * k), minSize: 22, weight: 500, maxWidth: maxW - pad * 2, maxLines: 8 });
+      var lh = lead.size * 1.62;
+      var cardY = y + 10;
+      var cardH = pad * 2 + lead.lines.length * lh - (lh - lead.size) + 8;
+      if (draw) {
+        roundRect(ctx, M + 12, cardY + 12, maxW, cardH, 32);
+        ctx.fillStyle = C.popInk;
+        ctx.fill();
+        roundRect(ctx, M, cardY, maxW, cardH, 32);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = C.popInk;
+        ctx.stroke();
+        ctx.fillStyle = C.popInk;
+        ctx.font = font(lead.size, 500);
+        drawLines(ctx, lead.lines, M + pad, cardY + pad + lead.size, lh);
+      }
+      y = cardY + cardH + 12;
+    }
+
+    if (d.verdict) {
+      var by = y + Math.round(64 * k);
+      var bd = Math.round(120 * Math.max(k, 0.8));
+      var vx = M + bd + 32;
+      var vw = W - M - vx;
+      var v = fitText(ctx, d.verdict, { size: Math.round(44 * k), minSize: 26, weight: 800, maxWidth: vw, maxLines: 4 });
+      var vlh = v.size * 1.5;
+      if (draw) {
+        ctx.beginPath();
+        ctx.arc(M + bd / 2, by + bd / 2, bd / 2, 0, Math.PI * 2);
+        ctx.fillStyle = C.popCoral;
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = font(Math.round(bd * 0.3), 800);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('結論', M + bd / 2, by + bd / 2 + 2);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = font(v.size, 800);
+        v.lines.forEach(function (line, i) {
+          var ly = by + v.size + 8 + i * vlh;
+          var lw = ctx.measureText(line).width;
+          ctx.fillStyle = C.popMarker;
+          ctx.fillRect(vx - 6, ly - v.size * 0.36, lw + 12, v.size * 0.46);
+          ctx.fillStyle = C.popInk;
+          ctx.fillText(line, vx, ly);
+        });
+      }
+      y = Math.max(by + bd, by + 8 + v.lines.length * vlh);
+    }
+    return y;
+  }
+
   // ---- テンプレート ----
   var TEMPLATES = {
     // 1枚目：表紙
@@ -397,6 +471,46 @@
       drawBear(ctx, d.bear, bcx, bcy, bd);
     },
 
+    // 2枚目：まとめ（どれから見ればいいか・結論）をポップに
+    summary: function (ctx, d) {
+      var W = SIZE.width, H = SIZE.height;
+      ctx.fillStyle = C.popBg;
+      ctx.fillRect(0, 0, W, H);
+      // 水玉
+      ctx.fillStyle = C.popDot;
+      for (var yy = 40; yy < H; yy += 64) {
+        for (var xx = (yy / 64) % 2 ? 40 : 72; xx < W; xx += 64) {
+          ctx.beginPath(); ctx.arc(xx, yy, 6, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // 左上：少し傾けた型のラベル
+      ctx.save();
+      ctx.translate(M - 10, M + 8);
+      ctx.rotate(-0.05);
+      ctx.font = font(34, 800);
+      var cw = ctx.measureText(d.typeName).width + 60;
+      roundRect(ctx, 0, -6, cw, 70, 35);
+      ctx.fillStyle = C.popCoral;
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d.typeName, 30, 30);
+      ctx.restore();
+      ctx.textBaseline = 'alphabetic';
+      pageNumber(ctx, d.page, d.total);
+
+      // 文章が長いときは、クマと下の一文にかからない大きさになるまで全体を少しずつ小さくする
+      var limitY = H - M - 200;
+      var scale = 1;
+      while (scale > 0.62 && summaryBody(ctx, d, scale, false) > limitY) scale -= 0.04;
+      summaryBody(ctx, d, scale, true);
+
+      ctx.fillStyle = C.sub;
+      ctx.font = font(30, 600);
+      ctx.fillText('次のページから1つずつ紹介 →', M, H - M - 10);
+      drawBear(ctx, d.bear, W - M - 85, H - M - 85, 170);
+    },
+
     // 最後：ROOMへの誘導
     cta: function (ctx, d) {
       ctx.fillStyle = C.coverBg;
@@ -440,16 +554,28 @@
   }
 
   // 投稿1つ分（表紙 + 商品カード + ROOM誘導）を作る
-  // post: { topic, category, subtitle, bear, items: [{ image, shortName, subline, memo, price, role, slug }], ctaMessage }
+  // post: { topic, category, subtitle, bear, summary?: { typeName, title, lead, verdict }, items: [{ image, shortName, subline, memo, price, role, slug }], ctaMessage }
   function renderPost(post) {
-    var total = post.items.length + 2;
+    var hasSummary = !!(post.summary && post.summary.title && post.summary.verdict);
+    var offset = hasSummary ? 1 : 0;
+    var total = post.items.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear }) }];
-    post.items.forEach(function (it, i) {
+    if (hasSummary) {
       slides.push({
-        fileName: pad(i + 2) + '_item_' + (it.slug || 'item' + (i + 1)) + '.png',
+        fileName: '02_summary.png',
+        canvas: render('summary', {
+          typeName: post.summary.typeName || 'まず結論', title: post.summary.title, lead: post.summary.lead,
+          verdict: post.summary.verdict, page: 2, total: total, bear: post.bear
+        })
+      });
+    }
+    post.items.forEach(function (it, i) {
+      var page = i + 2 + offset;
+      slides.push({
+        fileName: pad(page) + '_item_' + (it.slug || 'item' + (i + 1)) + '.png',
         canvas: render('item', {
-          category: post.category, page: i + 2, total: total, image: it.image, shortName: it.shortName,
+          category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
           subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear
         })
       });
