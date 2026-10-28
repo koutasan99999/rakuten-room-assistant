@@ -180,6 +180,13 @@
     card.appendChild(el('p', 'count', p.intro.length + '字'));
 
     var actions = el('div', 'actions');
+    // 「これ良いかも」と思った商品を起点に、Instagram企画を考える
+    if (opts.onSeed) {
+      var seedBtn = el('button', 'btn btn-seed', 'この商品から企画を考える');
+      seedBtn.type = 'button';
+      seedBtn.addEventListener('click', function () { opts.onSeed(p); });
+      actions.appendChild(seedBtn);
+    }
     // ROOMの投稿画面を直接開く（ROOMアプリが入っていればアプリで開くことがある）。
     // 押した瞬間に紹介文もコピーしておくので、投稿画面で貼り付けるだけで済む
     if (p.code) {
@@ -996,6 +1003,7 @@
     if (Date.now() - last.at > 24 * 60 * 60 * 1000) return; // 1日以上前の結果は出さない
     if (last.mode === 'explore' && (last.data.candidates || []).length) renderExplore(last.data);
     else if (last.mode === 'discover' && (last.data.products || []).length) renderDiscover(last.data);
+    else if (last.mode === 'seed' && last.data.product && (last.data.ideas || []).length) renderSeed(last.data, false);
   }
 
   // 発掘結果をInstagramの投稿文に使える1つの文章にする
@@ -1029,7 +1037,122 @@
       genreEl.hidden = false;
     }
     if (products.length >= 2) results.appendChild(renderDiscoverHeader(data));
-    products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
+    products.forEach(function (p) {
+      results.appendChild(renderCard(p, { genreId: data.genreId, onSeed: function (prod) { startSeed(prod, data); } }));
+    });
+  }
+
+  // ---- この商品から企画を考える（偶然見つけた1商品を、次の投稿企画に育てる） ----
+  // back: 戻るときに表示し直すランダム発掘の結果
+  function startSeed(product, back) {
+    message.hidden = true;
+    genreEl.hidden = true;
+    results.innerHTML = '';
+    var seed = {
+      name: product.name, code: product.code, price: product.price, url: product.url, image: product.image,
+      shop: product.shop, brand: product.brand || '', reason: product.reason || '', caption: product.caption || ''
+    };
+    var view = { product: seed, ideas: [], analysis: '', back: back };
+    renderSeed(view, true);
+    window.scrollTo({ top: results.offsetTop - 8, behavior: 'smooth' });
+    postJson('api/seed-ideas', { product: seed }).then(function (r) {
+      if (r.status !== 200) {
+        results.innerHTML = '';
+        renderSeed(view, false);
+        showMessage(r.data.error || '企画を考えられませんでした。もう一度お試しください。', true, r.data.detail);
+        return;
+      }
+      view.ideas = r.data.ideas || [];
+      view.analysis = r.data.analysis || '';
+      saveLast('seed', view);
+      results.innerHTML = '';
+      renderSeed(view, false);
+      if (r.data.notice) showMessage(r.data.notice, false, r.data.detail);
+    }, function () {
+      results.innerHTML = '';
+      renderSeed(view, false);
+      showMessage('通信できませんでした。電波の良い場所でもう一度お試しください。', true);
+    });
+  }
+
+  function renderSeed(view, thinking) {
+    var p = view.product;
+    if (view.back) {
+      var backBtn = el('button', 'link-btn seed-back', '← ランダム発掘の結果に戻る');
+      backBtn.type = 'button';
+      backBtn.addEventListener('click', function () {
+        results.innerHTML = '';
+        message.hidden = true;
+        saveLast('discover', view.back);
+        renderDiscover(view.back);
+      });
+      results.appendChild(backBtn);
+    }
+    var head = el('article', 'card seed-head');
+    head.appendChild(el('p', 'type-chip', 'この商品から企画を考える'));
+    var top = el('div', 'cand-top');
+    if (p.image) {
+      var img = el('img', 'cand-thumb');
+      img.src = p.image;
+      img.alt = '';
+      img.onerror = function () { img.remove(); };
+      top.appendChild(img);
+    }
+    var info = el('div', 'cand-info');
+    info.appendChild(el('p', 'seed-label', '起点の商品'));
+    info.appendChild(el('h3', 'cand-name', p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 50)));
+    info.appendChild(el('p', 'cand-meta', formatPrice(p.price)));
+    top.appendChild(info);
+    head.appendChild(top);
+    if (view.analysis) head.appendChild(el('p', 'cand-reason', view.analysis));
+    results.appendChild(head);
+    if (thinking) {
+      var wait = el('div', 'loading');
+      wait.appendChild(el('div', 'spinner'));
+      var t = el('p');
+      t.innerHTML = 'この商品を活かせる企画を考えています…<br><span class="sub">20〜40秒ほどかかります</span>';
+      wait.appendChild(t);
+      results.appendChild(wait);
+      return;
+    }
+    if (!view.ideas.length) return;
+    results.appendChild(el('p', 'hint seed-hint', '同じ商品から、切り口の違う企画を考えました。「この企画で広げる」を押すと、この商品を必ず採用にしたまま、企画に合う商品を15〜20件探します。'));
+    view.ideas.forEach(function (idea, i) { results.appendChild(seedIdeaCard(idea, i, p)); });
+  }
+
+  function seedIdeaCard(idea, i, product) {
+    var card = el('article', 'idea-card seed-idea');
+    var head = el('div', 'idea-head');
+    head.appendChild(el('span', 'idea-no', '案' + (i + 1)));
+    head.appendChild(el('span', 'plan-type', idea.postType));
+    head.appendChild(el('span', 'seed-role ' + idea.seedRole, idea.seedRole === 'trigger' ? 'きっかけ型' : '主役型'));
+    card.appendChild(head);
+    card.appendChild(el('h3', 'idea-title', idea.title));
+    var dl = el('dl', 'idea-facts');
+    [['起点商品', product.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 30)], ['この商品の使い方', idea.howUsed], ['ターゲット', idea.target], ['価格帯', idea.priceBand], ['比較軸', idea.axis], ['想定候補数', '約' + idea.expectedCount + '件']].forEach(function (f) {
+      if (!f[1]) return;
+      dl.appendChild(el('dt', null, f[0]));
+      dl.appendChild(el('dd', null, f[1]));
+    });
+    card.appendChild(dl);
+    var more = el('div', 'seed-more');
+    more.appendChild(el('p', 'angles-label', '追加で探す'));
+    var ul = el('ul', 'angle-list');
+    idea.searchGenres.forEach(function (g) { ul.appendChild(el('li', null, g)); });
+    more.appendChild(ul);
+    card.appendChild(more);
+    if (idea.whyInteresting) card.appendChild(el('p', 'idea-why', 'なぜ成立するか：' + idea.whyInteresting));
+    var go = el('button', 'btn btn-primary', 'この企画で広げる');
+    go.type = 'button';
+    go.addEventListener('click', function () {
+      History.add({
+        title: idea.title, topic: idea.topic, genre: idea.genre, postType: idea.postType,
+        target: idea.target, priceBand: idea.priceBand, brands: product.brand ? [product.brand] : []
+      }).then(setCurrentPostId, function () {});
+      exploreProducts({ idea: idea, seed: product });
+    });
+    card.appendChild(go);
+    return card;
   }
 
   // 完全ランダムの発掘（5商品前後、紹介文つき）
@@ -1122,7 +1245,7 @@
   }
 
   function candidateCard(c, onToggle) {
-    var card = el('article', 'cand-card' + (c.picked ? ' picked' : ''));
+    var card = el('article', 'cand-card' + (c.picked ? ' picked' : '') + (c.role === '起点商品' ? ' seed-cand' : ''));
     var top = el('div', 'cand-top');
     if (c.image) {
       var img = el('img', 'cand-thumb');
@@ -1155,18 +1278,34 @@
       memo.appendChild(document.createTextNode(c.memo));
       card.appendChild(memo);
     }
+    // 起点の商品は「必ず採用」で固定（解除もできる）
+    if (c.role === '起点商品') {
+      var pinRow = el('div', 'pin-row' + (c.pinned ? ' on' : ''));
+      pinRow.appendChild(el('span', null, c.pinned ? 'この商品は必ず採用（固定中）' : '固定を解除しています'));
+      var pinBtn = el('button', 'link-btn', c.pinned ? '固定を解除' : 'もう一度固定する');
+      pinBtn.type = 'button';
+      pinBtn.addEventListener('click', function () {
+        c.pinned = !c.pinned;
+        if (c.pinned) c.picked = true;
+        card.parentNode.replaceChild(candidateCard(c, onToggle), card);
+        onToggle();
+      });
+      pinRow.appendChild(pinBtn);
+      card.appendChild(pinRow);
+    }
     var actions = el('div', 'cand-actions');
     var pick = el('label', 'cand-pick');
     var box = el('input');
     box.type = 'checkbox';
     box.checked = !!c.picked;
+    box.disabled = !!c.pinned;
     box.addEventListener('change', function () {
       c.picked = box.checked;
       card.classList.toggle('picked', c.picked);
       onToggle();
     });
     pick.appendChild(box);
-    pick.appendChild(document.createTextNode(' Instagramに採用'));
+    pick.appendChild(document.createTextNode(c.pinned ? ' 必ず採用' : ' Instagramに採用'));
     actions.appendChild(pick);
     var link = el('a', 'btn btn-secondary cand-link', '楽天で見る');
     link.href = c.url;
@@ -1308,7 +1447,7 @@
   function composeFromExplore(d, items, intros) {
     loadDraft();
     draft.items = items.map(function (c, i) {
-      return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.role || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
+      return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.postRole || c.role || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
     });
     draft.postId = d.idea || d.plan ? currentPostId() : '';
     draft.genre = d.idea ? d.idea.genre || '' : '';
