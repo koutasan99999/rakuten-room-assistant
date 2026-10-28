@@ -133,6 +133,23 @@
     return btn;
   }
 
+  // 文字を入れる欄に「クリア」を付ける（前の内容は残しておき、全部消したいときは1回で消せる）
+  function addClear(input) {
+    var label = input.parentNode && input.parentNode.querySelector('.field-label');
+    if (!label || label.querySelector('.clear-btn')) return;
+    var btn = el('button', 'clear-btn', 'クリア');
+    btn.type = 'button';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      input.value = '';
+      // 保存や画面の更新は、ふだんの入力と同じ仕組みで動かす
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    });
+    label.appendChild(btn);
+  }
+
   function addSection(card, label, text, className) {
     if (!text) return;
     card.appendChild(el('p', 'label', label));
@@ -1578,6 +1595,7 @@
     if (multi) input.rows = 2; else input.type = 'text';
     input.value = value || '';
     wrap.appendChild(input);
+    addClear(input);
     return { wrap: wrap, input: input };
   }
 
@@ -1818,6 +1836,26 @@
   }
   [genreSelect, freeText, dMin, dMax, dTarget, dAge, dBrand, dTrend].forEach(function (x) { x.addEventListener('change', saveConditions); });
   Array.prototype.forEach.call(document.querySelectorAll('input[name="d-purpose"]'), function (x) { x.addEventListener('change', saveConditions); });
+
+  // 条件をすべて最初の状態に戻す
+  function clearConditions() {
+    genreSelect.value = '';
+    selectedType = 'omakase';
+    freeText.value = '';
+    dMin.value = '';
+    dMax.value = '';
+    dTarget.value = '';
+    dAge.value = '';
+    document.querySelector('input[name="d-purpose"][value=""]').checked = true;
+    dBrand.checked = false;
+    dTrend.checked = false;
+    detailBox.open = false;
+    renderTypeChoices();
+    saveConditions();
+    showToast('条件をクリアしました');
+  }
+  document.getElementById('cond-clear').addEventListener('click', clearConditions);
+  [freeText, dTarget, dMin, dMax, igTheme, igSubtitle, igCategory, roomColName].forEach(addClear);
 
   function searchWithConditions() {
     var c = readConditions();
