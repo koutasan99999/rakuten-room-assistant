@@ -142,8 +142,9 @@
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
-    if (p.role || p.giftClass || p.basis) {
+    if (p.role || p.giftClass || p.basis || p.side) {
       var chips = el('div', 'chips');
+      if (p.side) chips.appendChild(el('span', 'side ' + (p.side === '本命' ? 'side-main' : 'side-alt'), p.side));
       if (p.role) chips.appendChild(el('span', 'role', p.role));
       if (p.giftClass) chips.appendChild(el('span', 'gift-class', p.giftClass));
       if (p.basis) chips.appendChild(el('span', 'basis' + (p.basis === 'トレンド枠' ? ' trend' : ''), p.basis));
@@ -165,6 +166,7 @@
     top.appendChild(info);
     card.appendChild(top);
 
+    if (p.pick) card.appendChild(el('p', 'pick-line', p.pick));
     if (opts.curation) {
       addSection(card, 'こんな人に', p.forWho);
       addSection(card, 'この位置の理由', p.why);
@@ -484,7 +486,8 @@
   function composeFromCuration(d) {
     loadDraft();
     draft.items = d.products.map(function (p) {
-      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: p.why || p.reason || '', intro: p.intro || '', role: p.role || '' };
+      var reason = [p.pick, p.why || p.reason].filter(Boolean).join('。');
+      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '' };
     });
     draft.summary = { enabled: true, typeName: d.typeName || '', title: d.title || '', lead: d.lead || '', verdict: d.verdict || '' };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
@@ -711,9 +714,11 @@
   function curationText(d) {
     var marks = ['①', '②', '③', '④', '⑤'];
     var lines = [d.title, ''];
+    if (d.axis) lines.push('比較軸：' + d.axis, '');
     if (d.lead) lines.push(d.lead, '');
     d.products.forEach(function (p, i) {
       lines.push(marks[i] + ' ' + p.role + (p.giftClass ? '（' + p.giftClass + '）' : '') + '：' + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
+      if (p.pick) lines.push('→ ' + p.pick);
       if (p.forWho) lines.push('・' + p.forWho);
       if (p.why) lines.push('・' + p.why);
       if (p.tradeoff) lines.push('・' + p.tradeoff);
@@ -728,6 +733,12 @@
     var card = el('article', 'card curation-head');
     card.appendChild(el('p', 'type-chip', d.typeName));
     card.appendChild(el('h2', 'curation-title', d.title));
+    if (d.axis) {
+      var axis = el('p', 'axis');
+      axis.appendChild(document.createTextNode('比較軸：'));
+      axis.appendChild(el('strong', null, d.axis));
+      card.appendChild(axis);
+    }
     if (d.lead) card.appendChild(el('p', 'reason', d.lead));
     if (d.verdict) card.appendChild(el('p', 'verdict', d.verdict));
     var actions = el('div', 'actions');
