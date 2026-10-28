@@ -178,6 +178,8 @@
     <div id="ig-message" class="message" role="alert" hidden></div>
 
     <section id="ig-result" class="ig-result" hidden>
+      <button type="button" id="ig-room" class="btn btn-discover">ROOM登録準備へ</button>
+      <p class="hint">Instagramに出す前に、紹介する商品をROOMに入れておくと、見た人がそのままROOMで見つけられます。</p>
       <h3 class="compose-sub">できあがり</h3>
       <div id="ig-preview" class="ig-preview"></div>
       <h3 class="compose-sub">キャプション</h3>
@@ -199,6 +201,29 @@
     <p>紹介文は商品ページの情報と合っているか確認してから投稿してください。</p>
     <button type="button" id="reset-passcode" class="link-btn" hidden>合言葉を入れ直す</button>
   </footer>
+
+  <main class="container" id="view-room" hidden>
+    <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
+    <h2 class="compose-title">ROOM登録準備</h2>
+    <p id="room-title" class="room-title"></p>
+    <div class="room-progress">
+      <p class="room-progress-label">ROOM登録 <span id="room-bar" class="room-bar"></span> <span id="room-count"></span></p>
+      <p id="room-complete" class="room-complete" hidden>ROOM登録完了</p>
+    </div>
+    <p class="hint">ROOMへの投稿は、ROOMのルール上アプリからは行えません。各商品の「コピーしてROOMで投稿」で、紹介文をコピーしながらROOMの投稿画面を開き、紹介文を貼り付けて、ROOMで「投稿」を押してください。終わったら「ROOM投稿済みにする」を押すと、進み具合が記録されます。</p>
+    <div id="room-items" class="results"></div>
+
+    <section class="search-box room-collection">
+      <h3 class="compose-sub">ROOMのコレクション</h3>
+      <label class="field">
+        <span class="field-label">コレクション名（Instagramのテーマとそろえています）</span>
+        <input id="room-col-name" class="input" type="text" maxlength="40">
+      </label>
+      <button type="button" id="room-col-copy" class="btn btn-secondary">コレクション名をコピー</button>
+      <p class="hint">ROOMアプリの「コレクション」で、この名前のコレクションを作り、上の商品を追加してください。</p>
+      <label class="pick"><input type="checkbox" id="room-col-done"> コレクションに入れた</label>
+    </section>
+  </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

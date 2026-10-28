@@ -521,7 +521,7 @@
 
       ctx.fillStyle = C.text;
       // 改行した位置を保ったまま、各行が1行に収まる大きさにする
-      var main = fitText(ctx, d.message, { size: 84, minSize: 56, weight: 800, maxWidth: maxW, maxLines: d.message.split('\n').length });
+      var main = fitText(ctx, d.message, { size: 84, minSize: 40, weight: 800, maxWidth: maxW, maxLines: d.message.split('\n').length });
       ctx.font = font(main.size, 800);
       var y = drawLines(ctx, main.lines, M, 470, main.size * 1.32);
 

@@ -415,7 +415,17 @@
         card.appendChild(el('p', 'history-meta', [historyDate(h.createdAt), h.postType, h.genre, h.target, h.priceBand].filter(Boolean).join('｜')));
         if (h.brands && h.brands.length) card.appendChild(el('p', 'history-meta', 'ブランド：' + h.brands.join('・')));
         if (h.products && h.products.length) card.appendChild(el('p', 'history-meta', '商品：' + h.products.map(function (x) { return x.name.slice(0, 18); }).join(' / ')));
+        if (h.products && h.products.length && h.products[0].url) {
+          var roomDoneCount = h.products.filter(function (x) { return (h.roomDone || {})[x.id]; }).length;
+          card.appendChild(el('p', 'history-meta', 'ROOM登録 ' + progressBar(roomDoneCount, h.products.length) + ' ' + roomDoneCount + '/' + h.products.length +
+            (h.collectionName ? '｜コレクション「' + h.collectionName + '」' + (h.collectionDone ? '登録済み' : '未登録') : '')));
+        }
         var actions = el('div', 'plan-actions');
+        if (h.products && h.products.length && h.products[0].url) {
+          var roomLink = el('a', 'link-btn', 'ROOM登録準備を開く');
+          roomLink.href = '#room:' + h.id;
+          actions.appendChild(roomLink);
+        }
         if (h.status !== 'posted') {
           var done = el('button', 'link-btn', 'Instagram投稿済みにする');
           done.type = 'button';
@@ -482,18 +492,133 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : 'discover';
+    roomView.hidden = view !== 'room';
+    if (view === 'room') renderRoom(parts[1] || draft.postId);
     if (view === 'manage' && parts[1] && (MANAGE_TABS.indexOf(parts[1]) !== -1 || parts[1] === 'history')) currentTab = parts[1];
     manageView.hidden = view !== 'manage';
     discoverView.hidden = view !== 'discover';
     composeView.hidden = view !== 'compose';
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
-      t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' ? 'manage' : view));
+      t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' ? 'manage' : view));
     });
     if (view === 'manage') renderManage();
     if (view === 'compose') renderCompose();
     window.scrollTo(0, 0);
   }
+
+  // ---- ROOM登録準備（投稿の確定は、ユーザーがROOMで行う） ----
+  var roomView = document.getElementById('view-room');
+  var roomItems = document.getElementById('room-items');
+  var roomColName = document.getElementById('room-col-name');
+  var roomColDone = document.getElementById('room-col-done');
+  var roomPostId = '';
+
+  function progressBar(done, total) {
+    var bar = '';
+    for (var i = 0; i < total; i++) bar += i < done ? '■' : '□';
+    return bar;
+  }
+
+  function renderRoom(id) {
+    roomPostId = id || '';
+    roomItems.innerHTML = '';
+    if (!id) {
+      document.getElementById('room-title').textContent = '対象の投稿がありません。Instagram画像を作ってから開いてください。';
+      return;
+    }
+    History.get(id).then(function (rec) {
+      if (!rec) { document.getElementById('room-title').textContent = 'この投稿の記録が見つかりませんでした。'; return; }
+      var products = rec.products || [];
+      var doneMap = rec.roomDone || {};
+      var doneCount = products.filter(function (p) { return doneMap[p.id]; }).length;
+      document.getElementById('room-title').textContent = rec.title || rec.topic;
+      document.getElementById('room-bar').textContent = progressBar(doneCount, products.length);
+      document.getElementById('room-count').textContent = doneCount + ' / ' + products.length;
+      document.getElementById('room-complete').hidden = !(products.length && doneCount === products.length);
+      roomColName.value = rec.collectionName || History.collectionNameFor(rec.topic);
+      roomColDone.checked = !!rec.collectionDone;
+
+      products.forEach(function (p, i) {
+        var done = !!doneMap[p.id];
+        var card = el('article', 'card room-item' + (done ? ' done' : ''));
+        var chips = el('div', 'chips');
+        chips.appendChild(el('span', 'side side-main', String(i + 1)));
+        if (p.role) chips.appendChild(el('span', 'role', p.role));
+        chips.appendChild(el('span', 'room-state' + (done ? ' done' : ''), done ? '✓ ROOM投稿済み' : '未投稿'));
+        card.appendChild(chips);
+        var top = el('div', 'card-top');
+        if (p.image) {
+          var img = el('img', 'thumb');
+          img.src = p.image;
+          img.alt = '';
+          img.onerror = function () { img.remove(); };
+          top.appendChild(img);
+        }
+        var info = el('div');
+        info.appendChild(el('h2', 'card-title', p.shortName || p.name));
+        info.appendChild(el('p', 'price', formatPrice(p.price)));
+        top.appendChild(info);
+        card.appendChild(top);
+        if (p.intro) addSection(card, 'ROOM紹介文', p.intro, 'intro');
+
+        var actions = el('div', 'actions');
+        if (p.code && p.intro) {
+          var room = el('a', 'btn btn-primary', 'コピーしてROOMで投稿');
+          room.href = roomUrl(p.code);
+          room.target = '_blank';
+          room.rel = 'noopener';
+          room.addEventListener('click', function () {
+            legacyCopy(p.intro).then(function () { showToast('紹介文をコピーしました。ROOMで貼り付けて投稿してください'); }, function () {});
+          });
+          actions.appendChild(room);
+        }
+        var page = el('a', 'btn btn-secondary', '楽天の商品ページを開く');
+        page.href = p.url;
+        page.target = '_blank';
+        page.rel = 'noopener';
+        actions.appendChild(page);
+        if (p.intro) actions.appendChild(copyButton('ROOM紹介文をコピー', function () { return p.intro; }));
+        var mark = el('button', 'btn ' + (done ? 'btn-secondary' : 'btn-primary'), done ? 'ROOM投稿済みを取り消す' : 'ROOM投稿済みにする');
+        mark.type = 'button';
+        mark.addEventListener('click', function () {
+          mark.disabled = true;
+          // 続けて押しても前の記録を消さないよう、押した時点の最新の記録から更新する
+          History.get(id).then(function (latest) {
+            var map = Object.assign({}, (latest && latest.roomDone) || {});
+            if (done) delete map[p.id]; else map[p.id] = true;
+            return History.update(id, { roomDone: map });
+          }).then(function () {
+            // 投稿管理の状態にも反映（Instagram投稿済みのものはそのまま）
+            return Store.getStatus(p).then(function (st) {
+              if (!done && st !== 'ig_posted') return Store.setStatus(p, 'room_posted');
+              if (done && st === 'room_posted') return Store.setStatus(p, 'ig_waiting');
+            });
+          }).then(function () {
+            updateManageCount();
+            return History.get(id).then(function (latest) {
+              var n = products.filter(function (x) { return ((latest && latest.roomDone) || {})[x.id]; }).length;
+              if (!done && n === products.length) showToast('ROOM登録完了。コレクションにまとめましょう');
+              renderRoom(id);
+            });
+          });
+        });
+        actions.appendChild(mark);
+        card.appendChild(actions);
+        roomItems.appendChild(card);
+      });
+    });
+  }
+
+  roomColName.addEventListener('change', function () {
+    if (roomPostId) History.update(roomPostId, { collectionName: roomColName.value.trim() });
+  });
+  roomColDone.addEventListener('change', function () {
+    if (roomPostId) History.update(roomPostId, { collectionDone: roomColDone.checked });
+  });
+  document.getElementById('room-col-copy').addEventListener('click', function () {
+    copyText(roomColName.value.trim()).then(function () { showToast('コレクション名をコピーしました'); }, function () {});
+  });
 
   // ---- Instagram画像づくり ----
   var composeView = document.getElementById('view-compose');
@@ -520,9 +645,18 @@
   var igSumLead = document.getElementById('ig-sum-lead');
   var igSumVerdict = document.getElementById('ig-sum-verdict');
   function emptySummary() { return { enabled: true, typeName: '', title: '', lead: '', verdict: '' }; }
-  var draft = { theme: '', category: '', cta: 0, items: [], summary: emptySummary() };
+  var draft = { theme: '', category: '', cta: 'collection', items: [], summary: emptySummary() };
   var lastOutput = null; // { files: [{ name, blob }], folder }
 
+  // 最後のROOM誘導カード：既定は「ROOMの『○○』コレクションにまとめています」（商品の場所が分かるように）
+  var colOpt = el('option', null, 'ROOMの「テーマ名」コレクションにまとめています（おすすめ）');
+  colOpt.value = 'collection';
+  igCta.appendChild(colOpt);
+  function collectionCtaMessage(topic) {
+    return topic.length <= 10
+      ? '今回紹介したものは\nROOMの「' + topic + '」\nコレクションにまとめています'
+      : '今回紹介したものは\n楽天ROOMの\n「' + topic + '」\nにまとめています';
+  }
   window.IgRender.CTA_MESSAGES.forEach(function (m, i) {
     var o = el('option', null, m.replace(/\n/g, ''));
     o.value = String(i);
@@ -536,7 +670,7 @@
     draft.theme = igTheme.value.trim();
     draft.category = igCategory.value.trim();
     draft.subtitle = igSubtitle.value.trim();
-    draft.cta = Number(igCta.value) || 0;
+    draft.cta = igCta.value === 'collection' ? 'collection' : Number(igCta.value) || 0;
     draft.summary = Object.assign(draft.summary || emptySummary(), {
       enabled: igSumOn.checked,
       title: igSumTitle.value.trim(),
@@ -598,7 +732,7 @@
     igTheme.value = draft.theme || '';
     igCategory.value = draft.category || '';
     igSubtitle.value = draft.subtitle || '';
-    igCta.value = String(draft.cta || 0);
+    igCta.value = draft.cta === 'collection' || draft.cta == null ? 'collection' : String(draft.cta);
     var sum = draft.summary || emptySummary();
     igSumOn.checked = sum.enabled !== false;
     igSumFields.hidden = !igSumOn.checked;
@@ -711,6 +845,7 @@
       category: draft.category,
       needSummary: needSummary,
       needCaption: true,
+      collection: History.collectionNameFor(draft.theme),
       items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro, memo: it.memo }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
@@ -728,7 +863,7 @@
         category: draft.category || copy.category,
         subtitle: draft.subtitle || '迷ったので整理しました',
         bear: r[2],
-        ctaMessage: window.IgRender.CTA_MESSAGES[draft.cta || 0],
+        ctaMessage: draft.cta === 'collection' ? collectionCtaMessage(copy.topic) : window.IgRender.CTA_MESSAGES[draft.cta || 0],
         summary: !sum.enabled ? null : needSummary
           ? (copy.summary ? Object.assign({ typeName: sum.typeName || 'まず結論' }, copy.summary) : null)
           : { typeName: sum.typeName || 'まず結論', title: sum.title, lead: sum.lead, verdict: sum.verdict },
@@ -751,13 +886,29 @@
           caption: copy.caption || ''
         };
         igCaption.value = lastOutput.caption;
-        if (draft.postId) {
-          History.update(draft.postId, {
-            status: 'generated',
-            topic: copy.topic,
-            products: draft.items.map(function (it) { return { name: it.name, brand: it.brand || '', price: it.price }; })
+        // 投稿履歴に、ROOM登録準備で使う商品情報（投稿順）とコレクション名を残す
+        var productsFull = draft.items.map(function (it, i) {
+          var c = copy.items[i] || {};
+          return {
+            id: it.code || it.url || it.id, code: it.code, name: it.name, shortName: c.shortName || '', brand: it.brand || '',
+            price: it.price, url: it.url, image: it.image, intro: it.intro || '', role: it.role || ''
+          };
+        });
+        var ensurePost = draft.postId ? Promise.resolve(draft.postId) : History.add({
+          title: copy.topic + 'について本気出して考えてみた', topic: copy.topic, subtitle: draft.subtitle, genre: draft.category
+        });
+        ensurePost.then(function (id) {
+          draft.postId = id;
+          try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+          return History.get(id).then(function (rec) {
+            return History.update(id, {
+              status: rec && rec.status === 'posted' ? 'posted' : 'generated',
+              topic: copy.topic,
+              products: productsFull,
+              collectionName: (rec && rec.collectionName) || History.collectionNameFor(copy.topic)
+            });
           });
-        }
+        });
         igPreview.innerHTML = '';
         lastOutput.files.forEach(function (f) {
           var fig = el('figure');
@@ -810,6 +961,10 @@
       var zip = window.MiniZip.buildZip(entries);
       downloadBlob(new Blob([zip], { type: 'application/zip' }), lastOutput.folder.split('/').pop() + '.zip');
     });
+  });
+
+  document.getElementById('ig-room').addEventListener('click', function () {
+    if (draft.postId) location.hash = '#room:' + draft.postId;
   });
 
   document.getElementById('ig-mark').addEventListener('click', function () {
