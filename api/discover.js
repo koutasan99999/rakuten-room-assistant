@@ -6,7 +6,8 @@ import { planSearch, sanitizeFreeText } from '../lib/planner.js';
 import { searchCandidates, nameKey } from '../lib/rakuten.js';
 import { selectWithAI, fallbackPicks, maskSecrets } from '../lib/ai.js';
 
-const MAX_CANDIDATES = 30;
+const MAX_CANDIDATES = 40; // AIに見比べてもらう候補の最大数（多いほど厳選できるが、料金と時間が増える）
+const TARGET_PICKS = 6;
 const MAX_RECENT = 20;
 
 export default async function handler(req, res, env = process.env) {
@@ -41,7 +42,7 @@ export default async function handler(req, res, env = process.env) {
         : { summary: filterGenre.label, keywords: shuffle(filterGenre.keywords), brand: filterGenre.brand };
       genre = { id: null, name: filterGenre ? filterGenre.label : '指定なし', brand: plan.brand || (filterGenre && filterGenre.brand) };
       items = (await searchCandidates({
-        keywords: plan.keywords, env, referer, minItems: 15, maxCalls: 3,
+        keywords: plan.keywords, env, referer, minItems: MAX_CANDIDATES, maxCalls: 3,
         minPrice: plan.minPrice, maxPrice: plan.maxPrice,
         randomPage: !free // 自由入力があるときは関連度の高い1ページ目から
       })).filter((it) => !recentKeys.has(nameKey(it.name)));
@@ -49,7 +50,7 @@ export default async function handler(req, res, env = process.env) {
       for (const g of pickGenres(2, stats)) {
         genre = g;
         const keywords = shuffle(g.keywords);
-        items = (await searchCandidates({ keywords, env, referer, minItems: 15 })).filter((it) => !recentKeys.has(nameKey(it.name)));
+        items = (await searchCandidates({ keywords, env, referer, minItems: MAX_CANDIDATES })).filter((it) => !recentKeys.has(nameKey(it.name)));
         if (items.length >= 3) break;
       }
     }
@@ -81,11 +82,11 @@ export default async function handler(req, res, env = process.env) {
     notice = 'AIでの選定に失敗したため、簡易的な選び方で表示しています。紹介文は投稿前に見直してください。';
     detail = `原因: ${maskSecrets(e.message)}`.slice(0, 400);
   }
-  if (picks.length < 5 && !notice) notice = `今回は${picks.length}件見つかりました。`;
+  if (picks.length < TARGET_PICKS && !notice) notice = `今回は条件に合う商品が${picks.length}件でした。`;
 
   const products = picks.map((p) => {
     const it = candidates[p.index];
-    return { name: it.name, code: it.code, price: it.price, url: it.url, image: it.image, shop: it.shop, basis: p.basis || '', reason: p.reason, intro: p.intro };
+    return { name: it.name, code: it.code, price: it.price, url: it.url, image: it.image, shop: it.shop, role: p.role || '', basis: p.basis || '', reason: p.reason, intro: p.intro };
   });
   return send(res, 200, { genre: genre.name, genreId: genre.id, condition, products, notice, detail });
 }

@@ -27,7 +27,7 @@ const CURATION = {
   verdict: '迷ったら最初の1つで十分。',
   items: [
     { id: 0, role: '本命', forWho: '長く使いたい人に', why: '素材と仕上げが一段上で、置いたときの存在感がある。', tradeoff: '高い分、ブランドの品質にお金を払っている。', intro: GOOD_INTRO },
-    { id: 8, role: '安い代替', forWho: 'まず雰囲気を試したい人に', why: '色と形が近く、半額以下で同じ雰囲気を出せる。', tradeoff: '重さと細部の仕上げは妥協する。', intro: GOOD_INTRO }
+    { id: 10, role: '安い代替', forWho: 'まず雰囲気を試したい人に', why: '色と形が近く、半額以下で同じ雰囲気を出せる。', tradeoff: '重さと細部の仕上げは妥協する。', intro: GOOD_INTRO }
   ]
 };
 
@@ -175,4 +175,18 @@ test('組み立てに失敗したときは、何が足りなかったかを原�
   mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ title: 't', items: [{ id: 999 }, { id: 0 }, { id: 0 }] }) });
   const { data } = await call({ type: 'premium_budget' });
   assert.match(data.detail, /項目3件・番号不正1・重複1/);
+});
+
+test('まとめは最大6件、本命・代替を枠ごとに複数選べる', async () => {
+  const items = [0, 1, 2, 10, 11, 12, 13].map((id, i) => ({ id, role: i < 3 ? `本命${i}` : `代替${i}`, why: '理由', intro: GOOD_INTRO }));
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ ...CURATION, items }) });
+  const { data } = await call({ type: 'premium_budget' });
+  assert.equal(data.products.length, 6);
+  assert.ok(mock.calls.openai[0].messages[0].content.includes('本命側3個＋代替側3個'));
+});
+
+test('AIが失敗したときの予備表示も、枠が少なければ2巡して増やす（最大6件）', async () => {
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply('JSONではない') });
+  const { data } = await call({ type: 'premium_budget' }); // 2枠のテーマ
+  assert.equal(data.products.length, 4);
 });

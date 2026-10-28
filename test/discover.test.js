@@ -18,14 +18,14 @@ async function call(env = ENV, headers = {}) {
   return { status: res.statusCode, data: JSON.parse(res.body) };
 }
 
-test('正常系：最大5件、URLと価格は楽天の値を使う', async () => {
+test('正常系：最大6件、URLと価格は楽天の値を使う', async () => {
   mock = installFetchMock({
     rakuten: () => json(200, { items: makeItems(30), pageCount: 10 }),
     openai: () => aiReply({ picks: [0, 3, 5, 7, 9, 11].map((id) => ({ id, reason: '見た目が良い', intro: GOOD_INTRO, url: 'https://evil.example/', price: 1 })) })
   });
   const { status, data } = await call();
   assert.equal(status, 200);
-  assert.equal(data.products.length, 5);
+  assert.equal(data.products.length, 6);
   for (const p of data.products) {
     assert.match(p.url, /^https:\/\/item\.rakuten\.co\.jp\//);
     assert.ok(p.price >= 1000);
@@ -98,7 +98,7 @@ test('AIのJSONが壊れていても予備の選定で表示する', async () =>
   });
   const { status, data } = await call();
   assert.equal(status, 200);
-  assert.equal(data.products.length, 5);
+  assert.equal(data.products.length, 6);
   assert.ok(data.notice);
 });
 
@@ -113,7 +113,7 @@ test('モデルが無ければ次の低コストモデルを試す', async () =>
   assert.equal(mock.calls.openai.length, 2);
   assert.notEqual(mock.calls.openai[0].model, mock.calls.openai[1].model);
   assert.equal(data.products.length, 1);
-  assert.equal(data.notice, '今回は1件見つかりました。');
+  assert.equal(data.notice, '今回は条件に合う商品が1件でした。');
 });
 
 test('虚偽の体験談・根拠のない表現・絵文字は取り除く', async () => {
@@ -171,7 +171,7 @@ test('APIキー前後の空白・改行を取り除いて送る', async () => {
   try {
     const { data } = await call({ ...ENV, OPENAI_API_KEY: '  sk-test\n' });
     assert.equal(auth, 'Bearer sk-test');
-    assert.equal(data.notice, '今回は1件見つかりました。');
+    assert.equal(data.notice, '今回は条件に合う商品が1件でした。');
   } finally { globalThis.fetch = orig; }
 });
 
@@ -195,7 +195,7 @@ test('認証エラーは他モデルを試さず、伏せ字の原因を画面�
   });
   const { data } = await call();
   assert.equal(mock.calls.openai.length, 1);
-  assert.equal(data.products.length, 5);
+  assert.equal(data.products.length, 6);
   assert.match(data.detail, /401/);
   assert.doesNotMatch(data.detail, /abcd1234/);
 });
@@ -392,4 +392,28 @@ test('商品ごとに楽天の商品コード（ROOM投稿画面を開くのに�
   });
   const { data } = await call();
   assert.match(data.products[0].code, /^shop:/);
+});
+
+test('候補を多めに集めてAIに見比べさせ、役割つきで最大6件', async () => {
+  mock = installFetchMock({
+    rakuten: (url) => json(200, { items: makeItems(30, url.searchParams.get('keyword').slice(0, 4)), pageCount: 10 }),
+    openai: () => aiReply({ picks: [0, 1, 2, 3, 4, 5, 6].map((id, i) => ({ id, want: 9, role: `役割${i}`, reason: '面倒が減る', intro: GOOD_INTRO })) })
+  });
+  const { data } = await call();
+  const user = mock.calls.openai[0].messages[1].content;
+  const candidateLines = user.split('候補:')[1].trim().split('\n');
+  assert.ok(candidateLines.length > 30, String(candidateLines.length)); // 30件より多く見比べる
+  assert.equal(data.products.length, 6); // 7件返ってきても6件まで
+  assert.deepEqual(data.products.map((p) => p.role), ['役割0', '役割1', '役割2', '役割3', '役割4', '役割5']);
+  assert.ok(mock.calls.openai[0].messages[0].content.includes('数合わせで入れない'));
+});
+
+test('魅力的な商品が少なければ数合わせせず、件数を減らして伝える', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(30), pageCount: 10 }),
+    openai: () => aiReply({ picks: [9, 8, 8, 7, 4, 3].map((want, id) => ({ id, want, reason: '面倒が減る', intro: GOOD_INTRO })) })
+  });
+  const { data } = await call();
+  assert.equal(data.products.length, 4); // 欲しい度6未満の2件は外れる
+  assert.equal(data.notice, '今回は条件に合う商品が4件でした。');
 });

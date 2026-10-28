@@ -237,3 +237,6 @@ body {
 .random-box { margin-top: 14px; text-align: center; }
 .btn-random { background: #fff; color: var(--red); border: 2px solid var(--red); }
 .random-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.list-head { padding: 12px 16px; }
+.list-head .actions { margin-top: 8px; }
+.list-count { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }

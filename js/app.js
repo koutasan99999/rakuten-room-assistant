@@ -112,7 +112,7 @@
     return node;
   }
 
-  function copyButton(label, getText, onCopied) {
+  function copyButton(label, getText, onCopied, toastText) {
     var btn = el('button', 'btn btn-secondary', label);
     btn.type = 'button';
     btn.addEventListener('click', function () {
@@ -120,7 +120,7 @@
         if (onCopied) onCopied();
         btn.textContent = 'コピーしました';
         btn.classList.add('done');
-        showToast(label.replace('をコピー', '') + 'をコピーしました');
+        showToast(toastText || label.replace('をコピー', '') + 'をコピーしました');
         setTimeout(function () {
           btn.textContent = label;
           btn.classList.remove('done');
@@ -309,6 +309,27 @@
     else renderDiscover(last.data);
   }
 
+  // 発掘結果をInstagramの投稿文に使える1つの文章にする
+  function discoverText(data) {
+    var marks = ['①', '②', '③', '④', '⑤', '⑥'];
+    var lines = [(data.condition || data.genre || '今回見つけたもの'), ''];
+    data.products.forEach(function (p, i) {
+      lines.push(marks[i] + ' ' + (p.role ? p.role + '：' : '') + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
+      if (p.reason) lines.push('・' + p.reason);
+      lines.push('');
+    });
+    return lines.join('\n').trim();
+  }
+
+  function renderDiscoverHeader(data) {
+    var card = el('article', 'card list-head');
+    card.appendChild(el('p', 'list-count', data.products.length + '商品'));
+    var actions = el('div', 'actions');
+    actions.appendChild(copyButton('Instagram用にまとめてコピー', function () { return discoverText(data); }, null, '6商品分をまとめてコピーしました'.replace('6', String(data.products.length))));
+    card.appendChild(actions);
+    return card;
+  }
+
   function renderDiscover(data) {
     var products = data.products || [];
     // 条件を指定したときは読み取った条件を、ランダムのときはジャンルを表示
@@ -319,6 +340,7 @@
       genreEl.appendChild(el('strong', null, shown));
       genreEl.hidden = false;
     }
+    if (products.length >= 2) results.appendChild(renderDiscoverHeader(data));
     products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
   }
 
