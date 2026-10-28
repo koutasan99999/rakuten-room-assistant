@@ -7,7 +7,8 @@ import { resolveFilterGenre } from '../lib/genres.js';
 import { findPlan } from '../lib/plans.js';
 import { normalizeIdea } from '../lib/ideas.js';
 import { sanitizeFreeText } from '../lib/planner.js';
-import { readBrief, briefFromIdea, briefFromPlan, briefFromConditions, explore } from '../lib/explore.js';
+import { readBrief, briefFromIdea, briefFromPlan, briefFromConditions, explore, seedCandidate } from '../lib/explore.js';
+import { readSeedProduct } from '../lib/seed.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, n);
@@ -33,13 +34,15 @@ export default async function handler(req, res, env = process.env) {
   let brief = null;
   let idea = null;
   let plan = null;
+  // 「この商品から企画を考える」の起点の商品：必ず候補に残し（先頭・必ず採用）、検索では同じ商品を除く
+  const seed = body.idea && body.seed ? readSeedProduct(body.seed) : null;
   const more = body.more && typeof body.more === 'object' ? body.more : null;
   if (more) {
     // さらに10件：前回の内容（brief）をそのまま使う（企画の情報は画面側が持っている）
     brief = readBrief(more.brief);
   } else if (body.idea) {
     idea = normalizeIdea(body.idea);
-    if (idea) brief = briefFromIdea(idea);
+    if (idea) brief = briefFromIdea(idea, seed);
   } else if (body.planId) {
     const p = findPlan(body.planId);
     if (p) {
@@ -56,6 +59,10 @@ export default async function handler(req, res, env = process.env) {
     codes: readList(body.exclude && body.exclude.codes, 200, (c) => str(c, 80)),
     names: readList(body.exclude && body.exclude.names, 200, (n) => str(n, 80))
   };
+  if (seed) {
+    if (seed.code) exclude.codes.push(seed.code);
+    exclude.names.push(seed.name);
+  }
   const seen = readList(body.seen, 50, (s) => (s && (s.code || s.name) ? { code: str(s.code, 80), name: str(s.name, 80) } : null));
   const prevAngles = more ? readList(more.angles, 20, (a) => (a && a.keyword ? { label: str(a.label, 14), keyword: str(a.keyword, 30), minPrice: a.minPrice, maxPrice: a.maxPrice, page: Math.min(5, Number(a.page) || 1) } : null)) : [];
 
@@ -68,7 +75,7 @@ export default async function handler(req, res, env = process.env) {
       idea: idea && { topic: idea.topic, title: idea.title, subtitle: idea.subtitle, postType: idea.postType, genre: idea.genre, target: idea.target, priceBand: idea.priceBand, brands: idea.brands, axis: idea.axis },
       plan,
       angles: result.angles,
-      candidates: result.candidates,
+      candidates: seed ? [seedCandidate(seed, idea), ...result.candidates] : result.candidates,
       notice: result.notice,
       detail: result.detail ? maskSecrets(result.detail) : undefined
     });

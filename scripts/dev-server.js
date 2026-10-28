@@ -10,6 +10,7 @@ import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
+import seedIdeasHandler from '../api/seed-ideas.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -28,7 +29,15 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('探索係')
+    openai: (body) => body.messages[0].content.includes('ランダム発掘で見つけて')
+      ? aiReply({ analysis: '3ポートで出力が高い、デスクにも旅行にも使える充電器', ideas: [
+        { topic: 'iPhoneの充電まわり', type: 'first_pick', typeLabel: 'まずコレ', role: 'main', howUsed: '本命の1つとして、出力と価格のバランスの基準にする', searchGenres: ['USB-C 充電器', 'ワイヤレス充電器', 'USB-Cケーブル', 'MagSafe スタンド'], expectedCount: 18, whyWorks: '充電器は種類が多く、何を基準に選べばいいか迷う人が多い', target: 'iPhoneを使っている人', priceBand: '1,500〜6,000円', axis: '' },
+        { topic: 'AnkerとUGREEN、結局どっちを選ぶ？', type: 'brand', typeLabel: 'ブランド比較', role: 'main', howUsed: 'UGREEN側の代表として、Ankerの同クラスと並べる', searchGenres: ['Anker 充電器', 'UGREEN 充電器', 'CIO 充電器'], expectedCount: 15, whyWorks: '有名な2ブランドで迷う人が多く、違いを整理する価値がある', target: '充電器を買い替えたい人', priceBand: '2,000〜8,000円', axis: 'ブランドの安心感 vs 価格' },
+        { topic: '旅行に持っていく充電グッズ', type: 'use_case', typeLabel: '用途別', role: 'trigger', howUsed: '1台で複数充電できる枠として入れる', searchGenres: ['モバイルバッテリー', '変換プラグ', 'ケーブル 収納', 'スマホスタンド'], expectedCount: 18, whyWorks: '旅行前にまとめて揃える人が多く、セットで見せやすい', target: '旅行が多い人', priceBand: '1,000〜6,000円', axis: '' },
+        { topic: '3,000円前後で買える便利なガジェット', type: 'budget_tiers', typeLabel: '予算別', role: 'trigger', howUsed: '価格帯の目安になる1つとして入れる', searchGenres: ['ガジェット 便利', 'デスク 便利グッズ', 'Bluetooth トラッカー'], expectedCount: 18, whyWorks: 'プレゼントにも自分用にもなる価格帯で、探す人が多い', target: 'ちょっとしたガジェットが好きな人', priceBand: '2,000〜4,000円', axis: '' },
+        { topic: 'デスクの充電ケーブルを減らす方法', type: 'must_buy', typeLabel: '悩み解決', role: 'trigger', howUsed: 'ケーブルをまとめる解決策の1つとして入れる', searchGenres: ['ケーブルトレー', 'ケーブル 収納', 'USBハブ', '電源タップ'], expectedCount: 16, whyWorks: '配線のごちゃつきは多くの人の悩みで、解決策を並べやすい', target: '在宅ワークの人', priceBand: '1,000〜5,000円', axis: '' }
+      ] })
+      : body.messages[0].content.includes('探索係')
       ? aiReply({ angles: [['王道ブランド', '今治タオル ギフト'], ['価格を抑えた代替', 'ガーゼ スタイ'], ['SNSで話題', 'おむつケーキ'], ['記念品', '名入れ 木製'], ['実用品', 'ベビー 食器'], ['新興ブランド', 'オーガニック ベビー'], ['ママ向け', 'ママ ハンドクリーム'], ['変わり種', 'ベビー 写真 ボード']].map(([label, keyword]) => ({ label, keyword: (body.messages[1].content.includes('避ける角度') ? 'さらに ' : '') + keyword, minPrice: null, maxPrice: null })) })
       : body.messages[0].content.includes('リサーチ担当')
       ? aiReply({ items: Array.from({ length: body.messages[0].content.includes('10個') ? 10 : 18 }, (_, i) => ({
@@ -75,6 +84,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
   if (url.pathname === '/api/ideas') return ideasHandler(req, res, env);
+  if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

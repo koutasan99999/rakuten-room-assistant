@@ -4,7 +4,7 @@ import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { pickGenres, sanitizeStats, shuffle, resolveFilterGenre } from '../lib/genres.js';
 import { planSearch, sanitizeFreeText } from '../lib/planner.js';
 import { searchCandidates, nameKey } from '../lib/rakuten.js';
-import { selectWithAI, fallbackPicks, maskSecrets } from '../lib/ai.js';
+import { selectWithAI, fallbackPicks, maskSecrets, compact } from '../lib/ai.js';
 
 const MAX_CANDIDATES = 40; // AIに見比べてもらう候補の最大数（多いほど厳選できるが、料金と時間が増える）
 const TARGET_PICKS = 6;
@@ -86,7 +86,7 @@ export default async function handler(req, res, env = process.env) {
 
   const products = picks.map((p) => {
     const it = candidates[p.index];
-    return { name: it.name, code: it.code, price: it.price, url: it.url, image: it.image, shop: it.shop, role: p.role || '', basis: p.basis || '', reason: p.reason, intro: p.intro };
+    return { name: it.name, code: it.code, price: it.price, url: it.url, image: it.image, shop: it.shop, role: p.role || '', basis: p.basis || '', reason: p.reason, intro: p.intro, caption: compact(it.caption, 200) };
   });
   return send(res, 200, { genre: genre.name, genreId: genre.id, condition, products, notice, detail });
 }
