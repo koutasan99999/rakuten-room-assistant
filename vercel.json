@@ -11,6 +11,9 @@
     },
     "api/ideas.js": {
       "maxDuration": 60
+    },
+    "api/replace.js": {
+      "maxDuration": 60
     }
   }
 }

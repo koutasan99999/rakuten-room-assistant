@@ -211,28 +211,50 @@
       recordStat(opts.genreId, 'copied');
     }));
     card.appendChild(actions);
-    if (opts.onAdopt) card.appendChild(adoptBox(p, card, opts.onAdopt));
+    if (opts.onAdopt) card.appendChild(adoptBox(p, card, opts.onAdopt, opts.onReplace));
     card.appendChild(statusBox(p));
     return card;
   }
 
   // 「採用」「今回は外す」：外した商品はInstagram投稿に使わない
-  function adoptBox(p, card, onChange) {
+  // onReplace があれば、外したときに「別の候補を出す」（同じ役割で選び直す）ボタンも出す
+  function adoptBox(p, card, onChange, onReplace) {
+    var wrap = document.createDocumentFragment();
     var box = el('div', 'adopt');
     var yes = el('button', null, '採用');
     var no = el('button', null, '今回は外す');
     yes.type = no.type = 'button';
+    var replaceBox = el('div', 'replace-box');
+    var replaceBtn = el('button', 'btn btn-discover', '別の候補を出す');
+    replaceBtn.type = 'button';
+    var note = el('p', 'replace-note', '「' + (p.role || 'この枠') + '」の役割のまま、別の商品を探して入れ替えます');
+    replaceBox.appendChild(replaceBtn);
+    replaceBox.appendChild(note);
     function show() {
       yes.className = p.excluded ? '' : 'on-yes';
       no.className = p.excluded ? 'on-no' : '';
       card.classList.toggle('excluded', !!p.excluded);
+      replaceBox.hidden = !(p.excluded && onReplace);
     }
     yes.addEventListener('click', function () { p.excluded = false; show(); onChange(); });
     no.addEventListener('click', function () { p.excluded = true; show(); onChange(); });
+    replaceBtn.addEventListener('click', function () {
+      replaceBtn.disabled = true;
+      replaceBtn.textContent = '別の候補を探しています…';
+      note.textContent = '20〜40秒ほどかかります';
+      onReplace(p, card).then(function (msg) {
+        // 入れ替えに成功したらカードごと置き換わる。見つからなかったときはここに理由を出す
+        replaceBtn.disabled = false;
+        replaceBtn.textContent = 'もう一度探す';
+        note.textContent = msg || '';
+      });
+    });
     box.appendChild(yes);
     box.appendChild(no);
+    wrap.appendChild(box);
+    wrap.appendChild(replaceBox);
     show();
-    return box;
+    return wrap;
   }
 
   // ---- 投稿状態（ROOM・Instagram）の管理 ----
@@ -1142,7 +1164,38 @@
       count.textContent = '採用 ' + n + ' / ' + data.products.length + '商品（Instagram投稿は5〜6商品が目安）';
       saveLast('curate', data);
     }
-    data.products.forEach(function (p) { results.appendChild(renderCard(p, { curation: true, onAdopt: onAdopt })); });
+    // 外した商品の代わりを、同じ役割の枠から選び直して入れ替える（古い保存結果で条件が無いときは出さない）
+    function onReplace(p, card) {
+      var others = data.products.filter(function (x) { return x !== p && !x.excluded; });
+      data.rejected = (data.rejected || []).concat(p.code ? [p.code] : []);
+      data.tries = data.tries || {};
+      var key = p.slot || p.role || '';
+      var tries = data.tries[key] || 0;
+      data.tries[key] = tries + 1;
+      return postJson('api/replace', {
+        context: data.context,
+        slot: p.slot || '',
+        role: p.role || '',
+        tries: tries,
+        exclude: data.rejected.concat(data.products.map(function (x) { return x.code; })).filter(Boolean),
+        others: others.map(function (x) { return { name: x.name, role: x.role }; })
+      }).then(function (r) {
+        if (r.status !== 200) return r.data.error || '別の候補を出せませんでした。もう一度お試しください。';
+        if (!r.data.product) return r.data.notice || 'この役割の別の候補が見つかりませんでした。';
+        var np = r.data.product;
+        var i = data.products.indexOf(p);
+        if (i === -1) return '';
+        data.products[i] = np;
+        rememberProducts([np]);
+        var newCard = renderCard(np, opts);
+        card.parentNode.replaceChild(newCard, card);
+        onAdopt();
+        showToast(r.data.notice ? '入れ替えました（' + r.data.notice + '）' : '別の候補に入れ替えました');
+        return '';
+      }, function () { return '通信できませんでした。電波の良い場所でもう一度お試しください。'; });
+    }
+    var opts = { curation: true, onAdopt: onAdopt, onReplace: data.context ? onReplace : null };
+    data.products.forEach(function (p) { results.appendChild(renderCard(p, opts)); });
     onAdopt();
   }
 

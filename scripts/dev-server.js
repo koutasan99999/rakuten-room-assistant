@@ -9,6 +9,7 @@ import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
+import replaceHandler from '../api/replace.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -56,6 +57,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/discover') return handler(req, res, env);
   if (url.pathname === '/api/curate') return curateHandler(req, res, env);
+  if (url.pathname === '/api/replace') return replaceHandler(req, res, env);
   if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);

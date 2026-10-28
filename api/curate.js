@@ -7,7 +7,7 @@ import { findPlan, planToTheme } from '../lib/plans.js';
 import { normalizeIdea, ideaToTheme } from '../lib/ideas.js';
 import { planSearch, sanitizeFreeText } from '../lib/planner.js';
 import { searchSlot } from '../lib/rakuten.js';
-import { buildCuration, fallbackCuration } from '../lib/curation.js';
+import { buildCuration, fallbackCuration, replaceContext } from '../lib/curation.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -91,5 +91,5 @@ export default async function handler(req, res, env = process.env) {
     detail = `原因: ${maskSecrets(e.message)}`.slice(0, 400);
   }
   if (!notice && curation.warnings && curation.warnings.length) notice = curation.warnings.join('。') + '。';
-  return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, themeId: theme.id, plan: theme.plan || null, idea: theme.idea || null, ...curation, notice, detail });
+  return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, themeId: theme.id, plan: theme.plan || null, idea: theme.idea || null, ...curation, context: replaceContext(theme), notice, detail });
 }
