@@ -419,7 +419,11 @@ body {
 .adopt button { min-height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-size: 14px; font-weight: 800; font-family: inherit; color: var(--text); }
 .adopt .on-yes { background: #1f6f43; border-color: #1f6f43; color: #fff; }
 .adopt .on-no { background: #8a8a8a; border-color: #8a8a8a; color: #fff; }
-.card.excluded { opacity: 0.45; }
+/* 外した商品は薄く。ただし「採用／外す」と「別の候補を出す」ははっきり見せる */
+.card.excluded > :not(.adopt):not(.replace-box) { opacity: 0.45; }
+.replace-box { margin-top: 8px; }
+.replace-box .btn { width: 100%; }
+.replace-note { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
 .brand-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #fff; border: 1px solid var(--text); color: var(--text); }
 .memo-box { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); font-size: 14px; }
 .memo-box b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
