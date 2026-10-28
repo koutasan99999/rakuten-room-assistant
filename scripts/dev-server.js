@@ -27,6 +27,7 @@ if (process.env.MOCK) {
     openai: (body) => body.messages[0].content.includes('眼科医くま')
       ? aiReply({
         topicSlug: 'shussan-iwai', category: '出産祝い',
+        ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '出産祝い、迷ったらこの順で見ればいい', lead: 'まずは外しにくい実用品から。次に、自分では買わないけどもらうと嬉しいもの。予算を抑えるなら後半の2つで十分で、価格差は素材と箱の特別感の差です。', verdict: '迷ったら今治ガーゼタオル。少し奮発するならおむつケーキ。' } } : {}),
         items: [0, 1, 2, 3, 4, 5].map((id) => ({ id, slug: ['towel', 'bib', 'blanket', 'bottle', 'toy', 'set'][id], shortName: ['今治ガーゼタオル', 'スタイ3枚セット', 'ベビーブランケット', 'ストローマグ', '木のおもちゃ', 'おむつケーキ'][id], subline: '名入れ対応、箱入りで渡しやすい', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。', '安く済ませたいなら、このへんがちょうどいい。', '迷ったらまずこれでいい枠。', '高いけど、ブランドごと贈る意味があるやつ。'][id] }))
       })
       : body.messages[0].content.includes('検索プラン')

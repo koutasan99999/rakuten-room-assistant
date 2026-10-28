@@ -114,6 +114,26 @@
       </label>
     </section>
 
+    <h3 class="compose-sub">2枚目のまとめ</h3>
+    <section class="search-box">
+      <label class="pick"><input type="checkbox" id="ig-sum-on"> 2枚目に「まとめ」を入れる</label>
+      <div id="ig-sum-fields" class="summary-fields">
+        <label class="field">
+          <span class="field-label">見出し</span>
+          <input id="ig-sum-title" class="input" type="text" maxlength="40">
+        </label>
+        <label class="field">
+          <span class="field-label">説明</span>
+          <textarea id="ig-sum-lead" class="textarea" rows="4" maxlength="200"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">結論</span>
+          <textarea id="ig-sum-verdict" class="textarea" rows="2" maxlength="90"></textarea>
+        </label>
+        <p class="hint">選び方まとめから来たときは、その内容が入っています。見出しか結論が空欄なら、AIが商品と役割から作ります。</p>
+      </div>
+    </section>
+
     <h3 class="compose-sub">使う商品 <span id="ig-count" class="tab-count"></span></h3>
     <p class="hint">▲▼で並び順を変えられます。役割（迷ったらこれ・本命・安い代替 など）は任意です。基本は5〜6商品です。</p>
     <div id="ig-items" class="ig-items"></div>

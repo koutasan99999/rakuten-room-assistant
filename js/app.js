@@ -438,7 +438,13 @@
   var igPreview = document.getElementById('ig-preview');
   var DRAFT_KEY = 'room-ig-draft';
   var BEAR_SRC = 'assets/kuma.png';
-  var draft = { theme: '', category: '', cta: 0, items: [] };
+  var igSumOn = document.getElementById('ig-sum-on');
+  var igSumFields = document.getElementById('ig-sum-fields');
+  var igSumTitle = document.getElementById('ig-sum-title');
+  var igSumLead = document.getElementById('ig-sum-lead');
+  var igSumVerdict = document.getElementById('ig-sum-verdict');
+  function emptySummary() { return { enabled: true, typeName: '', title: '', lead: '', verdict: '' }; }
+  var draft = { theme: '', category: '', cta: 0, items: [], summary: emptySummary() };
   var lastOutput = null; // { files: [{ name, blob }], folder }
 
   window.IgRender.CTA_MESSAGES.forEach(function (m, i) {
@@ -454,6 +460,13 @@
     draft.theme = igTheme.value.trim();
     draft.category = igCategory.value.trim();
     draft.cta = Number(igCta.value) || 0;
+    draft.summary = Object.assign(draft.summary || emptySummary(), {
+      enabled: igSumOn.checked,
+      title: igSumTitle.value.trim(),
+      lead: igSumLead.value.trim(),
+      verdict: igSumVerdict.value.trim()
+    });
+    igSumFields.hidden = !igSumOn.checked;
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
   }
 
@@ -462,15 +475,35 @@
     draft.items = selectedList().map(function (x) {
       return { id: x.id, code: x.code, name: x.name, price: x.price, image: x.image, url: x.url, reason: x.reason || x.why || '', intro: x.intro || '', role: x.role || '' };
     });
+    draft.summary = emptySummary(); // 商品が変わったので2枚目はAIに作ってもらう
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     location.hash = '#compose';
   });
+
+  // 選び方まとめから、まとめの文章と商品をそのまま持って画像づくりへ
+  function composeFromCuration(d) {
+    loadDraft();
+    draft.items = d.products.map(function (p) {
+      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: p.why || p.reason || '', intro: p.intro || '', role: p.role || '' };
+    });
+    draft.summary = { enabled: true, typeName: d.typeName || '', title: d.title || '', lead: d.lead || '', verdict: d.verdict || '' };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+    // 投稿管理にも「Instagram投稿待ち」として入れておく
+    Promise.all(d.products.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount);
+    location.hash = '#compose';
+  }
 
   function renderCompose() {
     loadDraft();
     igTheme.value = draft.theme || '';
     igCategory.value = draft.category || '';
     igCta.value = String(draft.cta || 0);
+    var sum = draft.summary || emptySummary();
+    igSumOn.checked = sum.enabled !== false;
+    igSumFields.hidden = !igSumOn.checked;
+    igSumTitle.value = sum.title || '';
+    igSumLead.value = sum.lead || '';
+    igSumVerdict.value = sum.verdict || '';
     renderComposeItems();
   }
 
@@ -515,7 +548,7 @@
       igItemsEl.appendChild(row);
     });
   }
-  [igTheme, igCategory, igCta].forEach(function (x) { x.addEventListener('change', saveDraft); });
+  [igTheme, igCategory, igCta, igSumOn, igSumTitle, igSumLead, igSumVerdict].forEach(function (x) { x.addEventListener('change', saveDraft); });
 
   function showIgMessage(text, isError, detail) {
     igMessage.textContent = text;
@@ -570,9 +603,12 @@
     igLoading.hidden = false;
     igResult.hidden = true;
 
+    var sum = draft.summary || emptySummary();
+    var needSummary = sum.enabled && !(sum.title && sum.verdict);
     var copyReq = postJson('api/instagram', {
       theme: draft.theme,
       category: draft.category,
+      needSummary: needSummary,
       items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
@@ -591,6 +627,9 @@
         subtitle: '迷ったので整理しました',
         bear: r[2],
         ctaMessage: window.IgRender.CTA_MESSAGES[draft.cta || 0],
+        summary: !sum.enabled ? null : needSummary
+          ? (copy.summary ? Object.assign({ typeName: sum.typeName || 'まず結論' }, copy.summary) : null)
+          : { typeName: sum.typeName || 'まず結論', title: sum.title, lead: sum.lead, verdict: sum.verdict },
         items: draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
           return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, slug: c.slug };
@@ -693,6 +732,10 @@
     if (d.verdict) card.appendChild(el('p', 'verdict', d.verdict));
     var actions = el('div', 'actions');
     actions.appendChild(copyButton('まとめ文をコピー', function () { return curationText(d); }));
+    var toIg = el('button', 'btn btn-primary', 'この内容でInstagram画像を作る');
+    toIg.type = 'button';
+    toIg.addEventListener('click', function () { composeFromCuration(d); });
+    actions.appendChild(toIg);
     card.appendChild(actions);
     return card;
   }

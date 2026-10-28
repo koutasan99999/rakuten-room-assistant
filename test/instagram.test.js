@@ -106,3 +106,19 @@ test('ZIPはフォルダ付きで、中身とCRCが正しい', () => {
   assert.equal(buf.slice(30 + nameLen, 30 + nameLen + a.length).toString(), 'hello png');
   assert.equal(buf.readUInt32LE(buf.length - 22), 0x06054b50);
 });
+
+test('2枚目のまとめは、頼んだときだけAIに作らせて返す', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(500, {}),
+    openai: (body) => aiReply({
+      topicSlug: 'x', items: [{ id: 0, shortName: 'a', memo: '迷ったらまずこれでいい枠。' }, { id: 1, shortName: 'b', memo: '迷ったらまずこれでいい枠。' }],
+      ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '迷ったらこの順', lead: 'まず実用品から。', verdict: '迷ったらA。' } } : {})
+    })
+  });
+  const without = JSON.parse((await call(handler, { body: { theme: '出産祝い', items: ITEMS } })).body);
+  assert.equal(without.summary, null);
+  const withSum = JSON.parse((await call(handler, { body: { theme: '出産祝い', items: ITEMS, needSummary: true } })).body);
+  assert.deepEqual(withSum.summary, { title: '迷ったらこの順', lead: 'まず実用品から。', verdict: '迷ったらA。' });
+  assert.ok(mock.calls.openai[1].messages[0].content.includes('2枚目'));
+  assert.ok(!mock.calls.openai[0].messages[0].content.includes('2枚目'));
+});
