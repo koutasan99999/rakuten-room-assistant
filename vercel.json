@@ -8,6 +8,9 @@
     },
     "api/instagram.js": {
       "maxDuration": 30
+    },
+    "api/ideas.js": {
+      "maxDuration": 60
     }
   }
 }

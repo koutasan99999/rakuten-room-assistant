@@ -20,12 +20,33 @@
   </header>
 
   <main class="container" id="view-discover">
+    <section class="editor-box">
+      <button type="button" id="ideas-btn" class="btn btn-discover">今日の企画を考える</button>
+      <p class="editor-note">商品より先に、Instagram投稿の企画を3案考えます。1つ選ぶと、その企画で商品を探します。</p>
+      <div id="ideas-loading" class="loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>企画を考えています…<br><span class="sub">20〜40秒ほどかかります</span></p>
+      </div>
+      <div id="ideas-message" class="message" role="alert" hidden></div>
+      <div id="ideas" class="ideas"></div>
+    </section>
+
+    <nav class="quick-links" aria-label="ほかの使い方">
+      <button type="button" class="quick" id="quick-random">ランダム発掘</button>
+      <button type="button" class="quick" id="quick-cond">条件指定で発掘</button>
+      <a class="quick" href="#manage:room_candidate">ROOM候補</a>
+      <a class="quick" href="#manage:ig_waiting">Instagram投稿待ち</a>
+      <a class="quick" href="#manage:history">投稿履歴</a>
+    </nav>
+
     <details class="plans-box" id="plans-box">
       <summary>企画から作る（最初の10投稿）<span id="plans-progress" class="tab-count"></span></summary>
       <p class="hint">「○○について 本気出して考えてみた」シリーズ。決めてある役割の枠で、選び方まとめを作ります。投稿タイプが続かないよう、上から順に作るのがおすすめの順番です。</p>
       <div id="plans-list" class="plans-list"></div>
     </details>
 
+    <details class="plans-box cond-box" id="cond-box">
+      <summary>条件指定で発掘</summary>
     <section class="search-box" aria-label="発掘条件">
       <label class="field">
         <span class="field-label">ジャンル</span>
@@ -69,6 +90,7 @@
       </label>
       <button type="button" id="search-btn" class="btn btn-discover">この条件で発掘する</button>
     </section>
+    </details>
 
     <div class="random-box">
       <button type="button" id="discover-btn" class="btn btn-random">おまかせで発掘</button>
@@ -158,6 +180,12 @@
     <section id="ig-result" class="ig-result" hidden>
       <h3 class="compose-sub">できあがり</h3>
       <div id="ig-preview" class="ig-preview"></div>
+      <h3 class="compose-sub">キャプション</h3>
+      <textarea id="ig-caption" class="textarea caption" rows="12"></textarea>
+      <div class="actions">
+        <button type="button" id="ig-caption-copy" class="btn btn-secondary">キャプションをコピー</button>
+      </div>
+      <h3 class="compose-sub">保存</h3>
       <div class="actions">
         <button type="button" id="ig-share" class="btn btn-primary">写真に保存（まとめて）</button>
         <button type="button" id="ig-zip" class="btn btn-secondary">ZIPでまとめてダウンロード</button>
@@ -175,6 +203,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/store.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/zip.js"></script>
   <script src="js/ig-render.js"></script>
   <script src="js/app.js"></script>
