@@ -18,7 +18,8 @@ async function call(body = {}, env = ENV) {
 // 価格帯の指定に合う偽商品を返す
 function rakutenByPrice(url) {
   const min = Number(url.searchParams.get('minPrice')) || 500;
-  const items = makeItems(10, url.searchParams.get('keyword').split(' ')[0]).map((it, i) => ({ ...it, itemPrice: min + i * 100 }));
+  const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 8);
+  const items = makeItems(10, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i}` }));
   return json(200, { items, pageCount: 1 });
 }
 
@@ -27,7 +28,7 @@ const CURATION = {
   verdict: '迷ったら最初の1つで十分。',
   items: [
     { id: 0, role: '本命', forWho: '長く使いたい人に', why: '素材と仕上げが一段上で、置いたときの存在感がある。', tradeoff: '高い分、ブランドの品質にお金を払っている。', intro: GOOD_INTRO },
-    { id: 10, role: '安い代替', forWho: 'まず雰囲気を試したい人に', why: '色と形が近く、半額以下で同じ雰囲気を出せる。', tradeoff: '重さと細部の仕上げは妥協する。', intro: GOOD_INTRO }
+    { id: 30, role: '安い代替', forWho: 'まず雰囲気を試したい人に', why: '色と形が近く、半額以下で同じ雰囲気を出せる。', tradeoff: '重さと細部の仕上げは妥協する。', intro: GOOD_INTRO }
   ]
 };
 
@@ -104,7 +105,7 @@ test('合言葉が違えば401', async () => {
 test('プレゼントの型ではブランド評価・相手・ショップ名をAIに渡し、分類と評価を返す', async () => {
   const withBrand = {
     ...CURATION,
-    items: CURATION.items.map((x, i) => ({ ...x, brandNote: '老舗の革小物ブランドで、30代に渡しても若すぎない落ち着いたデザイン。', giftClass: i ? '価格を抑えたい場合の候補' : '外しにくい王道' }))
+    items: CURATION.items.map((x, i) => ({ ...x, id: i * 10, brandNote: '老舗の革小物ブランドで、30代に渡しても若すぎない落ち着いたデザイン。', giftClass: i ? '価格を抑えたい場合の候補' : '外しにくい王道' }))
   };
   mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(withBrand) });
   const { data } = await call({ type: 'gift' });
@@ -112,7 +113,7 @@ test('プレゼントの型ではブランド評価・相手・ショップ名�
   assert.ok(system.includes('この人にこのブランドを贈る理由があるか'));
   assert.ok(system.includes('劣化版'));
   assert.ok(system.includes('プレゼントの相手'));
-  assert.match(user, /販売: テストショップ/);
+  assert.match(user, /販売: /);
   assert.equal(data.products[0].giftClass, '外しにくい王道');
   assert.ok(data.products[0].brandNote.includes('老舗'));
 });
@@ -187,6 +188,45 @@ test('まとめは最大6件、本命・代替を枠ごとに複数選べる', a
 
 test('AIが失敗したときの予備表示も、枠が少なければ2巡して増やす（最大6件）', async () => {
   mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply('JSONではない') });
-  const { data } = await call({ type: 'premium_budget' }); // 2枠のテーマ
-  assert.equal(data.products.length, 4);
+  const { data } = await call({ type: 'gift' }); // 3枠のテーマ → 2巡で6件
+  assert.equal(data.products.length, 6);
+});
+
+test('本命＋安い代替：比較軸・一言・本命/代替を返し、候補に価格帯を付けて渡す', async () => {
+  const items = [0, 10, 20, 30, 40, 1].map((id, i) => ({
+    id, role: `役割${i}`, side: i < 2 ? '本命' : '代替', pick: ['ブランド込みで欲しいならこれ', 'ギフトっぽさを出すならこれ', '価格を抑えるならこのへん', '普段使いしやすいのはこれ', 'まず1枚試すならこれ', '迷ったらこれ'][i],
+    why: '理由', intro: GOOD_INTRO
+  }));
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply({ ...CURATION, axis: 'ブランド性 × 価格差', items }) });
+  const { data } = await call({ type: 'premium_budget' });
+  assert.equal(data.axis, 'ブランド性 × 価格差');
+  assert.equal(data.products[0].pick, 'ブランド込みで欲しいならこれ');
+  assert.equal(data.products[0].side, '本命');
+  assert.equal(data.products[2].side, '代替');
+  assert.equal(mock.calls.rakuten.length, 5); // 5つの枠で幅広く集める
+  const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
+  assert.ok(system.includes('比較軸'));
+  assert.match(user, /価格帯 [高中低]/);
+});
+
+test('比較ルールは本命＋安い代替のときだけ付ける', async () => {
+  mock = installFetchMock({ rakuten: rakutenByPrice, openai: () => aiReply(CURATION) });
+  await call({ type: 'first_pick' });
+  assert.ok(!mock.calls.openai[0].messages[0].content.includes('本命＋安い代替の組み立て'));
+});
+
+test('同じショップ3個目・ほぼ同じ商品名は間引き、価格差が小さい・代替が無いときは知らせる', async () => {
+  const { checkComparison } = await import('../lib/curation.js');
+  const flat = [
+    { name: 'イッタラ ティーマ 17cm ホワイト', shop: 'A', price: 3000 },
+    { name: 'イッタラ ティーマ 17cm ホワイト 2枚', shop: 'B', price: 5000 },
+    { name: 'ティーマ マグ', shop: 'A', price: 2800 },
+    { name: 'ティーマ ボウル', shop: 'A', price: 2600 },
+    { name: '波佐見焼 取り皿', shop: 'C', price: 2400 }
+  ];
+  const items = flat.map((_, index) => ({ index, side: '本命' }));
+  const r = checkComparison(items, flat);
+  assert.deepEqual(r.items.map((x) => x.index), [0, 2, 4]); // 1は名前がほぼ同じ、3はショップAの3個目
+  assert.ok(r.warnings.includes('今回は価格差が小さめです'));
+  assert.ok(r.warnings.includes('代替側に当たる商品が見つかりませんでした'));
 });

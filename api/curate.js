@@ -78,5 +78,6 @@ export default async function handler(req, res, env = process.env) {
     notice = 'AIでのまとめ作成に失敗したため、各枠の商品だけを表示しています。';
     detail = `原因: ${maskSecrets(e.message)}`.slice(0, 400);
   }
+  if (!notice && curation.warnings && curation.warnings.length) notice = curation.warnings.join('。') + '。';
   return send(res, 200, { typeName: CURATION_TYPES[theme.type].name, themeId: theme.id, ...curation, notice, detail });
 }
