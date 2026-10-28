@@ -16,7 +16,8 @@ Vercel（無料プラン）なら、APIキーをサーバー側の「環境変�
 
 | 場所 | 役割 |
 | --- | --- |
-| `index.html` / `css/` / `js/` | スマホ画面 |
+| `index.html` / `css/` / `js/app.js` | スマホ画面（商品発掘・投稿管理） |
+| `js/store.js` | 商品の投稿状態の保存（今はiPhone内。DBに移すときはここだけ差し替える） |
 | `api/discover.js` | 「商品を発掘する」の処理（Vercel上で動く） |
 | `api/curate.js` | 「選び方まとめを作る」の処理 |
 | `lib/themes.js` | まとめの型（6種類）とテーマ一覧。テーマごとに検索キーワードと価格帯の枠を持つ |
@@ -112,6 +113,22 @@ Vercel（無料プラン）なら、APIキーをサーバー側の「環境変�
 - 高価格品と低価格品は「本物と劣化版」ではなく、何にお金を払うか／何を妥協するかで比べる
 
 偽物・コピー品・正規品の断定や「劣化版」という表現は、生成後のチェックで取り除きます。
+
+## 投稿管理（ROOM・Instagram）
+
+各商品カードの下のボタンで、商品ごとに状態を記録できます（もう一度押すと未選択に戻る）。
+
+| 状態 | ボタン |
+| --- | --- |
+| 未選択 | （何も押していない） |
+| ROOM候補 | ROOM候補にする |
+| ROOM投稿済み | ROOMに入れた |
+| Instagram投稿待ち | Instagram投稿待ち |
+| Instagram投稿済み | Instagram投稿済み |
+
+上部の「投稿管理」タブで、状態ごとに一覧できます。「Instagram投稿待ち」では複数の商品にチェックを入れて、まとめてコピー・まとめて投稿済みにできます（「Instagram投稿を作る」は次の段階で、カルーセル投稿の構成・文章の自動生成につなげる予定）。
+
+保存先は今はiPhoneのブラウザ内（無料・設定不要）。別の端末とは共有されません。保存処理は `js/store.js` の `ProductStore`（`getStatus` / `setStatus` / `list` / `counts` / `exportAll`、すべてPromiseを返す）に閉じ込めてあり、データは `{ id, status, name, price, url, image, shop, code, intro, reason, role, createdAt, updatedAt }` の形なので、DBに移すときはこの部品の中身をAPI呼び出しに差し替え、`exportAll` で取り出したデータを移せば済みます。
 
 ## 料金を抑える工夫
 

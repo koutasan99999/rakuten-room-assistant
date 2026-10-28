@@ -202,8 +202,223 @@
       recordStat(opts.genreId, 'copied');
     }));
     card.appendChild(actions);
+    card.appendChild(statusBox(p));
     return card;
   }
+
+  // ---- 投稿状態（ROOM・Instagram）の管理 ----
+  var Store = window.ProductStore;
+  var STATUS_BUTTONS = [
+    { id: 'room_candidate', label: 'ROOM候補にする' },
+    { id: 'room_posted', label: 'ROOMに入れた' },
+    { id: 'ig_waiting', label: 'Instagram投稿待ち' },
+    { id: 'ig_posted', label: 'Instagram投稿済み' }
+  ];
+
+  // 状態ボタン一式。押すとその状態に、もう一度押すと「未選択」に戻る
+  function statusBox(p, onChange) {
+    var box = el('div', 'status-box');
+    var now = el('p', 'status-now');
+    var grid = el('div', 'status-buttons');
+    var buttons = {};
+    box.appendChild(now);
+    box.appendChild(grid);
+
+    function show(status) {
+      now.innerHTML = '';
+      now.appendChild(document.createTextNode('投稿管理：'));
+      now.appendChild(el('strong', null, Store.statusLabel(status)));
+      STATUS_BUTTONS.forEach(function (b) {
+        var on = b.id === status;
+        buttons[b.id].classList.toggle('active', on);
+        buttons[b.id].setAttribute('aria-pressed', on ? 'true' : 'false');
+        buttons[b.id].textContent = (on ? '✓ ' : '') + b.label;
+      });
+    }
+
+    STATUS_BUTTONS.forEach(function (b) {
+      var btn = el('button', 'status-btn', b.label);
+      btn.type = 'button';
+      btn.addEventListener('click', function () {
+        var next = btn.classList.contains('active') ? 'none' : b.id;
+        Store.setStatus(p, next).then(function (status) {
+          show(status);
+          updateManageCount();
+          showToast(status === 'none' ? '未選択に戻しました' : '「' + Store.statusLabel(status) + '」にしました');
+          if (onChange) onChange(status);
+        }, function () {
+          showToast('保存できませんでした');
+        });
+      });
+      buttons[b.id] = btn;
+      grid.appendChild(btn);
+    });
+
+    show('none');
+    Store.getStatus(p).then(show);
+    return box;
+  }
+
+  // 投稿管理の画面
+  var manageView = document.getElementById('view-manage');
+  var discoverView = document.getElementById('view-discover');
+  var manageList = document.getElementById('manage-list');
+  var manageEmpty = document.getElementById('manage-empty');
+  var statusTabs = document.getElementById('status-tabs');
+  var manageCount = document.getElementById('manage-count');
+  var igBar = document.getElementById('ig-bar');
+  var igSelectedText = document.getElementById('ig-selected');
+  var igCopy = document.getElementById('ig-copy');
+  var igDone = document.getElementById('ig-done');
+  var igCreate = document.getElementById('ig-create');
+  var MANAGE_TABS = ['room_candidate', 'room_posted', 'ig_waiting', 'ig_posted'];
+  var currentTab = 'room_candidate';
+  var igSelected = {}; // Instagram投稿待ちでチェックした商品（id → 商品）
+
+  function updateManageCount() {
+    Store.counts().then(function (c) {
+      var total = MANAGE_TABS.reduce(function (sum, s) { return sum + (c[s] || 0); }, 0);
+      manageCount.textContent = total ? '(' + total + ')' : '';
+    });
+  }
+
+  function renderStatusTabs(counts) {
+    statusTabs.innerHTML = '';
+    MANAGE_TABS.forEach(function (s) {
+      var tab = el('button', 'status-tab' + (s === currentTab ? ' active' : ''), Store.statusLabel(s) + '（' + (counts[s] || 0) + '）');
+      tab.type = 'button';
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', s === currentTab ? 'true' : 'false');
+      tab.addEventListener('click', function () {
+        currentTab = s;
+        renderManage();
+      });
+      statusTabs.appendChild(tab);
+    });
+  }
+
+  function selectedList() {
+    return Object.keys(igSelected).map(function (k) { return igSelected[k]; });
+  }
+
+  function updateIgBar() {
+    var n = selectedList().length;
+    igSelectedText.textContent = n + '件選択中' + (n ? '' : '（Instagramにまとめたい商品にチェック）');
+    igCopy.disabled = n === 0;
+    igDone.disabled = n === 0;
+    igCreate.disabled = true; // 次の段階で、カルーセル投稿の構成・文章の自動生成につなげる
+  }
+
+  function manageCard(item) {
+    var card = el('article', 'card manage-card');
+    if (currentTab === 'ig_waiting') {
+      var pick = el('label', 'pick');
+      var box = el('input');
+      box.type = 'checkbox';
+      box.checked = !!igSelected[item.id];
+      card.classList.toggle('selected', box.checked);
+      box.addEventListener('change', function () {
+        if (box.checked) igSelected[item.id] = item; else delete igSelected[item.id];
+        card.classList.toggle('selected', box.checked);
+        updateIgBar();
+      });
+      pick.appendChild(box);
+      pick.appendChild(document.createTextNode('Instagram投稿に使う'));
+      card.appendChild(pick);
+    }
+
+    var top = el('div', 'card-top');
+    if (item.image) {
+      var img = el('img', 'thumb');
+      img.src = item.image;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function () { img.remove(); };
+      top.appendChild(img);
+    }
+    var info = el('div');
+    info.appendChild(el('h2', 'card-title', item.name));
+    info.appendChild(el('p', 'price', formatPrice(item.price)));
+    top.appendChild(info);
+    card.appendChild(top);
+
+    var actions = el('div', 'actions');
+    if (item.code && item.intro) {
+      var room = el('a', 'btn btn-primary', '紹介文をコピーしてROOMに投稿');
+      room.href = roomUrl(item.code);
+      room.target = '_blank';
+      room.rel = 'noopener';
+      room.addEventListener('click', function () {
+        legacyCopy(item.intro).then(function () { showToast('紹介文をコピーしました。ROOMで貼り付けてください'); }, function () {});
+      });
+      actions.appendChild(room);
+    }
+    var link = el('a', 'btn btn-secondary', '楽天で商品を見る');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    actions.appendChild(link);
+    card.appendChild(actions);
+
+    // 状態を変えたら、その商品は別のタブへ移るので一覧を描き直す
+    card.appendChild(statusBox(item, function (status) {
+      if (status !== 'ig_waiting') delete igSelected[item.id];
+      renderManage();
+    }));
+    return card;
+  }
+
+  function renderManage() {
+    Store.counts().then(renderStatusTabs);
+    igBar.hidden = currentTab !== 'ig_waiting';
+    Store.list(currentTab).then(function (items) {
+      manageList.innerHTML = '';
+      // 他のタブへ移った商品は選択から外す
+      var ids = items.map(function (x) { return x.id; });
+      Object.keys(igSelected).forEach(function (id) { if (ids.indexOf(id) === -1) delete igSelected[id]; });
+      items.forEach(function (item) { manageList.appendChild(manageCard(item)); });
+      manageEmpty.hidden = items.length > 0;
+      manageEmpty.textContent = '「' + Store.statusLabel(currentTab) + '」の商品はまだありません。商品発掘の画面で、各商品の下のボタンから追加できます。';
+      updateIgBar();
+    });
+  }
+
+  // 選んだ商品の一覧文（今はコピー用。次の段階でInstagram投稿の自動生成に使う）
+  function igListText(list) {
+    var marks = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+    return list.map(function (p, i) {
+      var head = (marks[i] || '・') + ' ' + (p.role ? p.role + '：' : '') + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）';
+      var why = p.reason || p.why;
+      return why ? head + '\n・' + why : head;
+    }).join('\n\n');
+  }
+
+  igCopy.addEventListener('click', function () {
+    copyText(igListText(selectedList())).then(function () { showToast(selectedList().length + '商品分をコピーしました'); }, function () {
+      showToast('コピーできませんでした');
+    });
+  });
+  igDone.addEventListener('click', function () {
+    var list = selectedList();
+    Promise.all(list.map(function (item) { return Store.setStatus(item, 'ig_posted'); })).then(function () {
+      igSelected = {};
+      showToast(list.length + '商品を「Instagram投稿済み」にしました');
+      updateManageCount();
+      renderManage();
+    });
+  });
+
+  // 画面の切り替え（#manage で投稿管理）
+  function showView() {
+    var manage = location.hash === '#manage';
+    manageView.hidden = !manage;
+    discoverView.hidden = manage;
+    Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
+      t.classList.toggle('active', (t.getAttribute('data-view') === 'manage') === manage);
+    });
+    if (manage) renderManage();
+  }
+  window.addEventListener('hashchange', showView);
 
   // まとめ全体を1つの文章にする（ROOMのコレクション説明やSNS投稿用）
   function curationText(d) {
@@ -395,6 +610,8 @@
   }
 
   restoreLast();
+  showView();
+  updateManageCount();
   freeText.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
   restoreConditions();
   searchBtn.addEventListener('click', searchWithConditions);
