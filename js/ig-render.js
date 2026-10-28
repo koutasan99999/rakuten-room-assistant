@@ -14,16 +14,17 @@
     handle: '@ganka_kuma_'
   };
 
-  // 投稿全体で統一する色（暖かいベージュ〜グレージュ）
+  // 投稿全体で統一する色（表紙・誘導はグレージュ、商品カードは薄いグレーで商品を主役に）
   var C = {
-    coverBg: '#EDE6DC',
-    cardBg: '#F7F4EF',
+    coverBg: '#ECE7E0',
+    cardBg: '#ECECEC',
     panel: '#FFFFFF',
-    text: '#2A2724',
-    sub: '#6F665D',
+    text: '#2B2B2B',
+    sub: '#5F5F5F',
     accent: '#9A8573',
-    line: '#E2D9CD',
-    memoBg: '#EFE8DF'
+    pill: '#7A7A7A',
+    line: '#D6D6D6',
+    memoBg: '#FFFFFF'
   };
 
   var FONT = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "IPAGothic", sans-serif';
@@ -136,7 +137,7 @@
     var x = c.getContext('2d');
     x.drawImage(img, 0, 0, w, h);
     var data;
-    try { data = x.getImageData(0, 0, w, h).data; } catch (e) { return c; }
+    try { data = x.getImageData(0, 0, w, h).data; } catch (e) { c.cutout = false; return c; }
 
     // 四隅の色を背景色とみなす
     function px(i) { return [data[i], data[i + 1], data[i + 2], data[i + 3]]; }
@@ -157,49 +158,109 @@
         }
       }
     }
-    if (maxX < 0) return c;
+    if (maxX < 0) return cutoutWhite(c);
     var cw = maxX - minX + 1;
     var ch = maxY - minY + 1;
-    if (cw > w * 0.96 && ch > h * 0.96) return c; // ほぼ余白なし
+    if (cw > w * 0.96 && ch > h * 0.96) return cutoutWhite(c); // ほぼ余白なし
     var pad = Math.round(Math.max(cw, ch) * 0.03);
     minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
     cw = Math.min(w - minX, cw + pad * 2); ch = Math.min(h - minY, ch + pad * 2);
     var out = document.createElement('canvas');
     out.width = cw; out.height = ch;
     out.getContext('2d').drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
-    return out;
+    return cutoutWhite(out);
+  }
+
+  // ---- 白い背景を透明にする（周りから続いている白だけを抜く。白い商品を消しすぎたら抜かない） ----
+  function cutoutWhite(src) {
+    var w = src.width, h = src.height;
+    var x = src.getContext('2d');
+    var img;
+    try { img = x.getImageData(0, 0, w, h); } catch (e) { src.cutout = false; return src; }
+    var d = img.data;
+    var n = w * h;
+    function white(i) {
+      var p = i * 4;
+      if (d[p + 3] < 16) return true;
+      var mx = Math.max(d[p], d[p + 1], d[p + 2]);
+      var mn = Math.min(d[p], d[p + 1], d[p + 2]);
+      return mn >= 238 && mx - mn <= 14;
+    }
+    var removed = new Uint8Array(n);
+    var stack = [];
+    var borderWhite = 0, borderTotal = 0;
+    function seed(i) {
+      borderTotal++;
+      if (white(i)) { borderWhite++; if (!removed[i]) { removed[i] = 1; stack.push(i); } }
+    }
+    for (var i = 0; i < w; i++) { seed(i); seed((h - 1) * w + i); }
+    for (var j = 0; j < h; j++) { seed(j * w); seed(j * w + w - 1); }
+    // 周りがほとんど白でなければ（写真の背景など）抜かない
+    if (borderWhite < borderTotal * 0.7) { src.cutout = false; return src; }
+    var count = stack.length;
+    while (stack.length) {
+      var k = stack.pop();
+      var kx = k % w, ky = (k - kx) / w;
+      var nb = [kx > 0 ? k - 1 : -1, kx < w - 1 ? k + 1 : -1, ky > 0 ? k - w : -1, ky < h - 1 ? k + w : -1];
+      for (var q = 0; q < 4; q++) {
+        var m = nb[q];
+        if (m >= 0 && !removed[m] && white(m)) { removed[m] = 1; count++; stack.push(m); }
+      }
+    }
+    // 抜いた部分が多すぎる＝白い商品まで消えている → 抜かない
+    if (count > n * 0.85 || count < n * 0.03) { src.cutout = false; return src; }
+    for (var t = 0; t < n; t++) {
+      if (removed[t]) { d[t * 4 + 3] = 0; continue; }
+      // 境目をなめらかに：抜いた所に接する明るい画素は半透明に
+      var tx = t % w;
+      var edge = (tx > 0 && removed[t - 1]) || (tx < w - 1 && removed[t + 1]) || (t >= w && removed[t - w]) || (t < n - w && removed[t + w]);
+      if (edge && Math.min(d[t * 4], d[t * 4 + 1], d[t * 4 + 2]) >= 215) d[t * 4 + 3] = 120;
+    }
+    x.putImageData(img, 0, 0);
+    src.cutout = true;
+    return src;
   }
 
   // 枠の中に、はみ出さず最大の大きさで中央に置く（小さい画像は拡大する）
-  function drawContain(ctx, src, x, y, w, h) {
+  function containRect(src, x, y, w, h) {
     var s = Math.min(w / src.width, h / src.height);
     var dw = src.width * s;
     var dh = src.height * s;
-    ctx.drawImage(src, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    return { x: x + (w - dw) / 2, y: y + (h - dh) / 2, w: dw, h: dh };
+  }
+
+  function drawContain(ctx, src, x, y, w, h) {
+    var r = containRect(src, x, y, w, h);
+    ctx.drawImage(src, r.x, r.y, r.w, r.h);
   }
 
   function priceText(n) {
     return Number(n || 0).toLocaleString('ja-JP');
   }
 
-  function label(ctx, text, x, y) {
-    ctx.font = font(30, 700);
-    var w = ctx.measureText(text).width + 44;
-    roundRect(ctx, x, y, w, 56, 28);
-    ctx.strokeStyle = C.accent;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = C.accent;
+  // 塗りつぶしの丸いラベル（左上のカテゴリ・右上のページ番号）
+  function pill(ctx, text, x, y, alignRight) {
+    ctx.font = font(32, 600);
+    var w = ctx.measureText(text).width + 56;
+    var left = alignRight ? x - w : x;
+    roundRect(ctx, left, y, w, 64, 32);
+    ctx.fillStyle = C.pill;
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, x + 22, y + 29);
+    ctx.fillText(text, left + 28, y + 34);
     ctx.textBaseline = 'alphabetic';
   }
 
+  function label(ctx, text, x, y) { pill(ctx, text, x, y, false); }
+
   function pageNumber(ctx, page, total) {
-    ctx.font = font(30, 500);
-    ctx.fillStyle = C.sub;
-    ctx.textAlign = 'right';
-    ctx.fillText(page + '/' + total, SIZE.width - M, M + 40);
+    pill(ctx, page + '/' + total, SIZE.width - M + 20, M - 12, true);
+  }
+
+  function centerText(ctx, text, y) {
+    ctx.textAlign = 'center';
+    ctx.fillText(text, SIZE.width / 2, y);
     ctx.textAlign = 'left';
   }
 
@@ -237,86 +298,110 @@
       drawBear(ctx, d.bear, SIZE.width - M - 115, SIZE.height - M - 115, 230);
     },
 
-    // 2枚目以降：商品カード
+    // 2枚目以降：商品カード（薄いグレーの背景に商品を大きく、文字は中央、下にくまの一言メモ）
     item: function (ctx, d) {
       ctx.fillStyle = C.cardBg;
       ctx.fillRect(0, 0, SIZE.width, SIZE.height);
-      label(ctx, d.category, M, M);
+      label(ctx, d.category, M - 20, M - 12);
       pageNumber(ctx, d.page, d.total);
 
-      // 商品画像（主役なので大きく）
-      var px = M, py = 172, pw = SIZE.width - M * 2, ph = 640;
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.05)';
-      ctx.shadowBlur = 24;
-      roundRect(ctx, px, py, pw, ph, 36);
-      ctx.fillStyle = C.panel;
-      ctx.fill();
-      ctx.restore();
+      // 商品画像：背景を抜けた画像はそのまま置き、抜けない写真は角丸で置く
+      var ax = 110, ay = 170, aw = SIZE.width - 220, ah = d.role ? 570 : 600;
       if (d.image) {
         ctx.save();
-        roundRect(ctx, px, py, pw, ph, 36);
-        ctx.clip();
-        drawContain(ctx, d.image, px + 44, py + 44, pw - 88, ph - 88);
+        if (d.image.cutout) {
+          ctx.shadowColor = 'rgba(0,0,0,0.16)';
+          ctx.shadowBlur = 40;
+          ctx.shadowOffsetY = 18;
+          drawContain(ctx, d.image, ax, ay, aw, ah);
+        } else {
+          var r = containRect(d.image, ax, ay, aw, ah);
+          roundRect(ctx, r.x, r.y, r.w, r.h, 28);
+          ctx.clip();
+          ctx.drawImage(d.image, r.x, r.y, r.w, r.h);
+        }
         ctx.restore();
       }
 
-      var y = py + ph + 64;
+      var y = ay + ah + 46;
       var maxW = SIZE.width - M * 2;
       if (d.role) {
         ctx.fillStyle = C.accent;
         ctx.font = font(32, 700);
-        ctx.fillText(d.role, M, y);
-        y += 62;
-      } else {
-        y += 18;
+        centerText(ctx, d.role, y + 8);
+        y += 34;
       }
       ctx.fillStyle = C.text;
-      var name = fitText(ctx, d.shortName, { size: 54, minSize: 40, weight: 800, maxWidth: maxW, maxLines: 1 });
+      var name = fitText(ctx, d.shortName, { size: 84, minSize: 54, weight: 800, maxWidth: maxW, maxLines: 1 });
       ctx.font = font(name.size, 800);
-      ctx.fillText(name.lines[0], M, y);
-      y += 52;
+      centerText(ctx, name.lines[0], y + name.size * 0.9);
+      y += name.size * 0.9 + 64;
       if (d.subline) {
         ctx.fillStyle = C.sub;
-        var sub = fitText(ctx, d.subline, { size: 32, minSize: 26, weight: 500, maxWidth: maxW, maxLines: 1 });
+        var sub = fitText(ctx, d.subline, { size: 40, minSize: 28, weight: 500, maxWidth: maxW, maxLines: 1 });
         ctx.font = font(sub.size, 500);
-        ctx.fillText(sub.lines[0], M, y);
+        centerText(ctx, sub.lines[0], y);
+        y += 96;
+      } else {
+        y += 40;
       }
-      y += 92;
 
-      // 価格（大きく）
+      // 価格（大きく、税込）
       ctx.fillStyle = C.text;
-      ctx.font = font(68, 800);
-      var p = priceText(d.price);
-      ctx.fillText(p, M, y);
-      var pw2 = ctx.measureText(p).width;
-      ctx.font = font(32, 700);
-      ctx.fillText('円', M + pw2 + 6, y);
+      ctx.font = font(78, 800);
+      var p = '¥' + priceText(d.price);
+      var pw = ctx.measureText(p).width;
+      ctx.font = font(26, 600);
+      var tw = ctx.measureText('税込').width;
+      var px = (SIZE.width - pw - tw - 12) / 2;
+      ctx.font = font(78, 800);
+      ctx.fillText(p, px, y);
       ctx.fillStyle = C.sub;
-      ctx.font = font(24, 500);
-      ctx.fillText('（税込）', M + pw2 + 44, y);
+      ctx.font = font(26, 600);
+      ctx.fillText('税込', px + pw + 12, y);
 
-      // くまの一言メモ
-      var by = SIZE.height - M - 150;
-      var bx = M + 150;
-      roundRect(ctx, bx, by, SIZE.width - M - bx, 150, 28);
+      // くまの一言メモ（左下に大きめのクマ、右に吹き出し）
+      var bd = 232;
+      var bcx = M - 4 + bd / 2;
+      var bcy = SIZE.height - 56 - bd / 2;
+      var bx = bcx + bd / 2 + 34;
+      var bh = 196;
+      var by = bcy - bh / 2 + 6;
+      var bw = SIZE.width - 60 - bx;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.08)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 6;
+      roundRect(ctx, bx, by, bw, bh, 44);
       ctx.fillStyle = C.memoBg;
       ctx.fill();
-      ctx.fillStyle = C.accent;
-      ctx.font = font(24, 700);
-      ctx.fillText('くまの一言メモ', bx + 32, by + 44);
+      // 吹き出しのしっぽ（クマの方へ）
+      ctx.beginPath();
+      ctx.moveTo(bx + 2, by + bh / 2 - 22);
+      ctx.lineTo(bx - 26, by + bh / 2);
+      ctx.lineTo(bx + 2, by + bh / 2 + 22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = C.sub;
+      ctx.font = font(28, 600);
+      ctx.fillText('くまの一言メモ', bx + 44, by + 54);
+      var lw = ctx.measureText('くまの一言メモ').width;
+      ctx.fillStyle = C.line;
+      ctx.fillRect(bx + 44 + lw + 18, by + 44, bw - 44 - lw - 18 - 44, 2);
       ctx.fillStyle = C.text;
-      var memo = fitText(ctx, d.memo || '', { size: 32, minSize: 24, weight: 600, maxWidth: SIZE.width - M - bx - 64, maxLines: 2 });
+      var memo = fitText(ctx, d.memo || '', { size: 38, minSize: 28, weight: 600, maxWidth: bw - 88, maxLines: 2 });
       ctx.font = font(memo.size, 600);
-      drawLines(ctx, memo.lines, bx + 32, by + 44 + memo.size + 14, memo.size * 1.35);
-      drawBear(ctx, d.bear, M + 62, by + 75, 124);
+      drawLines(ctx, memo.lines, bx + 44, by + 54 + memo.size + 22, memo.size * 1.42);
+      drawBear(ctx, d.bear, bcx, bcy, bd);
     },
 
     // 最後：ROOMへの誘導
     cta: function (ctx, d) {
       ctx.fillStyle = C.coverBg;
       ctx.fillRect(0, 0, SIZE.width, SIZE.height);
-      label(ctx, '楽天ROOM', M, M);
+      label(ctx, '楽天ROOM', M - 20, M - 12);
       pageNumber(ctx, d.page, d.total);
       var maxW = SIZE.width - M * 2;
 
