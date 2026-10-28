@@ -1,7 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import discover from '../api/discover.js';
-import curate from '../api/curate.js';
 import { parseBudget, fallbackPlan } from '../lib/planner.js';
 import { resolveFilterGenre, FILTER_GENRES } from '../lib/genres.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
@@ -28,7 +27,7 @@ function rakutenByPrice(url) {
 const PICKS = { picks: [0, 1, 2].map((id) => ({ id, want: 8, reason: '仕事中も香りが強すぎない。', intro: GOOD_INTRO })) };
 
 test('画面のジャンル選択肢はすべて検索語を持つ', () => {
-  assert.equal(FILTER_GENRES.length, 18);
+  assert.equal(FILTER_GENRES.length, 19);
   for (const f of FILTER_GENRES) assert.ok(resolveFilterGenre(f.id).keywords.length >= 4, f.id);
   assert.equal(resolveFilterGenre(''), null);
   assert.equal(resolveFilterGenre('unknown'), null);
@@ -97,38 +96,3 @@ test('検索プランのAIが失敗しても、予備プランで発掘を続け
   assert.ok(data.products.length > 0);
 });
 
-test('型＋ジャンル＋自由入力：条件から枠を組み立てて選び方まとめを作る', async () => {
-  mock = installFetchMock({
-    rakuten: rakutenByPrice,
-    openai: (body) => isPlan(body)
-      ? aiReply({
-        summary: '北欧系の白い食器で、本命ブランドと安い代替品', title: '北欧の白い器、本命と手頃な代替', audience: '', brand: true,
-        keywords: ['北欧 食器 白'],
-        slots: [{ label: '本命', keyword: 'イッタラ ティーマ ホワイト', minPrice: 3000 }, { label: '安い代替', keyword: '北欧風 プレート 白', maxPrice: 2000 }]
-      })
-      : aiReply({
-        title: '北欧の白い器', lead: '本命と代替', verdict: '迷ったら本命',
-        items: [{ id: 0, role: '本命', why: '定番', intro: GOOD_INTRO }, { id: 12, role: '安い代替', why: '近い雰囲気', intro: GOOD_INTRO }]
-      })
-  });
-  const { status, data } = await call(curate, { type: 'premium_budget', genre: 'tableware', free: '北欧、白、来客用' });
-  assert.equal(status, 200);
-  assert.equal(data.typeName, '本命＋安い代替');
-  assert.deepEqual(mock.calls.rakuten.map((c) => c.url.searchParams.get('keyword')), ['イッタラ ティーマ ホワイト', '北欧風 プレート 白']);
-  const build = mock.calls.openai.find((b) => !isPlan(b));
-  assert.match(build.messages[1].content, /ユーザーの発掘条件（最優先/);
-  assert.ok(build.messages[0].content.includes('ブランド・プレゼント適性')); // 食器はブランド評価あり
-  assert.equal(data.products.length, 2);
-  assert.equal(data.notice, ''); // 予備表示ではなくAIのまとめ
-  assert.deepEqual(data.products.map((p) => p.role), ['本命', '安い代替']);
-});
-
-test('型だけ指定（ジャンルおまかせ・自由入力なし）：今まで通りの用意済みテーマ', async () => {
-  mock = installFetchMock({
-    rakuten: rakutenByPrice,
-    openai: () => aiReply({ title: 't', items: [{ id: 0, role: 'a', intro: GOOD_INTRO }, { id: 8, role: 'b', intro: GOOD_INTRO }] })
-  });
-  const { data } = await call(curate, { type: 'budget_tiers' });
-  assert.equal(mock.calls.openai.filter(isPlan).length, 0);
-  assert.notEqual(data.themeId, 'custom');
-});

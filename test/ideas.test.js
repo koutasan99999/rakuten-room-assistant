@@ -1,10 +1,10 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, POST_TYPES, sampleIdeaSeeds } from '../lib/catalog.js';
-import { normalizeIdea, fallbackIdea, ideaToTheme, MUST_BUY_SUBTITLES } from '../lib/ideas.js';
+import { normalizeIdea, fallbackIdea, MUST_BUY_SUBTITLES } from '../lib/ideas.js';
+import { briefFromIdea } from '../lib/explore.js';
 import { buildHashtags } from '../lib/hashtags.js';
 import ideasApi from '../api/ideas.js';
-import curate from '../api/curate.js';
 import instagram from '../api/instagram.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
 
@@ -70,6 +70,24 @@ test('企画の検証：シリーズ名を付け、型からまとめの型を�
   assert.equal(normalizeIdea({ topic: 'x', postType: '存在しない型', genre: '食器・キッチン', slots: [] }), null);
 });
 
+test('ユーザーが編集した企画：タイトル・型・ジャンルを自由に変えられ、元の検索語は使わない', () => {
+  const idea = normalizeIdea({
+    edited: true, title: '30代男性に5,000円で贈るなら何がいいか', curationType: 'gift', postType: 'プレゼント',
+    target: '30代男性の友人', priceBand: '4,000〜6,000円', genre: 'メンズ小物', axis: '', free: '名入れはしない', slots: [{ label: 'a', keyword: '古い検索語' }]
+  });
+  assert.equal(idea.title, '30代男性に5,000円で贈るなら何がいいかについて本気出して考えてみた');
+  assert.equal(idea.topic, '30代男性に5,000円で贈るなら何がいいか');
+  assert.equal(idea.curationType, 'gift');
+  assert.equal(idea.genre, 'メンズ小物');
+  const brief = briefFromIdea(idea);
+  assert.deepEqual(brief.hints, []);
+  assert.equal(brief.free, '名入れはしない');
+  assert.deepEqual([brief.minPrice, brief.maxPrice], [4000, 6000]);
+  // 「本気出して考えてみた」で終わるタイトルはそのまま
+  assert.equal(normalizeIdea({ edited: true, title: '何がいいか本気出して考えてみた' }).title, '何がいいか本気出して考えてみた');
+  assert.equal(normalizeIdea({ edited: true, title: '' }), null);
+});
+
 test('予備の企画も6枠そろう', () => {
   for (let i = 1; i <= 20; i++) {
     for (const seed of sampleIdeaSeeds([], 3, seededRandom(i))) {
@@ -90,27 +108,6 @@ test('今日の企画API：3案を返し、直近の履歴と季節をAIに渡�
   assert.match(user, /直近の投稿/);
   assert.match(user, /出産祝い｜ジャンル:ベビー・出産祝い/);
   assert.match(user, /今の季節: \d+月/);
-});
-
-test('選んだ企画で商品を探す：企画の枠で検索し、ブランドと一言メモを返す', async () => {
-  const idea = fallbackIdea(sampleIdeaSeeds([], 1, seededRandom(3))[0]);
-  mock = installFetchMock({
-    rakuten: (url) => {
-      const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 6) + (url.searchParams.get('minPrice') || '') + (url.searchParams.get('maxPrice') || '');
-      return json(200, { items: makeItems(5, kw).map((it, i) => ({ ...it, itemPrice: (Number(url.searchParams.get('minPrice')) || 500) + i * 10, shopName: `${kw}店${i}` })), pageCount: 1 });
-    },
-    openai: () => aiReply({
-      title: 't', lead: 'l', verdict: 'v',
-      items: [0, 5, 10].map((id, i) => ({ id, role: idea.slots[i].label, brand: ['STANLEY', '', 'THERMOS'][i], memo: i === 1 ? 'おすすめです。快適な暮らしをサポート。' : '迷ったらまずこれでいい枠。', pick: '選ぶ理由', why: 'w', intro: GOOD_INTRO }))
-    })
-  });
-  const { data } = await call(curate, { idea });
-  assert.equal(data.idea.topic, idea.topic);
-  assert.equal(mock.calls.rakuten.length, idea.slots.length);
-  assert.equal(data.products[0].brand, 'STANLEY');
-  assert.equal(data.products[0].memo, '迷ったらまずこれでいい枠。');
-  assert.equal(data.products[1].memo, ''); // NG表現の一言メモは使わない
-  assert.ok(mock.calls.openai[0].messages[0].content.includes('くまの一言メモ'));
 });
 
 const ROOM_BLOCK = '紹介したものは楽天ROOMにまとめています。\nプロフィールのリンクからどうぞ。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。';
@@ -171,15 +168,7 @@ test('「まずこれ買っとけ」型の予備企画は、表紙サブタイ�
   const seed = { genre: CATALOG.find((c) => c.id === 'disaster'), type: POST_TYPES.find((t) => t.id === 'must_buy'), items: ['最低限これだけの防災グッズ'] };
   const idea = fallbackIdea(seed);
   assert.ok(MUST_BUY_SUBTITLES.some((x) => idea.subtitle === `― ${x} ―`), idea.subtitle);
-  assert.match(ideaToTheme(idea).request, /煽/);
-});
-
-test('企画→まとめのテーマ変換', () => {
-  const idea = fallbackIdea(sampleIdeaSeeds([], 1, seededRandom(7))[0]);
-  const theme = ideaToTheme(idea);
-  assert.equal(theme.id, 'idea');
-  assert.equal(theme.slots.length, 6);
-  assert.match(theme.request, /誰ならこれを選ぶべきか/);
+  assert.match(briefFromIdea(idea).note, /煽/);
 });
 
 test('キャプションのROOM誘導に、コレクション名を入れるよう伝える（予備の文にも入る）', async () => {

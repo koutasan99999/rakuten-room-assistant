@@ -8,12 +8,13 @@
   var MAX_RECENT = 20;
   var discoverBtn = document.getElementById('discover-btn');
   var searchBtn = document.getElementById('search-btn');
-  var curateType = document.getElementById('curate-type');
   var genreSelect = document.getElementById('genre-select');
   var freeText = document.getElementById('free-text');
   var COND_KEY = 'room-conditions';
   var PLACEHOLDERS = ['例：30代男性へのプレゼント、1万円以下', '例：北欧っぽい白い食器', '例：仕事でも使いやすい香水', '例：旅行が楽になるもの', '例：最近流行ってる安いもの'];
   var loading = document.getElementById('loading');
+  var loadingText = document.getElementById('loading-text');
+  var ideasBtn = document.getElementById('ideas-btn');
   var message = document.getElementById('message');
   var genreEl = document.getElementById('genre');
   var results = document.getElementById('results');
@@ -138,7 +139,7 @@
     card.appendChild(el('p', className || 'reason', text));
   }
 
-  // opts.genreId: 発掘モードのジャンル記録用 / opts.curation: まとめモードの表示
+  // opts.genreId: 発掘モードのジャンル記録用
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
@@ -168,14 +169,7 @@
     card.appendChild(top);
 
     if (p.pick) card.appendChild(el('p', 'pick-line', p.pick));
-    if (opts.curation) {
-      addSection(card, 'こんな人に', p.forWho);
-      addSection(card, 'この位置の理由', p.why);
-      addSection(card, '価格差の中身', p.tradeoff);
-      addSection(card, 'ブランド・贈り物として', p.brandNote);
-    } else {
-      addSection(card, '選定理由', p.reason);
-    }
+    addSection(card, '選定理由', p.reason);
     if (p.memo) {
       var memoBox = el('div', 'memo-box');
       memoBox.appendChild(el('b', null, 'くまの一言メモ'));
@@ -211,50 +205,8 @@
       recordStat(opts.genreId, 'copied');
     }));
     card.appendChild(actions);
-    if (opts.onAdopt) card.appendChild(adoptBox(p, card, opts.onAdopt, opts.onReplace));
     card.appendChild(statusBox(p));
     return card;
-  }
-
-  // 「採用」「今回は外す」：外した商品はInstagram投稿に使わない
-  // onReplace があれば、外したときに「別の候補を出す」（同じ役割で選び直す）ボタンも出す
-  function adoptBox(p, card, onChange, onReplace) {
-    var wrap = document.createDocumentFragment();
-    var box = el('div', 'adopt');
-    var yes = el('button', null, '採用');
-    var no = el('button', null, '今回は外す');
-    yes.type = no.type = 'button';
-    var replaceBox = el('div', 'replace-box');
-    var replaceBtn = el('button', 'btn btn-discover', '別の候補を出す');
-    replaceBtn.type = 'button';
-    var note = el('p', 'replace-note', '「' + (p.role || 'この枠') + '」の役割のまま、別の商品を探して入れ替えます');
-    replaceBox.appendChild(replaceBtn);
-    replaceBox.appendChild(note);
-    function show() {
-      yes.className = p.excluded ? '' : 'on-yes';
-      no.className = p.excluded ? 'on-no' : '';
-      card.classList.toggle('excluded', !!p.excluded);
-      replaceBox.hidden = !(p.excluded && onReplace);
-    }
-    yes.addEventListener('click', function () { p.excluded = false; show(); onChange(); });
-    no.addEventListener('click', function () { p.excluded = true; show(); onChange(); });
-    replaceBtn.addEventListener('click', function () {
-      replaceBtn.disabled = true;
-      replaceBtn.textContent = '別の候補を探しています…';
-      note.textContent = '20〜40秒ほどかかります';
-      onReplace(p, card).then(function (msg) {
-        // 入れ替えに成功したらカードごと置き換わる。見つからなかったときはここに理由を出す
-        replaceBtn.disabled = false;
-        replaceBtn.textContent = 'もう一度探す';
-        note.textContent = msg || '';
-      });
-    });
-    box.appendChild(yes);
-    box.appendChild(no);
-    wrap.appendChild(box);
-    wrap.appendChild(replaceBox);
-    show();
-    return wrap;
   }
 
   // ---- 投稿状態（ROOM・Instagram）の管理 ----
@@ -715,42 +667,6 @@
     location.hash = '#compose';
   });
 
-  // 選び方まとめから、まとめの文章と商品をそのまま持って画像づくりへ
-  function composeFromCuration(d) {
-    loadDraft();
-    var adopted = d.products.filter(function (p) { return !p.excluded; });
-    if (!adopted.length) { showToast('採用した商品がありません'); return; }
-    draft.items = adopted.map(function (p) {
-      var reason = [p.pick, p.why || p.reason].filter(Boolean).join('。');
-      return { id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, reason: reason, intro: p.intro || '', role: p.role || '', memo: p.memo || '', brand: p.brand || '' };
-    });
-    draft.postId = currentPostId();
-    draft.genre = d.idea ? d.idea.genre : '';
-    draft.postType = d.idea ? d.idea.postType : d.plan ? d.plan.postType : '';
-    if (d.idea) {
-      draft.theme = d.idea.topic;
-      draft.subtitle = d.idea.subtitle || '';
-      draft.category = (d.idea.topic || '').length <= 8 ? d.idea.topic : d.idea.genre.split('・')[0];
-    }
-    draft.summary = { enabled: true, typeName: d.typeName || '', title: d.title || '', lead: d.lead || '', verdict: d.verdict || '' };
-    draft.planId = d.plan ? d.plan.id : '';
-    if (d.plan) {
-      draft.theme = d.plan.topic;
-      draft.subtitle = d.plan.subtitle || '';
-      draft.category = d.plan.category || '';
-    }
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
-    // 投稿管理にも「Instagram投稿待ち」として入れておく
-    Promise.all(adopted.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount);
-    if (draft.postId) {
-      window.PostHistory.update(draft.postId, {
-        products: adopted.map(function (p) { return { name: p.name, brand: p.brand || '', price: p.price }; }),
-        brands: adopted.map(function (p) { return p.brand; }).filter(Boolean)
-      });
-    }
-    location.hash = '#compose';
-  }
-
   function renderCompose() {
     loadDraft();
     igTheme.value = draft.theme || '';
@@ -1003,67 +919,29 @@
   });
   window.addEventListener('hashchange', showView);
 
-  // まとめ全体を1つの文章にする（ROOMのコレクション説明やSNS投稿用）
-  function curationText(d) {
-    var marks = ['①', '②', '③', '④', '⑤'];
-    var lines = [d.title, ''];
-    if (d.axis) lines.push('比較軸：' + d.axis, '');
-    if (d.lead) lines.push(d.lead, '');
-    d.products.forEach(function (p, i) {
-      lines.push(marks[i] + ' ' + p.role + (p.giftClass ? '（' + p.giftClass + '）' : '') + '：' + p.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) + '（' + formatPrice(p.price) + '）');
-      if (p.pick) lines.push('→ ' + p.pick);
-      if (p.forWho) lines.push('・' + p.forWho);
-      if (p.why) lines.push('・' + p.why);
-      if (p.tradeoff) lines.push('・' + p.tradeoff);
-      if (p.brandNote) lines.push('・' + p.brandNote);
-      lines.push('');
-    });
-    if (d.verdict) lines.push(d.verdict);
-    return lines.join('\n').trim();
-  }
-
-  function renderCurationHeader(d) {
-    var card = el('article', 'card curation-head');
-    card.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.idea ? '今日の企画｜' + d.idea.postType : d.typeName));
-    card.appendChild(el('h2', 'curation-title', d.title));
-    if (d.axis) {
-      var axis = el('p', 'axis');
-      axis.appendChild(document.createTextNode('比較軸：'));
-      axis.appendChild(el('strong', null, d.axis));
-      card.appendChild(axis);
-    }
-    if (d.lead) card.appendChild(el('p', 'reason', d.lead));
-    if (d.verdict) card.appendChild(el('p', 'verdict', d.verdict));
-    var actions = el('div', 'actions');
-    actions.appendChild(copyButton('まとめ文をコピー', function () { return curationText(d); }));
-    var toIg = el('button', 'btn btn-primary', '採用した商品でInstagram投稿を作る');
-    toIg.type = 'button';
-    toIg.addEventListener('click', function () { composeFromCuration(d); });
-    actions.appendChild(toIg);
-    card.appendChild(el('p', 'adopt-count'));
-    card.appendChild(actions);
-    return card;
-  }
-
   var buttonLabels = {};
-  function setLoading(on, activeBtn) {
-    [searchBtn, discoverBtn].forEach(function (b) {
+  var LOADING_DISCOVER = '商品を探しています…<br><span class="sub">AIが選ぶまで10〜50秒ほどかかります</span>';
+  var LOADING_EXPLORE = '商品を探しています…<br><span class="sub">いくつかの方向から探すので、30〜60秒ほどかかります</span>';
+  function setLoading(on, activeBtn, text) {
+    [searchBtn, discoverBtn, ideasBtn].forEach(function (b) {
       if (!buttonLabels[b.id]) buttonLabels[b.id] = b.textContent;
       b.disabled = on;
-      if (b === activeBtn) b.textContent = on ? '作っています…' : buttonLabels[b.id];
+      if (b === activeBtn) b.textContent = on ? '探しています…' : buttonLabels[b.id];
     });
+    if (text) loadingText.innerHTML = text;
     loading.hidden = !on;
   }
 
   // APIを呼ぶ共通処理（合言葉の入力・エラー表示・時間切れを含む）
-  function request(path, body, btn, onSuccess) {
+  function request(path, body, btn, onSuccess, loadingHtml) {
     message.hidden = true;
     genreEl.hidden = true;
     results.innerHTML = '';
-    setLoading(true, btn);
+    setLoading(true, btn, loadingHtml || LOADING_DISCOVER);
+    loading.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     var controller = window.AbortController ? new AbortController() : null;
-    var timer = setTimeout(function () { if (controller) controller.abort(); }, 70000);
+    var timer = setTimeout(function () { if (controller) controller.abort(); }, 75000);
 
     return fetch(path, {
       method: 'POST',
@@ -1083,7 +961,7 @@
           if (input) {
             setPass(input.trim());
             resetBtn.hidden = false;
-            return request(path, body, btn, onSuccess);
+            return request(path, body, btn, onSuccess, loadingHtml);
           }
           showMessage('合言葉を入力すると使えるようになります。', true);
           return;
@@ -1092,7 +970,7 @@
           showMessage(r.data.error || 'うまく取得できませんでした。もう一度お試しください。', true, r.data.detail);
           return;
         }
-        var products = r.data.products || [];
+        var products = r.data.products || r.data.candidates || [];
         if (r.data.notice) showMessage(r.data.notice, products.length === 0, r.data.detail);
         onSuccess(r.data, products);
       })
@@ -1114,10 +992,10 @@
   function restoreLast() {
     var last;
     try { last = JSON.parse(localStorage.getItem(LAST_KEY)); } catch (e) { return; }
-    if (!last || !last.data || !(last.data.products || []).length) return;
+    if (!last || !last.data) return;
     if (Date.now() - last.at > 24 * 60 * 60 * 1000) return; // 1日以上前の結果は出さない
-    if (last.mode === 'curate') renderCuration(last.data);
-    else renderDiscover(last.data);
+    if (last.mode === 'explore' && (last.data.candidates || []).length) renderExplore(last.data);
+    else if (last.mode === 'discover' && (last.data.products || []).length) renderDiscover(last.data);
   }
 
   // 発掘結果をInstagramの投稿文に使える1つの文章にする
@@ -1136,14 +1014,13 @@
     var card = el('article', 'card list-head');
     card.appendChild(el('p', 'list-count', data.products.length + '商品'));
     var actions = el('div', 'actions');
-    actions.appendChild(copyButton('Instagram用にまとめてコピー', function () { return discoverText(data); }, null, '6商品分をまとめてコピーしました'.replace('6', String(data.products.length))));
+    actions.appendChild(copyButton('Instagram用にまとめてコピー', function () { return discoverText(data); }, null, data.products.length + '商品分をまとめてコピーしました'));
     card.appendChild(actions);
     return card;
   }
 
   function renderDiscover(data) {
     var products = data.products || [];
-    // 条件を指定したときは読み取った条件を、ランダムのときはジャンルを表示
     var shown = data.condition || data.genre;
     if (shown && products.length) {
       genreEl.innerHTML = '';
@@ -1155,55 +1032,10 @@
     products.forEach(function (p) { results.appendChild(renderCard(p, { genreId: data.genreId })); });
   }
 
-  function renderCuration(data) {
-    var header = renderCurationHeader(data);
-    results.appendChild(header);
-    var count = header.querySelector('.adopt-count');
-    function onAdopt() {
-      var n = data.products.filter(function (p) { return !p.excluded; }).length;
-      count.textContent = '採用 ' + n + ' / ' + data.products.length + '商品（Instagram投稿は5〜6商品が目安）';
-      saveLast('curate', data);
-    }
-    // 外した商品の代わりを、同じ役割の枠から選び直して入れ替える（古い保存結果で条件が無いときは出さない）
-    function onReplace(p, card) {
-      var others = data.products.filter(function (x) { return x !== p && !x.excluded; });
-      data.rejected = (data.rejected || []).concat(p.code ? [p.code] : []);
-      data.tries = data.tries || {};
-      var key = p.slot || p.role || '';
-      var tries = data.tries[key] || 0;
-      data.tries[key] = tries + 1;
-      return postJson('api/replace', {
-        context: data.context,
-        slot: p.slot || '',
-        role: p.role || '',
-        tries: tries,
-        exclude: data.rejected.concat(data.products.map(function (x) { return x.code; })).filter(Boolean),
-        others: others.map(function (x) { return { name: x.name, role: x.role }; })
-      }).then(function (r) {
-        if (r.status !== 200) return r.data.error || '別の候補を出せませんでした。もう一度お試しください。';
-        if (!r.data.product) return r.data.notice || 'この役割の別の候補が見つかりませんでした。';
-        var np = r.data.product;
-        var i = data.products.indexOf(p);
-        if (i === -1) return '';
-        data.products[i] = np;
-        rememberProducts([np]);
-        var newCard = renderCard(np, opts);
-        card.parentNode.replaceChild(newCard, card);
-        onAdopt();
-        showToast(r.data.notice ? '入れ替えました（' + r.data.notice + '）' : '別の候補に入れ替えました');
-        return '';
-      }, function () { return '通信できませんでした。電波の良い場所でもう一度お試しください。'; });
-    }
-    var opts = { curation: true, onAdopt: onAdopt, onReplace: data.context ? onReplace : null };
-    data.products.forEach(function (p) { results.appendChild(renderCard(p, opts)); });
-    onAdopt();
-  }
-
-  // 単品の発掘。conditions を渡さなければ完全ランダム
-  function discover(conditions, btn) {
+  // 完全ランダムの発掘（5商品前後、紹介文つき）
+  function discover() {
     var body = { stats: loadStats(), recent: loadRecent() };
-    if (conditions) { body.genre = conditions.genre; body.free = conditions.free; }
-    request('api/discover', body, btn || discoverBtn, function (data, products) {
+    request('api/discover', body, discoverBtn, function (data, products) {
       if (products.length) {
         recordStat(data.genreId, 'shown');
         rememberProducts(products);
@@ -1213,26 +1045,329 @@
     });
   }
 
-  function curate(conditions) {
-    // 企画以外（条件指定・型だけ）で作ったまとめは、どの投稿にも結びつけない
-    if (!conditions.idea && !conditions.planId) setCurrentPostId('');
-    request('api/curate', conditions, searchBtn, function (data, products) {
-      if (!products.length) return;
-      if ((data.idea || data.plan) && currentPostId()) {
-        History.update(currentPostId(), { brands: products.map(function (p) { return p.brand; }).filter(Boolean) });
-      }
-      saveLast('curate', data);
-      renderCuration(data);
+  // ---- 過去に出した・使った商品（新しく探すとき、同じものばかり出ないように） ----
+  var SEEN_KEY = 'room-seen-products';
+  function loadSeen() {
+    try {
+      var list = JSON.parse(localStorage.getItem(SEEN_KEY));
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+  // src: 'shown'（候補に出た）/ 'ig'（Instagram投稿に使った）
+  function markSeen(products, src) {
+    var add = products.map(function (p) { return { code: p.code || '', name: String(p.name || '').slice(0, 60), src: src, at: Date.now() }; });
+    var codes = add.map(function (x) { return x.code; });
+    var list = add.concat(loadSeen().filter(function (x) { return codes.indexOf(x.code) === -1; })).slice(0, 200);
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  // 直近50商品：Instagramに使った・ROOM候補にした商品を先に、そのあと候補に出た商品
+  function seenForSearch() {
+    return Store.list().then(function (saved) {
+      var used = saved.map(function (x) { return { code: x.code || x.id || '', name: x.name || '' }; });
+      var seen = loadSeen();
+      var first = seen.filter(function (x) { return x.src === 'ig'; }).concat(used);
+      var rest = seen.filter(function (x) { return x.src !== 'ig'; });
+      var out = [];
+      var codes = {};
+      first.concat(rest).forEach(function (x) {
+        var key = x.code || x.name;
+        if (!key || codes[key] || out.length >= 50) return;
+        codes[key] = true;
+        out.push({ code: x.code, name: String(x.name).slice(0, 60) });
+      });
+      return out;
+    }, function () { return []; });
+  }
+
+  // ---- 商品を探す（企画・条件指定・最初の10投稿）：AIが広く候補を集め、ユーザーが選ぶ ----
+  // body: { idea } / { planId } / { genre, type, free, details }
+  function exploreProducts(body, btn) {
+    if (!body.idea && !body.planId) setCurrentPostId('');
+    seenForSearch().then(function (seen) {
+      body.seen = seen;
+      request('api/explore', body, btn || null, function (data, candidates) {
+        if (!candidates.length) return;
+        markSeen(candidates, 'shown');
+        var d = {
+          brief: data.brief, title: data.title, typeName: data.typeName, idea: data.idea, plan: data.plan,
+          angles: data.angles || [], candidates: candidates, view: 'recommend'
+        };
+        saveLast('explore', d);
+        renderExplore(d);
+      }, LOADING_EXPLORE);
     });
   }
 
+  var VIEWS = [
+    ['recommend', 'おすすめ順'], ['price_asc', '価格が安い順'], ['price_desc', '価格が高い順'],
+    ['main', '本命だけ'], ['alt', '代替だけ'], ['trend', 'トレンドだけ'], ['unusual', '変わり種だけ'], ['brand', 'ブランドだけ'], ['gift', 'プレゼント向きだけ']
+  ];
+  var ROLE_GROUPS = {
+    main: ['本命', '2番手', '王道', '少し奮発'],
+    alt: ['安い代替', 'コスパ', '失敗しても許せる価格'],
+    trend: ['トレンド枠'],
+    unusual: ['変わり種', '個人的に気になる'],
+    brand: ['ブランド枠', '王道', '知っておきたい'],
+    gift: ['プレゼント向き']
+  };
+  function viewCandidates(list, view) {
+    if (view === 'price_asc') return list.slice().sort(function (a, b) { return a.price - b.price; });
+    if (view === 'price_desc') return list.slice().sort(function (a, b) { return b.price - a.price; });
+    var group = ROLE_GROUPS[view];
+    if (!group) return list;
+    return list.filter(function (c) {
+      if (view === 'brand' && c.brand) return true;
+      return [c.role].concat(c.tags || []).some(function (r) { return group.indexOf(r) !== -1; });
+    });
+  }
+
+  function candidateCard(c, onToggle) {
+    var card = el('article', 'cand-card' + (c.picked ? ' picked' : ''));
+    var top = el('div', 'cand-top');
+    if (c.image) {
+      var img = el('img', 'cand-thumb');
+      img.src = c.image;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function () { img.remove(); };
+      top.appendChild(img);
+    }
+    var info = el('div', 'cand-info');
+    var chips = el('div', 'chips');
+    if (c.role) chips.appendChild(el('span', 'role', c.role));
+    else if (c.angle) chips.appendChild(el('span', 'role', c.angle));
+    (c.tags || []).forEach(function (t) { chips.appendChild(el('span', 'tag', t)); });
+    if (c.seenBefore) chips.appendChild(el('span', 'seen', '以前も候補に出た商品'));
+    info.appendChild(chips);
+    var name = el('h3', 'cand-name', c.shortName || c.name);
+    name.title = c.name;
+    info.appendChild(name);
+    var meta = el('p', 'cand-meta');
+    meta.appendChild(el('strong', null, formatPrice(c.price)));
+    if (c.brand) meta.appendChild(el('span', 'cand-brand', c.brand));
+    info.appendChild(meta);
+    top.appendChild(info);
+    card.appendChild(top);
+    if (c.reason) card.appendChild(el('p', 'cand-reason', c.reason));
+    if (c.memo) {
+      var memo = el('p', 'cand-memo');
+      memo.appendChild(el('b', null, 'くま '));
+      memo.appendChild(document.createTextNode(c.memo));
+      card.appendChild(memo);
+    }
+    var actions = el('div', 'cand-actions');
+    var pick = el('label', 'cand-pick');
+    var box = el('input');
+    box.type = 'checkbox';
+    box.checked = !!c.picked;
+    box.addEventListener('change', function () {
+      c.picked = box.checked;
+      card.classList.toggle('picked', c.picked);
+      onToggle();
+    });
+    pick.appendChild(box);
+    pick.appendChild(document.createTextNode(' Instagramに採用'));
+    actions.appendChild(pick);
+    var link = el('a', 'btn btn-secondary cand-link', '楽天で見る');
+    link.href = c.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    actions.appendChild(link);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function renderExplore(d) {
+    var head = el('article', 'card curation-head');
+    head.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.idea ? '今日の企画｜' + d.idea.postType : '選び方：' + d.typeName));
+    head.appendChild(el('h2', 'curation-title', d.title));
+    var anglesBox = el('div', 'angles');
+    function drawAngles() {
+      anglesBox.innerHTML = '';
+      anglesBox.appendChild(el('p', 'angles-label', '今回こんな方向から探しました：'));
+      var ul = el('ul', 'angle-list');
+      d.angles.forEach(function (a) {
+        var li = el('li', a.count ? null : 'empty', a.label);
+        li.title = a.keyword + (a.count ? '' : '（見つからず）');
+        ul.appendChild(li);
+      });
+      anglesBox.appendChild(ul);
+    }
+    drawAngles();
+    head.appendChild(anglesBox);
+    head.appendChild(el('p', 'hint', 'この中から、Instagram投稿に使う5〜6商品を選んでください。'));
+    results.appendChild(head);
+
+    var bar = el('div', 'pick-bar');
+    var count = el('p', 'pick-count');
+    var toPost = el('button', 'btn btn-primary', 'この商品で投稿を作る');
+    toPost.type = 'button';
+    bar.appendChild(count);
+    bar.appendChild(toPost);
+    results.appendChild(bar);
+
+    var controls = el('label', 'cand-view');
+    controls.appendChild(el('span', null, '並び替え・絞り込み'));
+    var select = el('select', 'select');
+    VIEWS.forEach(function (v) {
+      var o = el('option', null, v[1]);
+      o.value = v[0];
+      select.appendChild(o);
+    });
+    select.value = d.view || 'recommend';
+    controls.appendChild(select);
+    results.appendChild(controls);
+
+    var list = el('div', 'cand-list');
+    results.appendChild(list);
+
+    var moreBox = el('div', 'more-box');
+    var moreBtn = el('button', 'btn btn-secondary', 'さらに10件探す');
+    moreBtn.type = 'button';
+    var moreNote = el('p', 'hint', 'すでに出た商品を避けて、別の方向から探します');
+    moreBox.appendChild(moreBtn);
+    moreBox.appendChild(moreNote);
+    results.appendChild(moreBox);
+
+    function picked() { return d.candidates.filter(function (c) { return c.picked; }); }
+    function update() {
+      var n = picked().length;
+      count.textContent = '選択中 ' + n + ' / 6';
+      bar.classList.toggle('ok', n >= 5 && n <= 6);
+      bar.classList.toggle('over', n > 6);
+      toPost.disabled = n === 0;
+      saveLast('explore', d);
+    }
+    function draw() {
+      list.innerHTML = '';
+      var view = viewCandidates(d.candidates, d.view || 'recommend');
+      if (!view.length) list.appendChild(el('p', 'manage-empty', 'この絞り込みに当てはまる候補はありません。'));
+      view.forEach(function (c) { list.appendChild(candidateCard(c, update)); });
+    }
+    select.addEventListener('change', function () { d.view = select.value; draw(); saveLast('explore', d); });
+
+    moreBtn.addEventListener('click', function () {
+      moreBtn.disabled = true;
+      moreBtn.textContent = '探しています…（30〜60秒）';
+      moreNote.textContent = '';
+      seenForSearch().then(function (seen) {
+        return postJson('api/explore', {
+          more: { brief: d.brief, angles: d.angles },
+          exclude: { codes: d.candidates.map(function (c) { return c.code; }), names: d.candidates.map(function (c) { return c.name; }) },
+          seen: seen
+        });
+      }).then(function (r) {
+        var added = (r.data && r.data.candidates) || [];
+        if (r.status !== 200 || !added.length) {
+          moreNote.textContent = (r.data && (r.data.error || r.data.notice)) || '新しい候補が見つかりませんでした。';
+          return;
+        }
+        markSeen(added, 'shown');
+        d.candidates = d.candidates.concat(added);
+        d.angles = d.angles.concat(r.data.angles || []);
+        drawAngles();
+        draw();
+        update();
+        showToast(added.length + '件追加しました');
+        moreNote.textContent = r.data.notice || 'すでに出た商品を避けて、別の方向から探します';
+      }, function () {
+        moreNote.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+      }).then(function () {
+        moreBtn.disabled = false;
+        moreBtn.textContent = 'さらに10件探す';
+      });
+    });
+
+    toPost.addEventListener('click', function () {
+      var items = picked();
+      if (!items.length) return;
+      if ((items.length < 5 || items.length > 6) &&
+        !window.confirm(items.length + '商品を選んでいます。Instagram投稿は5〜6商品が目安です。このまま作りますか？')) return;
+      toPost.disabled = true;
+      toPost.textContent = 'ROOM紹介文を作っています…';
+      postJson('api/intros', {
+        title: d.title,
+        items: items.map(function (c) { return { name: c.name, price: c.price, role: c.role, brand: c.brand, reason: c.reason, caption: c.caption }; })
+      }).then(function (r) {
+        if (r.status !== 200) showToast('紹介文を作れなかったので、あとでROOM登録準備の画面で確認してください');
+        if (r.data && r.data.notice) showToast(r.data.notice);
+        composeFromExplore(d, items, (r.data && r.data.intros) || []);
+      }, function () {
+        showToast('通信できませんでした。電波の良い場所でもう一度お試しください。');
+      }).then(function () {
+        toPost.disabled = false;
+        toPost.textContent = 'この商品で投稿を作る';
+      });
+    });
+
+    draw();
+    update();
+  }
+
+  // 選んだ商品と企画の情報を持って、Instagram画像づくりへ
+  function composeFromExplore(d, items, intros) {
+    loadDraft();
+    draft.items = items.map(function (c, i) {
+      return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.role || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
+    });
+    draft.postId = d.idea || d.plan ? currentPostId() : '';
+    draft.genre = d.idea ? d.idea.genre || '' : '';
+    draft.postType = d.idea ? d.idea.postType : d.plan ? d.plan.postType : '';
+    draft.planId = d.plan ? d.plan.id : '';
+    if (d.idea) {
+      draft.theme = d.idea.topic;
+      draft.subtitle = d.idea.subtitle || '';
+      draft.category = (d.idea.topic || '').length <= 8 ? d.idea.topic : (d.idea.genre || '').split('・')[0];
+    } else if (d.plan) {
+      draft.theme = d.plan.topic;
+      draft.subtitle = d.plan.subtitle || '';
+      draft.category = d.plan.category || '';
+    } else {
+      draft.theme = String(d.title || '').replace(/(について)?本気出して考えてみた$/, '').slice(0, 30);
+      draft.subtitle = '';
+      draft.category = '';
+    }
+    // 2枚目の「まとめ」は、選んだ商品に合わせてAIに作ってもらう
+    draft.summary = { enabled: true, typeName: d.typeName || '', title: '', lead: '', verdict: '' };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+    // 投稿管理にも「Instagram投稿待ち」として入れておく
+    Promise.all(draft.items.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount, function () {});
+    if (draft.postId) {
+      History.update(draft.postId, {
+        products: draft.items.map(function (p) { return { name: p.name, brand: p.brand, price: p.price }; }),
+        brands: draft.items.map(function (p) { return p.brand; }).filter(Boolean)
+      });
+    }
+    markSeen(items, 'ig');
+    location.hash = '#compose';
+  }
+
+  // ---- 探し方の切り替え（企画から／条件を指定して／完全ランダム。1つずつ開く） ----
+  var MODE_KEY = 'room-search-mode';
+  var modeTabs = document.querySelectorAll('.mode-tab');
+  function showMode(mode) {
+    Array.prototype.forEach.call(modeTabs, function (t) { t.classList.toggle('active', t.getAttribute('data-mode') === mode); });
+    ['idea', 'cond', 'random'].forEach(function (m) { document.getElementById('mode-' + m).hidden = m !== mode; });
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+  }
+  Array.prototype.forEach.call(modeTabs, function (t) {
+    t.addEventListener('click', function () { showMode(t.getAttribute('data-mode')); });
+  });
+
   // ---- 今日の企画（編集部） ----
   var CURRENT_POST_KEY = 'room-current-post';
+  var IDEAS_KEY = 'room-last-ideas';
+  var CHOSEN_KEY = 'room-chosen-idea';
   var History = window.PostHistory;
-  var ideasBtn = document.getElementById('ideas-btn');
   var ideasEl = document.getElementById('ideas');
+  var ideasPanel = document.getElementById('ideas-panel');
+  var ideasToggle = document.getElementById('ideas-toggle');
+  var ideasArrow = document.getElementById('ideas-arrow');
+  var ideasChosen = document.getElementById('ideas-chosen');
   var ideasLoading = document.getElementById('ideas-loading');
   var ideasMessage = document.getElementById('ideas-message');
+  var lastIdeas = [];
+  var meta = { types: [{ id: 'omakase', name: 'おまかせ', desc: 'AIに選び方も任せる' }], genres: [] };
 
   function currentPostId() {
     try { return localStorage.getItem(CURRENT_POST_KEY) || ''; } catch (e) { return ''; }
@@ -1241,44 +1376,142 @@
     try { localStorage.setItem(CURRENT_POST_KEY, id || ''); } catch (e) {}
   }
 
+  // 企画候補は、折りたたんだり再表示したりできる（選んだあとは自動で折りたたむ）
+  function setIdeasOpen(open) {
+    ideasEl.hidden = !open;
+    ideasToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    ideasArrow.textContent = open ? '▲ 折りたたむ' : '▼ 再表示';
+  }
+  ideasToggle.addEventListener('click', function () { setIdeasOpen(ideasEl.hidden); });
+  function showChosen() {
+    var t = '';
+    try { t = localStorage.getItem(CHOSEN_KEY) || ''; } catch (e) {}
+    ideasChosen.textContent = t ? '選んだ企画：' + t : '';
+  }
+  function saveIdeas() {
+    try { localStorage.setItem(IDEAS_KEY, JSON.stringify(lastIdeas)); } catch (e) {}
+  }
+  function drawIdeas() {
+    ideasEl.innerHTML = '';
+    lastIdeas.forEach(function (idea, i) { ideasEl.appendChild(renderIdea(idea, i)); });
+    ideasPanel.hidden = !lastIdeas.length;
+  }
+
   function renderIdea(idea, i) {
     var card = el('article', 'idea-card');
     var head = el('div', 'idea-head');
     head.appendChild(el('span', 'idea-no', '案' + (i + 1)));
     head.appendChild(el('span', 'plan-type', idea.postType));
+    if (idea.edited) head.appendChild(el('span', 'idea-edited', '編集済み'));
     card.appendChild(head);
     card.appendChild(el('h3', 'idea-title', idea.title));
     if (idea.subtitle) card.appendChild(el('p', 'idea-sub', idea.subtitle));
     var dl = el('dl', 'idea-facts');
-    [['ターゲット', idea.target], ['価格帯', idea.priceBand], ['ジャンル', idea.genre], ['比較軸', idea.axis], ['ブランド', (idea.brands || []).join('・')]].forEach(function (f) {
+    [['ターゲット', idea.target], ['価格帯', idea.priceBand], ['ジャンル', idea.genre], ['比較軸', idea.axis], ['自由条件', idea.free], ['ブランド', (idea.brands || []).join('・')]].forEach(function (f) {
       if (!f[1]) return;
       dl.appendChild(el('dt', null, f[0]));
       dl.appendChild(el('dd', null, f[1]));
     });
     card.appendChild(dl);
     if (idea.whyInteresting) card.appendChild(el('p', 'idea-why', idea.whyInteresting));
-    var roles = el('div', 'idea-roles');
-    idea.slots.forEach(function (sl) { roles.appendChild(el('span', null, sl.label)); });
-    card.appendChild(roles);
-    var go = el('button', 'btn btn-primary', 'この企画で作る');
+    if ((idea.slots || []).length) {
+      var roles = el('div', 'idea-roles');
+      idea.slots.forEach(function (sl) { roles.appendChild(el('span', null, sl.label)); });
+      card.appendChild(roles);
+    }
+    var actions = el('div', 'idea-actions');
+    var go = el('button', 'btn btn-primary', 'この企画で探す');
     go.type = 'button';
     go.addEventListener('click', function () { startIdea(idea); });
-    card.appendChild(go);
+    var edit = el('button', 'btn btn-secondary', '編集');
+    edit.type = 'button';
+    edit.addEventListener('click', function () { card.parentNode.replaceChild(ideaEditor(idea, i), card); });
+    actions.appendChild(go);
+    actions.appendChild(edit);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function textField(label, value, multi) {
+    var wrap = el('label', 'field');
+    wrap.appendChild(el('span', 'field-label', label));
+    var input = el(multi ? 'textarea' : 'input', multi ? 'textarea' : 'input');
+    if (multi) input.rows = 2; else input.type = 'text';
+    input.value = value || '';
+    wrap.appendChild(input);
+    return { wrap: wrap, input: input };
+  }
+
+  // AIの企画はたたき台：タイトル・型・ターゲット・価格帯・ジャンル・比較軸・自由条件を直して探せる
+  function ideaEditor(idea, i) {
+    var card = el('article', 'idea-card idea-edit');
+    card.appendChild(el('p', 'idea-no', '案' + (i + 1) + 'を編集'));
+    var title = textField('投稿タイトル', idea.title, true);
+    title.input.maxLength = 60;
+    var typeWrap = el('label', 'field');
+    typeWrap.appendChild(el('span', 'field-label', '企画タイプ（選び方の型）'));
+    var type = el('select', 'select');
+    meta.types.forEach(function (t) {
+      var o = el('option', null, t.name + '｜' + t.desc);
+      o.value = t.id;
+      type.appendChild(o);
+    });
+    type.value = idea.curationType && meta.types.some(function (t) { return t.id === idea.curationType; }) ? idea.curationType : 'omakase';
+    typeWrap.appendChild(type);
+    var target = textField('ターゲット', idea.target);
+    var price = textField('価格帯', idea.priceBand);
+    price.input.placeholder = '例：4,000〜6,000円、1万円以下';
+    var genre = textField('ジャンル', idea.genre);
+    genre.input.setAttribute('list', 'genre-list');
+    var axis = textField('比較軸', idea.axis);
+    axis.input.placeholder = '例：所有満足感 vs 実用性';
+    var free = textField('自由条件', idea.free, true);
+    free.input.placeholder = '例：名入れはしない、男女どちらにも贈れるもの';
+    [title.wrap, typeWrap, target.wrap, price.wrap, genre.wrap, axis.wrap, free.wrap].forEach(function (x) { card.appendChild(x); });
+    var actions = el('div', 'idea-actions');
+    var go = el('button', 'btn btn-primary', 'この内容で商品を探す');
+    go.type = 'button';
+    var cancel = el('button', 'btn btn-secondary', 'キャンセル');
+    cancel.type = 'button';
+    actions.appendChild(go);
+    actions.appendChild(cancel);
+    card.appendChild(actions);
+    cancel.addEventListener('click', function () { card.parentNode.replaceChild(renderIdea(idea, i), card); });
+    go.addEventListener('click', function () {
+      if (!title.input.value.trim()) { showToast('投稿タイトルを入れてください'); return; }
+      var typeName = (meta.types.filter(function (t) { return t.id === type.value; })[0] || {}).name;
+      var edited = Object.assign({}, idea, {
+        edited: true,
+        title: title.input.value.trim(),
+        curationType: type.value,
+        postType: type.value === idea.curationType ? idea.postType : typeName,
+        target: target.input.value.trim(),
+        priceBand: price.input.value.trim(),
+        genre: genre.input.value.trim(),
+        axis: axis.input.value.trim(),
+        free: free.input.value.trim()
+      });
+      lastIdeas[i] = edited;
+      saveIdeas();
+      drawIdeas();
+      startIdea(edited);
+    });
     return card;
   }
 
   function startIdea(idea) {
     History.add({
-      title: idea.title, topic: idea.topic, subtitle: idea.subtitle, genre: idea.genre, postType: idea.postType,
+      title: idea.title, topic: idea.topic || String(idea.title).replace(/(について)?本気出して考えてみた$/, ''), subtitle: idea.subtitle, genre: idea.genre, postType: idea.postType,
       target: idea.target, priceBand: idea.priceBand, brands: idea.brands || []
     }).then(setCurrentPostId, function () {});
-    curate({ idea: idea });
-    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try { localStorage.setItem(CHOSEN_KEY, idea.title); } catch (e) {}
+    showChosen();
+    setIdeasOpen(false);
+    exploreProducts({ idea: idea });
   }
 
   function thinkIdeas() {
     ideasMessage.hidden = true;
-    ideasEl.innerHTML = '';
     ideasLoading.hidden = false;
     ideasBtn.disabled = true;
     History.recentForIdeas().then(function (history) {
@@ -1296,8 +1529,12 @@
         if (r.data.detail) ideasMessage.appendChild(el('span', 'detail', r.data.detail));
         ideasMessage.hidden = false;
       }
-      (r.data.ideas || []).forEach(function (idea, i) { ideasEl.appendChild(renderIdea(idea, i)); });
-      try { localStorage.setItem('room-last-ideas', JSON.stringify(r.data.ideas || [])); } catch (e) {}
+      lastIdeas = r.data.ideas || [];
+      saveIdeas();
+      try { localStorage.removeItem(CHOSEN_KEY); } catch (e) {}
+      showChosen();
+      drawIdeas();
+      setIdeasOpen(true);
     }).catch(function () {
       ideasMessage.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
       ideasMessage.className = 'message error';
@@ -1305,23 +1542,18 @@
     }).then(function () {
       ideasLoading.hidden = true;
       ideasBtn.disabled = false;
-      ideasBtn.textContent = '別の3案を考える';
+      ideasBtn.textContent = buttonLabels[ideasBtn.id] = '別の3案を考える';
     });
   }
   ideasBtn.addEventListener('click', thinkIdeas);
-  document.getElementById('quick-random').addEventListener('click', function () {
-    discover(null, discoverBtn);
-    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-  document.getElementById('quick-cond').addEventListener('click', function () {
-    var box = document.getElementById('cond-box');
-    box.open = true;
-    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
   // 前回考えた企画を残しておく（ほかのアプリから戻っても消えないように）
   try {
-    (JSON.parse(localStorage.getItem('room-last-ideas')) || []).forEach(function (idea, i) { ideasEl.appendChild(renderIdea(idea, i)); });
-    if (ideasEl.children.length) ideasBtn.textContent = '別の3案を考える';
+    lastIdeas = JSON.parse(localStorage.getItem(IDEAS_KEY)) || [];
+    drawIdeas();
+    showChosen();
+    // すでに企画を選んでいたら、候補は折りたたんだ状態から
+    setIdeasOpen(!ideasChosen.textContent);
+    if (lastIdeas.length) ideasBtn.textContent = '別の3案を考える';
   } catch (e) {}
 
   // ---- 企画（最初の10投稿） ----
@@ -1363,13 +1595,13 @@
         undo.addEventListener('click', function () { setPlanDone(p.id, false); });
         actions.appendChild(undo);
       } else {
-        var make = el('button', 'btn btn-primary', 'この企画で作る');
+        var make = el('button', 'btn btn-primary', 'この企画で探す');
         make.type = 'button';
         make.addEventListener('click', function () {
           document.getElementById('plans-box').open = false;
           History.add({ title: p.topic + 'について本気出して考えてみた', topic: p.topic, subtitle: p.subtitle, genre: p.category, postType: p.postType })
             .then(setCurrentPostId, function () {});
-          curate({ planId: p.id });
+          exploreProducts({ planId: p.id });
         });
         actions.appendChild(make);
       }
@@ -1378,13 +1610,50 @@
     });
   }
 
-  fetch('api/plans').then(function (r) { return r.json(); }).then(function (d) {
-    plans = d.plans || [];
-    renderPlans();
-  }).catch(function () {});
+  // ---- 条件を指定して探す ----
+  var typeChoices = document.getElementById('type-choices');
+  var detailBox = document.getElementById('detail-box');
+  var dMin = document.getElementById('d-min');
+  var dMax = document.getElementById('d-max');
+  var dTarget = document.getElementById('d-target');
+  var dAge = document.getElementById('d-age');
+  var dBrand = document.getElementById('d-brand');
+  var dTrend = document.getElementById('d-trend');
+  var selectedType = 'omakase';
 
+  // 選び方の型：名前だけで意味が分かるよう、短い説明を添えて並べる
+  function renderTypeChoices() {
+    typeChoices.innerHTML = '';
+    meta.types.forEach(function (t) {
+      var b = el('button', 'type-choice' + (t.id === selectedType ? ' active' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', t.id === selectedType ? 'true' : 'false');
+      b.appendChild(el('strong', null, t.name));
+      b.appendChild(el('span', null, t.desc));
+      b.addEventListener('click', function () {
+        selectedType = t.id;
+        renderTypeChoices();
+        saveConditions();
+      });
+      typeChoices.appendChild(b);
+    });
+  }
+
+  function readDetails() {
+    var purpose = document.querySelector('input[name="d-purpose"]:checked');
+    return {
+      minPrice: Number(dMin.value) || null,
+      maxPrice: Number(dMax.value) || null,
+      target: dTarget.value.trim(),
+      age: dAge.value,
+      purpose: purpose ? purpose.value : '',
+      brandFocus: dBrand.checked,
+      trendFocus: dTrend.checked
+    };
+  }
   function readConditions() {
-    return { genre: genreSelect.value, type: curateType.value, free: freeText.value.trim() };
+    return { genre: genreSelect.value, type: selectedType, free: freeText.value.trim(), details: readDetails() };
   }
   function saveConditions() {
     try { localStorage.setItem(COND_KEY, JSON.stringify(readConditions())); } catch (e) {}
@@ -1394,25 +1663,53 @@
     try { c = JSON.parse(localStorage.getItem(COND_KEY)); } catch (e) { return; }
     if (!c) return;
     genreSelect.value = c.genre || '';
-    curateType.value = c.type || '';
+    selectedType = c.type || 'omakase';
     freeText.value = c.free || '';
+    var d = c.details || {};
+    dMin.value = d.minPrice || '';
+    dMax.value = d.maxPrice || '';
+    dTarget.value = d.target || '';
+    dAge.value = d.age || '';
+    var radio = document.querySelector('input[name="d-purpose"][value="' + (d.purpose || '') + '"]');
+    if (radio) radio.checked = true;
+    dBrand.checked = !!d.brandFocus;
+    dTrend.checked = !!d.trendFocus;
+    // 詳細条件を使っていたときだけ開いておく
+    detailBox.open = !!(d.minPrice || d.maxPrice || d.target || d.age || d.purpose || d.brandFocus || d.trendFocus);
   }
+  [genreSelect, freeText, dMin, dMax, dTarget, dAge, dBrand, dTrend].forEach(function (x) { x.addEventListener('change', saveConditions); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="d-purpose"]'), function (x) { x.addEventListener('change', saveConditions); });
 
-  // 「この条件で発掘する」：型があれば選び方まとめ、なければ単品の発掘（ジャンル・自由入力つき）
   function searchWithConditions() {
     var c = readConditions();
     saveConditions();
-    if (c.type) curate(c);
-    else discover({ genre: c.genre, free: c.free }, searchBtn);
+    exploreProducts(c, searchBtn);
   }
 
+  // 企画の一覧・選び方の型・ジャンル名
+  fetch('api/plans').then(function (r) { return r.json(); }).then(function (d) {
+    plans = d.plans || [];
+    if ((d.types || []).length) meta.types = d.types;
+    meta.genres = d.genres || [];
+    var dl = document.getElementById('genre-list') || document.body.appendChild(el('datalist'));
+    dl.id = 'genre-list';
+    dl.innerHTML = '';
+    meta.genres.forEach(function (g) { var o = el('option'); o.value = g; dl.appendChild(o); });
+    renderPlans();
+    renderTypeChoices();
+  }).catch(function () { renderTypeChoices(); });
+
+  var savedMode = 'idea';
+  try { savedMode = localStorage.getItem(MODE_KEY) || 'idea'; } catch (e) {}
+  showMode(savedMode);
   restoreLast();
   showView();
   updateManageCount();
   freeText.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];
   restoreConditions();
+  renderTypeChoices();
   searchBtn.addEventListener('click', searchWithConditions);
-  discoverBtn.addEventListener('click', function () { discover(null, discoverBtn); });
+  discoverBtn.addEventListener('click', discover);
   resetBtn.hidden = !getPass();
   resetBtn.addEventListener('click', function () {
     setPass('');

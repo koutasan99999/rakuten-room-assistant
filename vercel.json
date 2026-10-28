@@ -3,16 +3,16 @@
     "api/discover.js": {
       "maxDuration": 60
     },
-    "api/curate.js": {
-      "maxDuration": 60
-    },
     "api/instagram.js": {
       "maxDuration": 30
     },
     "api/ideas.js": {
       "maxDuration": 60
     },
-    "api/replace.js": {
+    "api/explore.js": {
+      "maxDuration": 60
+    },
+    "api/intros.js": {
       "maxDuration": 60
     }
   }
