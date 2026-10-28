@@ -108,7 +108,7 @@ test('型＋ジャンル＋自由入力：条件から枠を組み立てて選�
       })
       : aiReply({
         title: '北欧の白い器', lead: '本命と代替', verdict: '迷ったら本命',
-        items: [{ id: 0, role: '本命', why: '定番', intro: GOOD_INTRO }, { id: 8, role: '安い代替', why: '近い雰囲気', intro: GOOD_INTRO }]
+        items: [{ id: 0, role: '本命', why: '定番', intro: GOOD_INTRO }, { id: 12, role: '安い代替', why: '近い雰囲気', intro: GOOD_INTRO }]
       })
   });
   const { status, data } = await call(curate, { type: 'premium_budget', genre: 'tableware', free: '北欧、白、来客用' });
