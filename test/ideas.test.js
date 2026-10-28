@@ -135,3 +135,10 @@ test('企画→まとめのテーマ変換', () => {
   assert.equal(theme.slots.length, 6);
   assert.match(theme.request, /誰ならこれを選ぶべきか/);
 });
+
+test('キャプションのROOM誘導に、コレクション名を入れるよう伝える（予備の文にも入る）', async () => {
+  mock = installFetchMock({ rakuten: () => json(500, {}), openai: () => aiReply('だめ') });
+  const { data } = await call(instagram, { theme: '出産祝い', needCaption: true, collection: '出産祝い｜本気出して考えてみた', items: [{ name: '商品A', price: 1000 }] });
+  assert.match(mock.calls.openai[0].messages[1].content, /ROOMのコレクション名: 出産祝い｜本気出して考えてみた/);
+  assert.match(data.caption, /楽天ROOMの「出産祝い｜本気出して考えてみた」にまとめています/);
+});

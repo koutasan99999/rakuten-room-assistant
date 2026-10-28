@@ -4,7 +4,9 @@
 // 1件のデータ:
 // {
 //   id, title, topic, subtitle, genre, postType, target, priceBand, brands: [],
-//   products: [{ name, brand, price }],
+//   products: [{ id, code, name, shortName, brand, price, url, image, intro, role }],（投稿順）
+//   collectionName: ROOMのコレクション名、collectionDone: コレクションに入れたか
+//   roomDone: { 商品id: true }（この投稿の商品のうちROOMに入れたもの）,
 //   status: 'planned'（企画を選んだ）| 'generated'（画像を作った）| 'posted'（Instagram投稿済み）,
 //   createdAt, updatedAt
 // }
@@ -27,10 +29,21 @@
     } catch (e) { return false; }
   }
 
-  var FIELDS = ['title', 'topic', 'subtitle', 'genre', 'postType', 'target', 'priceBand', 'brands', 'products', 'status'];
+  var FIELDS = ['title', 'topic', 'subtitle', 'genre', 'postType', 'target', 'priceBand', 'brands', 'products', 'status', 'collectionName', 'collectionDone', 'roomDone'];
+
+  // 楽天ROOMのコレクション名の提案（Instagramのテーマとそろえて、ROOM内で迷わないように）
+  function collectionNameFor(topic) {
+    return String(topic || '').replace(/について本気出して考えてみた$/, '') + '｜本気出して考えてみた';
+  }
 
   var PostHistory = {
     STATUS_LABELS: { planned: '企画を選んだ', generated: '画像を作った', posted: 'Instagram投稿済み' },
+
+    collectionNameFor: collectionNameFor,
+
+    get: function (id) {
+      return Promise.resolve(readAll().filter(function (p) { return p.id === id; })[0] || null);
+    },
 
     // 新しく記録して id を返す
     add: function (post) {

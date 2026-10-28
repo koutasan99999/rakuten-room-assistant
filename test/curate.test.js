@@ -230,3 +230,14 @@ test('同じショップ3個目・ほぼ同じ商品名は間引き、価格差�
   assert.ok(r.warnings.includes('今回は価格差が小さめです'));
   assert.ok(r.warnings.includes('代替側に当たる商品が見つかりませんでした'));
 });
+
+test('同じ商品が別の枠に出てきても、1つのまとめに2回入れない', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { items: makeItems(3, '同じ').map((it) => ({ ...it, itemPrice: 3000 })), pageCount: 1 }),
+    openai: () => aiReply({ title: 't', items: [{ id: 0, role: 'a', intro: GOOD_INTRO }, { id: 3, role: 'b', intro: GOOD_INTRO }, { id: 4, role: 'c', intro: GOOD_INTRO }] })
+  });
+  const { data } = await call({ type: 'gift' });
+  const codes = data.products.map((p) => p.code);
+  assert.equal(new Set(codes).size, codes.length);
+  assert.equal(codes.length, 2);
+});

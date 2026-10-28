@@ -28,3 +28,16 @@ test('投稿履歴：記録・更新・新しい順・企画づくり用の直�
   await H.remove(b);
   assert.ok(!(await H.list()).some((p) => p.id === b));
 });
+
+test('ROOM登録の記録：コレクション名の提案・商品ごとの投稿済み・コレクション登録済み', async () => {
+  const H = loadHistory();
+  assert.equal(H.collectionNameFor('出産祝い'), '出産祝い｜本気出して考えてみた');
+  assert.equal(H.collectionNameFor('香水初心者について本気出して考えてみた'), '香水初心者｜本気出して考えてみた');
+  const id = await H.add({ topic: '出産祝い' });
+  await H.update(id, { products: [{ id: 'a:1' }, { id: 'a:2' }], roomDone: { 'a:1': true }, collectionName: '出産祝い｜本気出して考えてみた' });
+  await H.update(id, { collectionDone: true });
+  const rec = await H.get(id);
+  assert.deepEqual(rec.roomDone, { 'a:1': true });
+  assert.equal(rec.collectionDone, true);
+  assert.equal(await H.get('none'), null);
+});

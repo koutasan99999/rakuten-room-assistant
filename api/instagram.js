@@ -21,13 +21,13 @@ export default async function handler(req, res, env = process.env) {
   const copy = await buildPostCopy({
     theme: String(body.theme).slice(0, 60),
     category: String(body.category || '').slice(0, 20),
-    items, needSummary: body.needSummary === true, needCaption: body.needCaption === true, env, deadline: startedAt + 25000
+    items, needSummary: body.needSummary === true, needCaption: body.needCaption === true, collection: String(body.collection || '').slice(0, 40), env, deadline: startedAt + 25000
   });
   const notice = copy.fallback ? 'AIでの文字作成に失敗したため、簡易的な商品名・メモで作りました。' : '';
   return send(res, 200, {
     topic: copy.topic, category: copy.category, topicSlug: copy.topicSlug, summary: copy.summary, items: copy.items, notice,
     caption: body.needCaption === true
-      ? `${copy.caption || fallbackCaption(copy.topic, copy.items.map((x, i) => ({ ...x, role: items[i].role })))}\n\n${AD_DISCLOSURE}`
+      ? `${copy.caption || fallbackCaption(copy.topic, copy.items.map((x, i) => ({ ...x, role: items[i].role })), String(body.collection || '').slice(0, 40))}\n\n${AD_DISCLOSURE}`
       : undefined,
     detail: copy.fallback ? `原因: ${maskSecrets(copy.error || '')}`.slice(0, 300) : undefined
   });

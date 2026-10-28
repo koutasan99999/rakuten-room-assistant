@@ -28,7 +28,7 @@ if (process.env.MOCK) {
     },
     openai: (body) => body.messages[0].content.includes('編集長')
       ? aiReply({ ideas: [
-        { topic: '30代男性への5,000円プレゼント', postType: 'プレゼントならコレ', target: '30代男性の友人・同僚に贈る人', priceBand: '4,000〜6,000円', genre: 'プレゼント', brands: ['IL BISONTE', 'STANLEY'], whyInteresting: '5,000円は安っぽく見えやすい予算。選び方の基準を作ると迷わない', slots: ['迷ったらこれ', '王道', 'センス枠', '実用性重視', '価格を抑えるなら', '少し奮発するなら'].map((label) => ({ label, keyword: 'メンズ ギフト', minPrice: 3000, maxPrice: 7000 })) },
+        { topic: '30代男性への5,000円プレゼント', postType: 'プレゼントならコレ', target: '30代男性の友人・同僚に贈る人', priceBand: '4,000〜6,000円', genre: 'プレゼント', brands: ['IL BISONTE', 'STANLEY'], whyInteresting: '5,000円は安っぽく見えやすい予算。選び方の基準を作ると迷わない', slots: ['迷ったらこれ', '王道', 'センス枠', '実用性重視', '価格を抑えるなら', '少し奮発するなら'].map((label) => ({ label, keyword: label + ' ギフト', minPrice: 3000, maxPrice: 7000 })) },
         { topic: 'タンブラー', subtitle: '― 高い本命と安い代替 ―', postType: '本命＋安い代替', target: '毎日コーヒーを持ち歩く人', priceBand: '1,500〜6,000円', genre: '旅行・アウトドア', brands: ['STANLEY', 'THERMOS', 'Hydro Flask'], axis: '所有満足感 vs 実用性', whyInteresting: '値段差が大きいのに見た目が似ているので、違いを整理する価値がある', slots: ['本命ブランド', '本命の中では買いやすい', 'コスパ代替', 'まず試す代替', '用途違いの別解', '一番バランスが良い'].map((label) => ({ label, keyword: 'タンブラー 真空断熱' })) },
         { topic: '旅行前に買っておくと楽なもの', postType: '旅行向け', target: '年末に旅行する人', priceBand: '〜5,000円', genre: '寝具・生活', brands: [], whyInteresting: '出発前の小さな不安を先回りで消せる', slots: ['迷ったらこれ', '機内用', '整理用', '充電用', '寝る用', '価格を抑えるなら'].map((label) => ({ label, keyword: '旅行 便利グッズ' })) }
       ] })
