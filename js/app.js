@@ -633,6 +633,16 @@
   var igPreview = document.getElementById('ig-preview');
   var DRAFT_KEY = 'room-ig-draft';
   var igCaption = document.getElementById('ig-caption');
+  var igCoverStyle = document.getElementById('ig-cover-style');
+  var igCoverFields = document.getElementById('ig-cover-fields');
+  var igCoverTitle = document.getElementById('ig-cover-title');
+  var igCoverAccent = document.getElementById('ig-cover-accent');
+  // 表紙のデザイン（シリーズ）の選択肢。おまかせはAIが内容に合うシリーズを選ぶ
+  [{ id: 'auto', name: 'おまかせ（AIが内容に合うシリーズを選ぶ）' }].concat(window.IgRender.COVER_STYLES).forEach(function (s) {
+    var o = el('option', null, s.name);
+    o.value = s.id;
+    igCoverStyle.appendChild(o);
+  });
   document.getElementById('ig-caption-copy').addEventListener('click', function () {
     copyText(igCaption.value).then(function () { showToast('キャプションをコピーしました'); }, function () { showToast('コピーできませんでした'); });
   });
@@ -669,6 +679,10 @@
     draft.category = igCategory.value.trim();
     draft.subtitle = igSubtitle.value.trim();
     draft.cta = igCta.value === 'collection' ? 'collection' : Number(igCta.value) || 0;
+    draft.coverStyle = igCoverStyle.value || 'serious_think';
+    draft.coverTitle = igCoverTitle.value.trim();
+    draft.coverAccent = igCoverAccent.value.trim();
+    igCoverFields.hidden = draft.coverStyle === 'serious_think';
     draft.summary = Object.assign(draft.summary || emptySummary(), {
       enabled: igSumOn.checked,
       title: igSumTitle.value.trim(),
@@ -686,6 +700,9 @@
     });
     draft.summary = emptySummary(); // 商品が変わったので2枚目はAIに作ってもらう
     draft.planId = '';
+    draft.coverStyle = 'serious_think'; // 投稿管理から作るときは今までの表紙
+    draft.coverTitle = '';
+    draft.coverAccent = '';
     draft.postId = '';
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
     location.hash = '#compose';
@@ -697,6 +714,10 @@
     igCategory.value = draft.category || '';
     igSubtitle.value = draft.subtitle || '';
     igCta.value = draft.cta === 'collection' || draft.cta == null ? 'collection' : String(draft.cta);
+    igCoverStyle.value = draft.coverStyle || 'serious_think';
+    igCoverTitle.value = draft.coverTitle || '';
+    igCoverAccent.value = draft.coverAccent || '';
+    igCoverFields.hidden = igCoverStyle.value === 'serious_think';
     var sum = draft.summary || emptySummary();
     igSumOn.checked = sum.enabled !== false;
     igSumFields.hidden = !igSumOn.checked;
@@ -747,7 +768,23 @@
       igItemsEl.appendChild(row);
     });
   }
-  [igTheme, igCategory, igSubtitle, igCta, igSumOn, igSumTitle, igSumLead, igSumVerdict].forEach(function (x) { x.addEventListener('change', saveDraft); });
+  [igTheme, igCategory, igSubtitle, igCta, igSumOn, igSumTitle, igSumLead, igSumVerdict, igCoverStyle, igCoverTitle, igCoverAccent].forEach(function (x) { x.addEventListener('change', saveDraft); });
+
+  // 表紙の文字：自分で書いた大見出し・目立たせる言葉・小見出しを優先し、空欄はAIの文字を使う。
+  // AIの文字は欄に入れておくので、気に入らなければ直して「画像を作る」をもう一度押せばよい
+  function coverFor(ai) {
+    if (!ai || ai.style === 'serious_think' || draft.coverStyle === 'serious_think') return null;
+    var title = draft.coverTitle || ai.title || '';
+    var flat = title.replace(/\n/g, '');
+    var accent = draft.coverAccent || (ai.accent && flat.indexOf(ai.accent) !== -1 ? ai.accent : '');
+    if (!draft.coverTitle && ai.title) {
+      igCoverTitle.value = ai.title;
+      igCoverAccent.value = accent;
+    }
+    if (draft.coverStyle === 'auto' && ai.style) igCoverStyle.value = ai.style;
+    saveDraft();
+    return { style: ai.style, title: title, accent: accent, sub: draft.subtitle || ai.sub || '', badge: ai.badge || '', price: ai.price || '' };
+  }
 
   function showIgMessage(text, isError, detail) {
     igMessage.textContent = text;
@@ -812,6 +849,8 @@
       collection: History.collectionNameFor(draft.theme),
       genre: draft.genre || '',
       postType: draft.postType || '',
+      coverStyle: draft.coverStyle || 'serious_think',
+      priceBand: draft.priceBand || '',
       items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro, memo: it.memo }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
@@ -828,6 +867,7 @@
         topic: copy.topic,
         category: draft.category || copy.category,
         subtitle: draft.subtitle || '迷ったので整理しました',
+        cover: coverFor(copy.cover),
         bear: r[2],
         ctaMessage: draft.cta === 'collection' ? collectionCtaMessage(copy.topic) : window.IgRender.CTA_MESSAGES[draft.cta || 0],
         summary: !sum.enabled ? null : needSummary
@@ -835,7 +875,7 @@
           : { typeName: sum.typeName || 'まず結論', title: sum.title, lead: sum.lead, verdict: sum.verdict },
         items: draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
-          return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, slug: c.slug };
+          return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, brand: it.brand, slug: c.slug };
         })
       });
       var notes = [];
@@ -1229,7 +1269,7 @@
         if (!candidates.length) return;
         markSeen(candidates, 'shown');
         var d = {
-          brief: data.brief, title: data.title, typeName: data.typeName, idea: data.idea, plan: data.plan,
+          brief: data.brief, title: data.title, typeName: data.typeName, idea: data.idea, plan: data.plan, coverStyle: data.coverStyle,
           angles: data.angles || [], candidates: candidates, view: 'recommend'
         };
         saveLast('explore', d);
@@ -1483,6 +1523,12 @@
       draft.subtitle = '';
       draft.category = '';
     }
+    // 表紙：発掘ページの「選び方の型」に対応するシリーズ（企画は今までの表紙）。文字は画像を作るときにAIが作る
+    draft.coverStyle = d.coverStyle || 'serious_think';
+    draft.coverTitle = '';
+    draft.coverAccent = '';
+    var b = d.brief || {};
+    draft.priceBand = b.priceBand || (b.minPrice || b.maxPrice ? (b.minPrice || '') + '〜' + (b.maxPrice || '') + '円' : '');
     // 2枚目の「まとめ」は、選んだ商品に合わせてAIに作ってもらう
     draft.summary = { enabled: true, typeName: d.typeName || '', title: '', lead: '', verdict: '' };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
@@ -1576,15 +1622,24 @@
       card.appendChild(roles);
     }
     var actions = el('div', 'idea-actions');
-    var go = el('button', 'btn btn-primary', 'この企画で探す');
+    var go = el('button', 'btn btn-primary', 'この企画で作る');
     go.type = 'button';
     go.addEventListener('click', function () { startIdea(idea); });
-    var edit = el('button', 'btn btn-secondary', '編集');
+    var edit = el('button', 'btn btn-secondary', '編集する');
     edit.type = 'button';
     edit.addEventListener('click', function () { card.parentNode.replaceChild(ideaEditor(idea, i), card); });
     actions.appendChild(go);
     actions.appendChild(edit);
     card.appendChild(actions);
+    // 使わない企画は閉じて候補から外す（全部閉じたら企画候補ごと消える）
+    var close = el('button', 'link-btn idea-close', 'この企画を閉じる');
+    close.type = 'button';
+    close.addEventListener('click', function () {
+      lastIdeas.splice(lastIdeas.indexOf(idea), 1);
+      saveIdeas();
+      drawIdeas();
+    });
+    card.appendChild(close);
     return card;
   }
 
@@ -1778,6 +1833,32 @@
   var dTrend = document.getElementById('d-trend');
   var selectedType = 'omakase';
 
+  // 選び方の型ごとの表紙の見本（小さな画像）。押すとこの系統の表紙になる、が見て分かるように
+  var thumbCache = {};
+  var thumbBear = null;
+  window.IgRender.loadImage('assets/kuma.png').then(function (img) { thumbBear = img; thumbCache = {}; renderTypeChoices(); }, function () {});
+  function coverThumb(cover) {
+    if (!cover || !cover.style) return null;
+    var key = cover.style + (thumbBear ? '+bear' : '');
+    if (!thumbCache[key]) {
+      try {
+        var big = window.IgRender.renderPost({
+          topic: 'テーマ', subtitle: '迷ったので整理しました', bear: thumbBear, items: [],
+          cover: cover.style === 'serious_think' ? null : { style: cover.style, title: cover.title, accent: cover.accent, sub: '' }
+        })[0].canvas;
+        var small = document.createElement('canvas');
+        small.width = 144;
+        small.height = 180;
+        small.getContext('2d').drawImage(big, 0, 0, 144, 180);
+        thumbCache[key] = small.toDataURL('image/png');
+      } catch (e) { return null; }
+    }
+    var img = el('img', 'type-thumb');
+    img.src = thumbCache[key];
+    img.alt = '';
+    return img;
+  }
+
   // 選び方の型：名前だけで意味が分かるよう、短い説明を添えて並べる
   function renderTypeChoices() {
     typeChoices.innerHTML = '';
@@ -1786,8 +1867,12 @@
       b.type = 'button';
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', t.id === selectedType ? 'true' : 'false');
-      b.appendChild(el('strong', null, t.name));
-      b.appendChild(el('span', null, t.desc));
+      var thumb = coverThumb(t.cover);
+      if (thumb) b.appendChild(thumb);
+      var text = el('span', 'type-text');
+      text.appendChild(el('strong', null, t.name));
+      text.appendChild(el('span', null, t.desc));
+      b.appendChild(text);
       b.addEventListener('click', function () {
         selectedType = t.id;
         renderTypeChoices();

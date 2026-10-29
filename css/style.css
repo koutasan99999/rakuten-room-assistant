@@ -464,10 +464,13 @@ body {
 .idea-actions .btn { min-height: 48px; font-size: 15px; }
 .idea-edited { font-size: 11px; font-weight: 700; color: #fff; background: #1f6f43; border-radius: 999px; padding: 1px 8px; }
 .idea-edit .field { margin-bottom: 2px; }
+.idea-close { justify-self: center; font-size: 13px; }
 
 /* 選び方の型（説明つき） */
 .type-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.type-choice { display: grid; gap: 2px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-family: inherit; color: var(--text); }
+.type-choice { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; text-align: left; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-family: inherit; color: var(--text); }
+.type-text { display: grid; gap: 2px; }
+.type-thumb { width: 48px; height: 60px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
 .type-choice strong { font-size: 14px; }
 .type-choice span { font-size: 11px; color: var(--muted); line-height: 1.4; }
 .type-choice.active { border: 2px solid var(--red); background: #fff5f5; }

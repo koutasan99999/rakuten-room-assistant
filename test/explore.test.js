@@ -57,6 +57,7 @@ test('企画で探す：検索の角度を8つに広げて楽天で探し、AI�
   assert.ok(c.reason && c.memo && c.url && c.image && c.caption);
   assert.equal(data.idea.topic, idea().topic);
   assert.equal(data.brief.type, 'gift');
+  assert.equal(data.coverStyle, 'serious_think'); // 企画（本気出して考えてみた）は今までの表紙
   // 役割は同じものが3件まで
   const roles = {};
   for (const x of data.candidates) roles[x.role] = (roles[x.role] || 0) + 1;
@@ -144,6 +145,7 @@ test('条件指定：詳細条件（価格・ターゲット・年齢・プレ�
     details: { minPrice: 3000, maxPrice: 8000, target: '後輩', age: '20代', purpose: 'gift', brandFocus: true }
   });
   assert.equal(data.typeName, 'トレンド');
+  assert.equal(data.coverStyle, 'trend_pick'); // 条件指定は、選んだ型の表紙
   assert.equal(data.title, '財布');
   const user = mock.calls.openai.find(isAngles).messages[1].content;
   for (const re of [/ターゲット: 後輩/, /年齢: 20代/, /用途: プレゼント/, /価格帯: 3000〜8000円/, /有名ブランドを重視/, /ジャンル: ファッション/]) assert.match(user, re);

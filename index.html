@@ -158,8 +158,23 @@
         <span class="hint">「◯◯について本気出して考えてみた」の◯◯を入れます</span>
       </label>
       <label class="field">
-        <span class="field-label">表紙のサブタイトル <span class="optional">任意</span></span>
-        <input id="ig-subtitle" class="input" type="text" maxlength="24" placeholder="空欄なら「迷ったので整理しました」">
+        <span class="field-label">表紙のデザイン</span>
+        <select id="ig-cover-style" class="select"></select>
+        <span class="hint">発掘ページで選んだ「選び方の型」に合わせたシリーズになります。企画（本気出して考えてみた）は今までの表紙です</span>
+      </label>
+      <div id="ig-cover-fields" class="cover-fields">
+        <label class="field">
+          <span class="field-label">表紙の大見出し <span class="optional">任意</span></span>
+          <textarea id="ig-cover-title" class="textarea" rows="2" maxlength="30" placeholder="空欄ならAIが作ります（改行で2行に。例：防災グッズ、↵まずコレを買え）"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">目立たせる言葉 <span class="optional">任意</span></span>
+          <input id="ig-cover-accent" class="input" type="text" maxlength="8" placeholder="大見出しの中の言葉（例：コレ、アリ、5,000）">
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">表紙の小見出し <span class="optional">任意</span></span>
+        <input id="ig-subtitle" class="input" type="text" maxlength="24" placeholder="空欄なら自動（本気出して〜は「迷ったので整理しました」）">
       </label>
       <label class="field">
         <span class="field-label">カテゴリ <span class="optional">任意</span></span>
@@ -256,6 +271,7 @@
   <script src="js/history.js"></script>
   <script src="js/zip.js"></script>
   <script src="js/ig-render.js"></script>
+  <script src="js/ig-covers.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
