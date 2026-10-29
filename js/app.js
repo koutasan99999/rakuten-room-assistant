@@ -1800,7 +1800,7 @@
   var modeTabs = document.querySelectorAll('.mode-tab');
   function showMode(mode) {
     Array.prototype.forEach.call(modeTabs, function (t) { t.classList.toggle('active', t.getAttribute('data-mode') === mode); });
-    ['idea', 'cond', 'random'].forEach(function (m) { document.getElementById('mode-' + m).hidden = m !== mode; });
+    ['idea', 'cond', 'random', 'radar'].forEach(function (m) { document.getElementById('mode-' + m).hidden = m !== mode; });
     try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
   }
   Array.prototype.forEach.call(modeTabs, function (t) {
@@ -2212,6 +2212,485 @@
     renderPlans();
     renderTypeChoices();
   }).catch(function () { renderTypeChoices(); });
+
+  // ---- 新作・予約・再販レーダー ----
+  var Radar = window.RadarStore;
+  var radarScanBtn = document.getElementById('radar-scan');
+  var radarLast = document.getElementById('radar-last');
+  var radarLoading = document.getElementById('radar-loading');
+  var radarMessage = document.getElementById('radar-message');
+  var radarDash = document.getElementById('radar-dash');
+  var radarGenresEl = document.getElementById('radar-genres');
+  var radarFollowedEl = document.getElementById('radar-followed');
+  var radarSuggestEl = document.getElementById('radar-suggest');
+  var radarBrandInput = document.getElementById('radar-brand-input');
+  var radarListEl = document.getElementById('radar-list');
+  var radarCountEl = document.getElementById('radar-count');
+  var radarMoreBtn = document.getElementById('radar-more');
+  var radarFilterBox = document.getElementById('radar-filter-box');
+  var radarFilterNote = document.getElementById('radar-filter-note');
+  var rf = {
+    sort: document.getElementById('rf-sort'), status: document.getElementById('rf-status'), period: document.getElementById('rf-period'),
+    genre: document.getElementById('rf-genre'), brand: document.getElementById('rf-brand'), price: document.getElementById('rf-price'),
+    source: document.getElementById('rf-source'), fav: document.getElementById('rf-fav')
+  };
+  var RADAR_STATUS_LABELS = { NEW: 'NEW', COMING_SOON: 'COMING SOON', PRE_ORDER: 'PRE-ORDER', RESTOCK: 'RESTOCK', LIMITED: 'LIMITED', COLLAB: 'COLLAB', NEW_COLOR: 'NEW COLOR', SPECIAL: 'SALE / SPECIAL' };
+  var RADAR_STATUS_JA = { NEW: '新発売', COMING_SOON: '発売予定', PRE_ORDER: '予約受付中', RESTOCK: '再販・再入荷', LIMITED: '限定', COLLAB: 'コラボ', NEW_COLOR: '新色', SPECIAL: '特別販売' };
+  // はじめて開いたときに見るジャンル（あとで自由に変えられる）
+  var RADAR_DEFAULT_GENRES = ['sneaker', 'bag', 'charger', 'earphone', 'cooking', 'seasonal', 'kitchen', 'tableware', 'useful', 'outdoor', 'cosme', 'perfume'];
+  var radarMeta = { groups: [], genres: [], sources: [] };
+  var radarShown = 40;
+
+  function radarSettings() {
+    var s = Radar.settings();
+    if (!s.genres) s.genres = RADAR_DEFAULT_GENRES.slice();
+    return s;
+  }
+
+  function ymd(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function dayStart(t) { var d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  // 今週（月曜〜日曜）の範囲
+  function weekRange() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    var mon = new Date(d.getTime() - ((d.getDay() + 6) % 7) * 86400000);
+    var sun = new Date(mon.getTime() + 6 * 86400000);
+    return [ymd(mon), ymd(sun)];
+  }
+  function monthKey(offset) {
+    var d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + (offset || 0));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function inPeriod(it, period) {
+    var today = ymd(new Date());
+    var month = it.releaseMonth || (it.releaseDate ? it.releaseDate.slice(0, 7) : '');
+    if (period === 'today') return it.releaseDate === today;
+    if (period === 'week') { var w = weekRange(); return !!it.releaseDate && it.releaseDate >= w[0] && it.releaseDate <= w[1]; }
+    if (period === 'month') return month === monthKey(0);
+    if (period === 'next') return month === monthKey(1);
+    if (period === 'unknown') return !it.releaseDate && !it.releaseMonth;
+    if (period === 'new_today') return it.createdAt >= dayStart(Date.now());
+    return true;
+  }
+
+  function hasStatus(it, st) {
+    if (st === 'LIMITED_COLLAB') return it.status.indexOf('LIMITED') !== -1 || it.status.indexOf('COLLAB') !== -1;
+    return it.status.indexOf(st) !== -1;
+  }
+
+  // 自分の好みに近い順：気になる・企画に使った商品のブランドとジャンル、フォロー中のブランドを重みにする。
+  // 同じジャンルばかりにならないよう、ジャンルの重みには上限を付ける
+  function preferenceOf(all, settings) {
+    var brand = {};
+    var genre = {};
+    all.forEach(function (it) {
+      var w = (it.favorite ? 2 : 0) + (it.usedForPost ? 3 : 0);
+      if (!w) return;
+      if (it.brand) brand[it.brand] = (brand[it.brand] || 0) + w;
+      genre[it.category] = Math.min(4, (genre[it.category] || 0) + w);
+    });
+    settings.brands.forEach(function (b) { brand[b] = (brand[b] || 0) + 3; });
+    return function (it) { return (brand[it.brand] || 0) + (genre[it.category] || 0) + (it.score || 0) * 0.5; };
+  }
+
+  function radarFiltered(all, settings) {
+    var hiddenBrands = settings.hiddenBrands.map(function (b) { return b.toLowerCase(); });
+    var price = rf.price.value ? rf.price.value.split('-').map(Number) : null;
+    var list = all.filter(function (it) {
+      if (it.hidden) return false;
+      if (it.brand && hiddenBrands.indexOf(it.brand.toLowerCase()) !== -1) return false;
+      if (rf.fav.checked && !it.favorite) return false;
+      if (rf.status.value && !hasStatus(it, rf.status.value)) return false;
+      if (rf.period.value && !inPeriod(it, rf.period.value)) return false;
+      if (rf.genre.value && it.category !== rf.genre.value) return false;
+      if (rf.brand.value && it.brand !== rf.brand.value) return false;
+      if (rf.source.value && it.source !== rf.source.value) return false;
+      if (price && (it.price < price[0] || (price[1] && it.price >= price[1]))) return false;
+      return true;
+    });
+    var far = '9999-99-99';
+    var today = ymd(new Date());
+    var sorters = {
+      new: function (a, b) { return b.createdAt - a.createdAt || (b.score || 0) - (a.score || 0); },
+      release: function (a, b) {
+        var x = a.releaseDate && a.releaseDate >= today ? a.releaseDate : far;
+        var y = b.releaseDate && b.releaseDate >= today ? b.releaseDate : far;
+        return x < y ? -1 : x > y ? 1 : 0;
+      },
+      preorder_end: function (a, b) {
+        var x = a.preorderEnd && a.preorderEnd >= today ? a.preorderEnd : far;
+        var y = b.preorderEnd && b.preorderEnd >= today ? b.preorderEnd : far;
+        return x < y ? -1 : x > y ? 1 : 0;
+      },
+      price_asc: function (a, b) { return a.price - b.price; },
+      price_desc: function (a, b) { return b.price - a.price; },
+      score: function (a, b) { return (b.score || 0) - (a.score || 0); }
+    };
+    if (rf.sort.value === 'mine') {
+      var pref = preferenceOf(all, settings);
+      return list.sort(function (a, b) { return pref(b) - pref(a); });
+    }
+    return list.sort(sorters[rf.sort.value] || sorters.new);
+  }
+
+  function dateText(d) {
+    if (!d) return '';
+    var p = d.split('-');
+    return Number(p[1]) + '月' + Number(p[2]) + '日' + (p[0] !== String(new Date().getFullYear()) ? '（' + p[0] + '年）' : '');
+  }
+
+  function radarCard(it, settings) {
+    var card = el('article', 'cand-card radar-card' + (it.favorite ? ' picked' : ''));
+    var top = el('div', 'cand-top');
+    if (it.imageUrl) {
+      var img = el('img', 'cand-thumb');
+      img.src = it.imageUrl;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function () { img.remove(); };
+      top.appendChild(img);
+    }
+    var info = el('div', 'cand-info');
+    var chips = el('div', 'chips');
+    it.status.forEach(function (s) {
+      var c = el('span', 'radar-status st-' + s.toLowerCase(), RADAR_STATUS_LABELS[s] || s);
+      c.title = RADAR_STATUS_JA[s] || '';
+      chips.appendChild(c);
+    });
+    if (it.createdAt >= dayStart(Date.now())) chips.appendChild(el('span', 'seen', '今日の新着'));
+    info.appendChild(chips);
+    var name = el('h3', 'cand-name radar-name', it.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60) || it.name.slice(0, 60));
+    name.title = it.name;
+    info.appendChild(name);
+    var meta = el('p', 'cand-meta');
+    meta.appendChild(el('strong', null, formatPrice(it.price)));
+    if (it.brand) meta.appendChild(el('span', 'cand-brand', it.brand));
+    meta.appendChild(el('span', 'cand-brand', it.categoryLabel));
+    info.appendChild(meta);
+    top.appendChild(info);
+    card.appendChild(top);
+
+    var dl = el('dl', 'idea-facts radar-dates');
+    var release = it.releaseDate ? dateText(it.releaseDate) + (it.releaseDate > ymd(new Date()) ? '（予定）' : '') : it.releaseText || '記載なし';
+    [['発売日', release], ['予約開始', it.preorderStart ? dateText(it.preorderStart) : (it.status.indexOf('PRE_ORDER') !== -1 ? '受付中（開始日の記載なし）' : '')],
+      ['予約締切', it.preorderEnd ? dateText(it.preorderEnd) : ''], ['再販日', it.restockDate ? dateText(it.restockDate) : ''],
+      ['販売サイト', it.sourceLabel + (it.shops && it.shops.length > 1 ? '（' + it.shops.length + '店舗）' : '')]].forEach(function (f) {
+      if (!f[1]) return;
+      dl.appendChild(el('dt', null, f[0]));
+      dl.appendChild(el('dd', null, f[1]));
+    });
+    card.appendChild(dl);
+    if ((it.changes || []).length) {
+      var ch = el('p', 'radar-change', '変化：' + it.changes[it.changes.length - 1].text);
+      card.appendChild(ch);
+    }
+    if (it.shops && it.shops.length > 1) {
+      var shops = el('details', 'radar-shops');
+      shops.appendChild(el('summary', null, '販売先を見る'));
+      it.shops.forEach(function (s) {
+        var a = el('a', null, s.name + '（' + formatPrice(s.price) + '）');
+        a.href = s.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        shops.appendChild(a);
+      });
+      card.appendChild(shops);
+    }
+    if (it.rakutenUrl) card.appendChild(el('p', 'radar-rakuten', '楽天にもある'));
+
+    var actions = el('div', 'radar-actions');
+    var fav = el('button', 'btn ' + (it.favorite ? 'btn-primary' : 'btn-secondary'), it.favorite ? '★ 気になる' : '☆ 気になる');
+    fav.type = 'button';
+    fav.addEventListener('click', function () {
+      it.favorite = !it.favorite;
+      Radar.set(it.productId, { favorite: it.favorite }).then(function () {
+        card.parentNode.replaceChild(radarCard(it, settings), card);
+        showToast(it.favorite ? 'ウォッチリストに入れました' : 'ウォッチリストから外しました');
+        renderRadarDash();
+      });
+    });
+    actions.appendChild(fav);
+    var plan = el('button', 'btn btn-seed', '企画にする');
+    plan.type = 'button';
+    plan.addEventListener('click', function () {
+      Radar.set(it.productId, { usedForPost: true });
+      startSeed({
+        name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '',
+        brand: it.brand, reason: (it.status.map(function (s) { return RADAR_STATUS_JA[s]; }).join('・') + (it.releaseText ? '。' + it.releaseText : '')),
+        caption: [it.releaseText, it.preorderStart && '予約開始 ' + it.preorderStart].filter(Boolean).join(' ')
+      }, null);
+    });
+    actions.appendChild(plan);
+    var link = el('a', 'btn btn-secondary', '商品ページを見る');
+    link.href = it.sourceUrl;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    actions.appendChild(link);
+    if (it.rakutenUrl && it.code) {
+      var room = el('button', 'btn btn-secondary', 'ROOM候補に追加');
+      room.type = 'button';
+      room.addEventListener('click', function () {
+        Store.setStatus({ id: it.code, code: it.code, name: it.name, price: it.price, url: it.rakutenUrl, image: it.imageUrl, intro: '', brand: it.brand }, 'room_candidate').then(function () {
+          updateManageCount();
+          room.textContent = 'ROOM候補に入れました';
+          room.disabled = true;
+        });
+      });
+      actions.appendChild(room);
+    }
+    card.appendChild(actions);
+    return card;
+  }
+
+  // ダッシュボード：保存してある商品の数（押すとその一覧へ）
+  function renderRadarDash() {
+    return Radar.list().then(function (all) {
+      var list = all.filter(function (it) { return !it.hidden; });
+      var cards = [
+        ['今日の新着', 'new_today', '', function (it) { return inPeriod(it, 'new_today'); }],
+        ['予約受付中', '', 'PRE_ORDER', function (it) { return hasStatus(it, 'PRE_ORDER'); }],
+        ['今週発売', 'week', '', function (it) { return inPeriod(it, 'week'); }],
+        ['今月発売', 'month', '', function (it) { return inPeriod(it, 'month'); }],
+        ['再販・再入荷', '', 'RESTOCK', function (it) { return hasStatus(it, 'RESTOCK'); }],
+        ['限定・コラボ', '', 'LIMITED_COLLAB', function (it) { return hasStatus(it, 'LIMITED_COLLAB'); }],
+        ['発売予定', '', 'COMING_SOON', function (it) { return hasStatus(it, 'COMING_SOON'); }],
+        ['気になる', 'fav', '', function (it) { return it.favorite; }]
+      ];
+      radarDash.innerHTML = '';
+      cards.forEach(function (c) {
+        var n = list.filter(c[3]).length;
+        var b = el('button', 'radar-tile');
+        b.type = 'button';
+        b.appendChild(el('span', 'radar-tile-label', c[0]));
+        b.appendChild(el('strong', null, String(n)));
+        b.appendChild(el('span', 'radar-tile-unit', '件'));
+        b.addEventListener('click', function () {
+          clearRadarFilters();
+          if (c[1] === 'fav') rf.fav.checked = true;
+          else if (c[1]) rf.period.value = c[1];
+          if (c[2]) rf.status.value = c[2];
+          if (c[1] === 'week' || c[1] === 'month') rf.sort.value = 'release';
+          renderRadarList();
+          radarCountEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        radarDash.appendChild(b);
+      });
+    });
+  }
+
+  function clearRadarFilters() {
+    ['status', 'period', 'genre', 'brand', 'price', 'source'].forEach(function (k) { rf[k].value = ''; });
+    rf.sort.value = 'new';
+    rf.fav.checked = false;
+  }
+
+  function fillSelect(sel, options, allLabel) {
+    var cur = sel.value;
+    sel.innerHTML = '';
+    var all = el('option', null, allLabel || 'すべて');
+    all.value = '';
+    sel.appendChild(all);
+    options.forEach(function (o) {
+      if (o.group) {
+        var g = el('optgroup');
+        g.label = o.group;
+        o.items.forEach(function (x) { var op = el('option', null, x[1]); op.value = x[0]; g.appendChild(op); });
+        sel.appendChild(g);
+      } else {
+        var op = el('option', null, o[1]);
+        op.value = o[0];
+        sel.appendChild(op);
+      }
+    });
+    sel.value = cur;
+    if (sel.value !== cur) sel.value = '';
+  }
+
+  function renderRadarList() {
+    var settings = radarSettings();
+    return Radar.list().then(function (all) {
+      // ブランドの選択肢は、見つけた商品のブランドとフォロー中のブランド
+      var brands = {};
+      all.forEach(function (it) { if (it.brand) brands[it.brand] = true; });
+      settings.brands.forEach(function (b) { brands[b] = true; });
+      fillSelect(rf.brand, Object.keys(brands).sort().map(function (b) { return [b, b]; }));
+      var list = radarFiltered(all, settings);
+      var active = ['status', 'period', 'genre', 'brand', 'price', 'source'].filter(function (k) { return rf[k].value; }).length + (rf.fav.checked ? 1 : 0);
+      radarFilterNote.textContent = active ? '（' + active + '件の条件）' : '';
+      radarCountEl.textContent = all.length ? list.length + '件' + (active ? '（絞り込み中）' : '') : '';
+      radarListEl.innerHTML = '';
+      if (!all.length) {
+        radarListEl.appendChild(el('p', 'manage-empty', 'まだ商品がありません。「レーダーを更新」を押すと、新作・予約の商品を集めます。'));
+      } else if (!list.length) {
+        radarListEl.appendChild(el('p', 'manage-empty', 'この条件に当てはまる商品はありません。'));
+      }
+      list.slice(0, radarShown).forEach(function (it) { radarListEl.appendChild(radarCard(it, settings)); });
+      radarMoreBtn.hidden = list.length <= radarShown;
+    });
+  }
+
+  function renderRadarSettings() {
+    var settings = radarSettings();
+    radarGenresEl.innerHTML = '';
+    radarMeta.groups.forEach(function (g) {
+      var row = el('div', 'radar-group');
+      row.appendChild(el('span', 'radar-group-label', g.label));
+      var chips = el('div', 'radar-chips');
+      radarMeta.genres.filter(function (x) { return x.group === g.id; }).forEach(function (x) {
+        var on = settings.genres.indexOf(x.id) !== -1;
+        var b = el('button', 'radar-chip' + (on ? ' on' : ''), x.label);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          var s = radarSettings();
+          s.genres = on ? s.genres.filter(function (id) { return id !== x.id; }) : s.genres.concat([x.id]);
+          Radar.saveSettings(s);
+          renderRadarSettings();
+        });
+        chips.appendChild(b);
+      });
+      row.appendChild(chips);
+      radarGenresEl.appendChild(row);
+    });
+    radarFollowedEl.innerHTML = '';
+    if (!settings.brands.length) radarFollowedEl.appendChild(el('span', 'hint', 'まだありません'));
+    settings.brands.forEach(function (b) {
+      var c = el('button', 'radar-chip on', b + ' ×');
+      c.type = 'button';
+      c.addEventListener('click', function () {
+        var s = radarSettings();
+        s.brands = s.brands.filter(function (x) { return x !== b; });
+        Radar.saveSettings(s);
+        renderRadarSettings();
+      });
+      radarFollowedEl.appendChild(c);
+    });
+    // おすすめブランド：選んだジャンルの候補から、フォロー中・非表示のものを除いて並べる
+    radarSuggestEl.innerHTML = '';
+    var seen = {};
+    radarMeta.genres.filter(function (x) { return settings.genres.indexOf(x.id) !== -1; }).forEach(function (x) {
+      x.brands.forEach(function (b) {
+        if (seen[b] || settings.brands.indexOf(b) !== -1 || settings.hiddenBrands.indexOf(b) !== -1) return;
+        seen[b] = true;
+        var box = el('span', 'radar-suggest');
+        box.appendChild(el('span', null, b));
+        var follow = el('button', 'link-btn', 'フォロー');
+        follow.type = 'button';
+        follow.addEventListener('click', function () {
+          var s = radarSettings();
+          if (s.brands.indexOf(b) === -1) s.brands.push(b);
+          Radar.saveSettings(s);
+          renderRadarSettings();
+        });
+        var hide = el('button', 'link-btn', '非表示');
+        hide.type = 'button';
+        hide.addEventListener('click', function () {
+          var s = radarSettings();
+          s.hiddenBrands.push(b);
+          Radar.saveSettings(s);
+          renderRadarSettings();
+          renderRadarList();
+        });
+        box.appendChild(follow);
+        box.appendChild(hide);
+        radarSuggestEl.appendChild(box);
+      });
+    });
+    if (settings.hiddenBrands.length) {
+      var reset = el('button', 'link-btn', '非表示にしたブランド（' + settings.hiddenBrands.length + '）を元に戻す');
+      reset.type = 'button';
+      reset.addEventListener('click', function () {
+        var s = radarSettings();
+        s.hiddenBrands = [];
+        Radar.saveSettings(s);
+        renderRadarSettings();
+        renderRadarList();
+      });
+      radarSuggestEl.appendChild(reset);
+    }
+  }
+
+  function showRadarLast() {
+    var s = radarSettings();
+    if (s.lastScanAt) {
+      var d = new Date(s.lastScanAt);
+      radarLast.textContent = '最後に更新：' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + '。見つけた商品はこのiPhoneに貯まっていきます。';
+    }
+  }
+
+  // 巡回：選んだジャンルから6つずつ順番に（毎回同じジャンルにならないように）
+  function scanRadar() {
+    var s = radarSettings();
+    if (!s.genres.length) { showToast('見るジャンルを選んでください'); document.getElementById('radar-settings').open = true; return; }
+    var n = s.genres.length;
+    var genres = [];
+    for (var i = 0; i < Math.min(6, n); i++) genres.push(s.genres[(s.cursor + i) % n]);
+    radarScanBtn.disabled = true;
+    radarLoading.hidden = false;
+    radarMessage.hidden = true;
+    postJson('api/radar', { genres: genres, brands: s.brands, round: s.round }).then(function (r) {
+      if (r.status !== 200) {
+        radarMessage.textContent = r.data.error || 'うまく取得できませんでした。もう一度お試しください。';
+        radarMessage.className = 'message error';
+        radarMessage.hidden = false;
+        return;
+      }
+      return Radar.merge(r.data.items || []).then(function (res) {
+        var next = radarSettings();
+        next.cursor = (s.cursor + genres.length) % Math.max(1, n);
+        next.round = s.round + 1;
+        next.lastScanAt = Date.now();
+        Radar.saveSettings(next);
+        showRadarLast();
+        var labels = genres.map(function (id) { var g = radarMeta.genres.filter(function (x) { return x.id === id; })[0]; return g ? g.label : id; });
+        radarMessage.textContent = (r.data.notice || (r.data.items.length + '件見つかりました（新しく見つけた商品 ' + res.added + '件）')) +
+          (res.changed ? '。気になる商品のうち' + res.changed + '件に変化があります' : '') + '。今回見たジャンル：' + labels.join('・');
+        radarMessage.className = 'message';
+        radarMessage.hidden = false;
+        renderRadarDash();
+        renderRadarList();
+      });
+    }, function () {
+      radarMessage.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+      radarMessage.className = 'message error';
+      radarMessage.hidden = false;
+    }).then(function () {
+      radarScanBtn.disabled = false;
+      radarLoading.hidden = true;
+    });
+  }
+
+  radarScanBtn.addEventListener('click', scanRadar);
+  radarMoreBtn.addEventListener('click', function () { radarShown += 40; renderRadarList(); });
+  document.getElementById('rf-clear').addEventListener('click', function () { clearRadarFilters(); renderRadarList(); });
+  Object.keys(rf).forEach(function (k) { rf[k].addEventListener('change', function () { radarShown = 40; renderRadarList(); }); });
+  document.getElementById('radar-brand-add').addEventListener('click', function () {
+    var b = radarBrandInput.value.trim();
+    if (!b) return;
+    var s = radarSettings();
+    if (s.brands.indexOf(b) === -1) s.brands.push(b);
+    s.hiddenBrands = s.hiddenBrands.filter(function (x) { return x !== b; });
+    Radar.saveSettings(s);
+    radarBrandInput.value = '';
+    renderRadarSettings();
+  });
+  addClear(radarBrandInput);
+
+  fetch('api/radar').then(function (r) { return r.json(); }).then(function (d) {
+    radarMeta = d;
+    fillSelect(rf.genre, (d.groups || []).map(function (g) {
+      return { group: g.label, items: d.genres.filter(function (x) { return x.group === g.id; }).map(function (x) { return [x.id, x.label]; }) };
+    }));
+    fillSelect(rf.source, (d.sources || []).map(function (s) { return [s.id, s.label]; }));
+    renderRadarSettings();
+  }).catch(function () {});
+  showRadarLast();
+  renderRadarDash();
+  renderRadarList();
 
   var savedMode = 'idea';
   try { savedMode = localStorage.getItem(MODE_KEY) || 'idea'; } catch (e) {}
