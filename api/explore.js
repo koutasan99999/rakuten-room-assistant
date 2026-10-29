@@ -68,7 +68,7 @@ export default async function handler(req, res, env = process.env) {
   const prevAngles = more ? readList(more.angles, 20, (a) => (a && a.keyword ? { label: str(a.label, 14), keyword: str(a.keyword, 30), minPrice: a.minPrice, maxPrice: a.maxPrice, page: Math.min(5, Number(a.page) || 1) } : null)) : [];
 
   try {
-    const result = await explore({ brief, more: !!more, prevAngles, exclude, seen, env, referer: requestReferer(req, env), startedAt });
+    const result = await explore({ brief, more: !!more, prevAngles, exclude, seen, seed, env, referer: requestReferer(req, env), startedAt });
     return send(res, 200, {
       brief,
       title: brief.title || brief.free,
