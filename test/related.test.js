@@ -197,8 +197,11 @@ test('企画づくりの探索：AIがすべての角度に起点のコラボ名
   const idea = { edited: true, seeded: true, topic: '別注スニーカー', title: '別注スニーカーについて本気出して考えてみた', curationType: 'first_pick', postType: 'まずコレ', seedRole: 'main', searchGenres: ['スニーカー', 'コラボ スニーカー'], whyInteresting: '', target: '', priceBand: '', axis: '', genre: '', free: '' };
   const r = await call(exploreApi, { idea, seed: HERO });
   assert.equal(r.status, 200);
+  // 起点の商品からは検索軸で広げる：コラボ名（ブランド＋相手）・型番をそのまま検索しない。ほかのコラボ・合わせる服も探す
   const kws = mock.calls.rakuten.map((c) => c.url.searchParams.get('keyword'));
-  assert.equal(kws.filter((k) => /New Balance/.test(k) && /BEAMS/.test(k)).length, 1, kws.join(' / '));
+  assert.ok(kws.filter((k) => /New Balance/.test(k) && /BEAMS/.test(k)).length <= 1, kws.join(' / '));
+  assert.ok(kws.every((k) => !/ML2002R/.test(k)), kws.join(' / '));
+  assert.ok(kws.some((k) => /コラボ|別注/.test(k)) && kws.some((k) => /ニット|スラックス|バッグ|パンツ/.test(k)), kws.join(' / '));
   assert.equal(r.data.candidates[0].role, '起点商品');
 });
 
@@ -238,4 +241,14 @@ test('公式サイトのURL：JSON-LD・OGPから商品名・画像・価格を�
   await assert.rejects(checkPublicUrl('https://internal.example/', async () => [{ address: '10.0.0.5' }]), /使えません/);
   const ok = await checkPublicUrl('https://brand.example/a', async () => [{ address: '93.184.216.34' }]);
   assert.equal(ok.hostname, 'brand.example');
+});
+
+test('合う服・小物を探す：靴を起点に、靴以外のアイテムを種類を変えながら少しずつ探す（商品名・型番は使わない）', async () => {
+  let n = 0;
+  mock = installFetchMock({ rakuten: (url) => json(200, { pageCount: 1, items: [0, 1, 2].map(() => item(`${url.searchParams.get('keyword')} 商品${n++}`)) }) });
+  const r = await relatedSearch({ axis: 'match', reference: { name: 'NEW BALANCE × JJJJound U4751UK イエロー スエード スニーカー メンズ', price: 43890 }, env: ENV, referer: 'https://x.app/' });
+  const kws = r.queries.map((q) => q.keyword);
+  assert.ok(kws.length >= 3);
+  assert.ok(kws.every((k) => k.startsWith('メンズ') && !/スニーカー|U4751UK|JJJJound/.test(k)), kws.join(' / '));
+  assert.ok(new Set(r.items.map((x) => x.query)).size >= 3, '1つの種類ばかりにしない');
 });
