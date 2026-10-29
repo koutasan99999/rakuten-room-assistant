@@ -10,6 +10,7 @@ import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
+import radarHandler from '../api/radar.js';
 import assetsHandler from '../api/assets.js';
 import seedIdeasHandler from '../api/seed-ideas.js';
 
@@ -25,6 +26,18 @@ if (process.env.MOCK) {
     rakuten: (url) => {
       // 商品画像の中継（api/image）用に、余白つきの見本画像を返す
       if (url.hostname.startsWith('thumbnail')) return new Response(sampleImage, { status: 200, headers: { 'Content-Type': 'image/png' } });
+      if (url.searchParams.get('sort') === '-updateTimestamp') {
+        // 新作レーダー用：予約・発売予定・再販・限定・コラボなどが混ざった商品
+        const kw = url.searchParams.get('keyword');
+        const brands = ['New Balance', 'Anker', 'KINTO', 'BEAMS', '', 'BALMUDA'];
+        const tags = ['【予約】2026年11月20日発売 予約受付期間：10/1〜11/5', '11月下旬発売予定', '再入荷 12/3より順次発送', '数量限定', '× Champion 別注', '新色', '新作', '期間限定 特別価格'];
+        const items = Array.from({ length: 10 }, (_, i) => ({
+          itemCode: `radar:${kw}${i}`, itemName: `${brands[i % brands.length]} ${kw.split(' ')[0]} モデル${i} ${tags[(i + kw.length) % tags.length]}`.trim(),
+          itemPrice: 1980 + i * 1500, itemUrl: `https://item.rakuten.co.jp/radar/${encodeURIComponent(kw)}${i}/`,
+          mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/radar/${i}.jpg?_ex=128x128`], shopName: `ショップ${i % 4}`, itemCaption: tags[(i + 2) % tags.length]
+        }));
+        return json(200, { items, pageCount: 1 });
+      }
       const min = Number(url.searchParams.get('minPrice')) || 1000;
       const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 10) + (url.searchParams.get('page') || '');
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
@@ -96,6 +109,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
   if (url.pathname === '/api/ideas') return ideasHandler(req, res, env);
+  if (url.pathname === '/api/radar') return radarHandler(req, res, env);
   if (url.pathname === '/api/assets') return assetsHandler(req, res, env);
   if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);

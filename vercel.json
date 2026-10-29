@@ -20,6 +20,9 @@
     },
     "api/assets.js": {
       "maxDuration": 60
+    },
+    "api/radar.js": {
+      "maxDuration": 60
     }
   }
 }
