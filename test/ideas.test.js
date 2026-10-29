@@ -110,7 +110,7 @@ test('今日の企画API：3案を返し、直近の履歴と季節をAIに渡�
   assert.match(user, /今の季節: \d+月/);
 });
 
-const ROOM_BLOCK = '紹介したものは楽天ROOMにまとめています。\nプロフィールのリンクからどうぞ。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。';
+const ROOM_BLOCK = '紹介したものは楽天ROOMにまとめています。\nプロフィールのリンクから見られます。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。';
 
 function tagsOf(caption) {
   const last = caption.trim().split('\n').pop();
@@ -144,7 +144,7 @@ test('キャプション：本文→ROOM誘導→URL→アフィリエイト表�
   mock.restore();
   mock = installFetchMock({ rakuten: () => json(500, {}), openai: () => aiReply('だめ') });
   const fb = (await call(instagram, { theme: '出産祝い', needCaption: true, collection: '出産祝い｜本気出して考えてみた', items: [{ name: '商品A', price: 1000 }] })).data;
-  assert.ok(fb.caption.includes('紹介したものは楽天ROOMの「出産祝い｜本気出して考えてみた」にまとめています。\nプロフィールのリンクからどうぞ。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。'));
+  assert.ok(fb.caption.includes('紹介したものは楽天ROOMの「出産祝い｜本気出して考えてみた」にまとめています。\nプロフィールのリンクから見られます。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。'));
   assert.ok(tagsOf(fb.caption).length >= 15);
 });
 

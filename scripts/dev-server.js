@@ -10,6 +10,7 @@ import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
+import assetsHandler from '../api/assets.js';
 import seedIdeasHandler from '../api/seed-ideas.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -29,7 +30,17 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('ランダム発掘で見つけて')
+    openai: (body) => body.messages[0].content.includes('Reel と Story に展開')
+      ? aiReply({
+        reel: { title: '防災グッズ、まずコレ', hook: '防災グッズ、何から買えばいい？', cta: '詳しくは投稿にまとめました',
+          scenes: [{ type: 'hook', seconds: 2, text: '防災グッズ、何から買えばいい？', narration: '防災グッズ、何から買えばいいか迷いますよね。' },
+            { type: 'item', item: 0, seconds: 3, text: '①まず電源', narration: 'まずは電源。スマホが使えると安心です。' },
+            { type: 'item', item: 2, seconds: 3, text: '②停電対策', narration: '停電したときの明かりも先に。' },
+            { type: 'item', item: 3, seconds: 3, text: '③ここ忘れがち', narration: '意外と忘れがちなのがこれ。' },
+            { type: 'cta', seconds: 3, text: '詳しくは投稿にまとめました', narration: '全部まとめた投稿は、プロフィールから見られます。' }] },
+        story: { hook: '防災用品、ちゃんと揃ってる？', hookSub: '最低限だけでも先に', title: '今回はこの3つで選びました', points: ['電源', '明かり', 'トイレ'], text: '6商品まとめました', sub: '詳しくは最新投稿へ' }
+      })
+      : body.messages[0].content.includes('ランダム発掘で見つけて')
       ? aiReply({ analysis: '3ポートで出力が高い、デスクにも旅行にも使える充電器', ideas: [
         { topic: 'iPhoneの充電まわり', type: 'first_pick', typeLabel: 'まずコレ', role: 'main', howUsed: '本命の1つとして、出力と価格のバランスの基準にする', searchGenres: ['USB-C 充電器', 'ワイヤレス充電器', 'USB-Cケーブル', 'MagSafe スタンド'], expectedCount: 18, whyWorks: '充電器は種類が多く、何を基準に選べばいいか迷う人が多い', target: 'iPhoneを使っている人', priceBand: '1,500〜6,000円', axis: '' },
         { topic: 'AnkerとUGREEN、結局どっちを選ぶ？', type: 'brand', typeLabel: 'ブランド比較', role: 'main', howUsed: 'UGREEN側の代表として、Ankerの同クラスと並べる', searchGenres: ['Anker 充電器', 'UGREEN 充電器', 'CIO 充電器'], expectedCount: 15, whyWorks: '有名な2ブランドで迷う人が多く、違いを整理する価値がある', target: '充電器を買い替えたい人', priceBand: '2,000〜8,000円', axis: 'ブランドの安心感 vs 価格' },
@@ -60,7 +71,7 @@ if (process.env.MOCK) {
         topicSlug: 'shussan-iwai', category: '出産祝い',
         ...(body.messages[0].content.includes('表紙）に載せる文字') ? { cover: { style: 'value_pick', title: '防災グッズ、\nまずコレを買え', accent: 'コレ', sub: '最初の1セットはここから' } } : {}),
         ...(body.messages[0].content.includes('caption') ? { caption: '5,000円のプレゼントって、安っぽく見えないか一番気になる予算だと思う。\n\n誕生日が続く時期なので、一度ちゃんと整理しておきたかった。\n\n今回は「渡して不自然じゃないか」「自分では買わないけど嬉しいか」で選びました。\n\n迷ったら1枚目、少し奮発するなら3枚目、という並びです。\n\n買う前に見返せるよう、保存しておいてください。', hashtags: ['#30代男性プレゼント', '#誕生日プレゼント', '#プレゼント選び'] } : {}),
-        ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '出産祝い、迷ったらこの順で見ればいい', lead: 'まずは外しにくい実用品から。次に、自分では買わないけどもらうと嬉しいもの。予算を抑えるなら後半の2つで十分で、価格差は素材と箱の特別感の差です。', verdict: '迷ったら今治ガーゼタオル。少し奮発するならおむつケーキ。' } } : {}),
+        ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '出産祝い、結局むずかしい。', points: ['ちゃんとして見える', '実際に使える', 'もらって困りにくい'], verdict: '今回はこの3つで選びました。' } } : {}),
         items: [0, 1, 2, 3, 4, 5].map((id) => ({ id, slug: ['towel', 'bib', 'blanket', 'bottle', 'toy', 'set'][id], shortName: ['今治ガーゼタオル', 'スタイ3枚セット', 'ベビーブランケット', 'ストローマグ', '木のおもちゃ', 'おむつケーキ'][id], subline: '名入れ対応、箱入りで渡しやすい', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。', '安く済ませたいなら、このへんがちょうどいい。', '迷ったらまずこれでいい枠。', '高いけど、ブランドごと贈る意味があるやつ。'][id] }))
       })
       : body.messages[0].content.includes('検索プラン')
@@ -85,6 +96,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
   if (url.pathname === '/api/ideas') return ideasHandler(req, res, env);
+  if (url.pathname === '/api/assets') return assetsHandler(req, res, env);
   if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }

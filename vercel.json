@@ -17,6 +17,9 @@
     },
     "api/seed-ideas.js": {
       "maxDuration": 60
+    },
+    "api/assets.js": {
+      "maxDuration": 60
     }
   }
 }

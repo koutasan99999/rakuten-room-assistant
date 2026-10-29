@@ -210,10 +210,11 @@
     <p class="hint">▲▼で並び順を変えられます。役割（迷ったらこれ・本命・安い代替 など）は任意です。基本は5〜6商品です。</p>
     <div id="ig-items" class="ig-items"></div>
 
-    <button type="button" id="ig-generate" class="btn btn-discover">画像を作る</button>
+    <button type="button" id="ig-generate" class="btn btn-discover">投稿素材をまとめて作る</button>
+    <p class="hint">カルーセル画像・キャプション・ハッシュタグ・ROOM誘導文と、同じ商品でReel（台本・テロップ・動画）とStory 3枚をまとめて作ります。</p>
     <div id="ig-loading" class="loading" hidden>
       <div class="spinner" aria-hidden="true"></div>
-      <p>画像を作っています…<br><span class="sub">商品名とくまの一言メモをAIで作るので、10〜20秒ほどかかります</span></p>
+      <p>カルーセルとキャプションを作っています…<br><span class="sub">10〜20秒ほどかかります。そのあとReel・Storyも続けて作ります</span></p>
     </div>
     <div id="ig-message" class="message" role="alert" hidden></div>
 
@@ -234,6 +235,9 @@
         <button type="button" id="ig-mark" class="btn btn-secondary">この商品をInstagram投稿済みにする</button>
       </div>
       <p class="hint">「写真に保存」で出てくる画面の「画像を保存」を選ぶと、全部まとめて写真アプリに入ります。1枚ずつなら、画像を長押しして保存もできます。</p>
+      <h3 class="compose-sub">Reel・Story（同じ企画・同じ商品で）</h3>
+      <p class="hint">カルーセル＝詳しく説明、Reel＝興味を引いて投稿へ、Story＝最新投稿へ誘導、と役割を変えています。</p>
+      <div id="ig-assets"></div>
     </section>
   </main>
 
@@ -241,6 +245,14 @@
     <p>紹介文は商品ページの情報と合っているか確認してから投稿してください。</p>
     <button type="button" id="reset-passcode" class="link-btn" hidden>合言葉を入れ直す</button>
   </footer>
+
+  <main class="container" id="view-assets" hidden>
+    <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
+    <h2 class="compose-title">Reel・Story</h2>
+    <p id="assets-title" class="room-title"></p>
+    <div id="assets-status" class="asset-status"></div>
+    <div id="assets-body"></div>
+  </main>
 
   <main class="container" id="view-room" hidden>
     <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
@@ -272,6 +284,7 @@
   <script src="js/zip.js"></script>
   <script src="js/ig-render.js"></script>
   <script src="js/ig-covers.js"></script>
+  <script src="js/reel-story.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
