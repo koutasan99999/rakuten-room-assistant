@@ -20,6 +20,9 @@ import planTitlesHandler from '../api/plan-titles.js';
 import productUrlHandler from '../api/product-url.js';
 import coordHandler from '../api/coord.js';
 import coordImageHandler from '../api/coord-image.js';
+import trendsHandler from '../api/trends.js';
+import furusatoHandler from '../api/furusato.js';
+import brandNoteHandler from '../api/brand-note.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -31,11 +34,29 @@ if (process.env.MOCK) {
   const kuma = await fs.readFile(path.join(root, 'assets/kuma.png')).catch(() => null);
   installFetchMock({
     // 画像生成の偽物：少し待ってから、くまの画像を「生成した画像」として返す
+    trends: () => new Response(`<rss><channel>${['冬のボーナス', '新型スマホ', 'インフルエンザ', '加湿器 おすすめ', '日本シリーズ'].map((t, i) => `<item><title>${t}</title><ht:approx_traffic>${(5 - i) * 2}万+</ht:approx_traffic><pubDate>${new Date().toUTCString()}</pubDate><ht:news_item><ht:news_item_title>${t}のニュース</ht:news_item_title><ht:news_item_url>https://news.example.jp/${i}</ht:news_item_url><ht:news_item_source>Example</ht:news_item_source></ht:news_item></item>`).join('')}</channel></rss>`, { status: 200 }),
     images: async () => { await new Promise((r) => setTimeout(r, 1500)); return json(200, { data: [{ b64_json: kuma ? kuma.toString('base64') : '' }] }); },
     // 価格帯の指定があれば、その範囲の価格で偽の商品を返す
     rakuten: (url) => {
       // 商品画像の中継（api/image）用に、余白つきの見本画像を返す
       if (url.hostname.startsWith('thumbnail')) return new Response(sampleImage, { status: 200, headers: { 'Content-Type': 'image/png' } });
+      // 売れ筋（楽天ランキングAPI）：ジャンルごとの偽のランキング（ブランドが分かる商品・推定する商品・ふるさと納税が混ざる）
+      if (url.pathname.includes('/Ranking/')) {
+        const g = url.searchParams.get('genreId') || '0';
+        const names = ['New Balance 1906R スニーカー グレー', '【MOUNTAIN RESEARCH】マウンテンパーカー', 'KANGOL ショルダーバッグ', '【ふるさと納税】牛肉 1kg', 'Hender Scheme レザー ポーチ', 'Anker 充電器 65W',
+          '【楽天1位】収納ボックス 3個セット', 'KANGOL キャップ', 'BALMUDA トースター', 'Aesop ハンドクリーム', '香水 オードトワレ 50ml ギフト', 'BEAMS スニーカー キャンバス', 'CHUMS トートバッグ', 'マキタ 掃除機 コードレス'];
+        const items = names.map((n, i) => ({ rank: i + 1, itemName: n, itemPrice: 1980 + i * 1300, itemCode: `rank:${g}-${i}`, itemUrl: n.includes('ふるさと') ? `https://item.rakuten.co.jp/f012345-town/${i}/` : `https://item.rakuten.co.jp/rank${g}/${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/r/${i}.jpg?_ex=128x128`], shopName: `ショップ${i % 3}`, reviewAverage: 4.3, reviewCount: 10 + i }));
+        return json(200, { title: `【楽天市場】ランキング市場（ジャンル${g}）`, lastBuildDate: new Date().toUTCString(), Items: items });
+      }
+      // ふるさと納税コーナー
+      if ((url.searchParams.get('keyword') || '').startsWith('ふるさと納税')) {
+        const kw = url.searchParams.get('keyword');
+        const list = [['【ふるさと納税】コシヒカリ 10kg', 15000, '新潟県魚沼市', '2026年11月中旬より順次発送'], ['【ふるさと納税】ななつぼし 5kg×2袋', 13000, '北海道〇〇町', ''], ['【ふるさと納税】【定期便6回】お米 5kg', 60000, '秋田県〇〇市', '寄附確認後、翌月から毎月発送'],
+          ['【ふるさと納税】牛肉 切り落とし 500g×4パック', 12000, '宮崎県〇〇町', '入金確認後、2週間程度で発送'], ['【ふるさと納税】ホタテ 1kg', 14000, '北海道△△町', '12月下旬発送'], ['【ふるさと納税】いくら醤油漬け 250g', 15000, '北海道別海町', ''],
+          ['【ふるさと納税】トイレットペーパー 96ロール', 16000, '静岡県富士市', '順次発送'], ['【ふるさと納税】シャインマスカット 2房', 12000, '山梨県〇〇市', '2026年8月下旬より順次発送'], ['【ふるさと納税】おまかせ海鮮セット', 20000, '青森県〇〇町', '']];
+        const items = list.map(([n, p, s, c], i) => ({ itemCode: `f:${i}`, itemName: n, itemPrice: p, itemUrl: `https://item.rakuten.co.jp/f0${10000 + i}-town/${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/f/${i}.jpg?_ex=128x128`], shopName: s, itemCaption: c, reviewAverage: 3.8 + (i % 4) * 0.3, reviewCount: 5 + i * 20 }));
+        return json(200, { items: kw.includes('米') ? items.filter((x) => /米|コシヒカリ|ななつぼし/.test(x.itemName)) : items, pageCount: 1 });
+      }
       if (url.searchParams.get('sort') === '-updateTimestamp') {
         // 新作レーダー用：予約・発売予定・再販・限定・コラボなどが混ざった商品
         const kw = url.searchParams.get('keyword');
@@ -63,7 +84,9 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('コーディネーター')
+    openai: (body) => body.messages[0].content.includes('ブランドに詳しい編集者')
+      ? aiReply(body.messages[1].content.includes('KANGOL') ? { known: true, summary: 'イギリス発祥の帽子のブランド。カジュアルなバッグや小物もある。', taste: 'カジュアル' } : { known: false, summary: '', taste: '' })
+      : body.messages[0].content.includes('コーディネーター')
       ? aiReply({ looks: [
         { name: 'きれいめカジュアル', style: 'きれいめ', concept: '落ち着いた色で、起点のアイテムを主役にする', items: [{ slot: 'tops', kind: 'ニット', keyword: 'メンズ ニット グレー' }, { slot: 'bottoms', kind: 'スラックス', keyword: 'メンズ スラックス' }, { slot: 'bag', kind: 'レザーバッグ', keyword: 'メンズ レザー バッグ' }] },
         { name: '大人ストリート', style: 'ストリート', concept: 'ゆるいシルエットで程よく力を抜く', items: [{ slot: 'outer', kind: 'ブルゾン', keyword: 'メンズ ブルゾン' }, { slot: 'tops', kind: 'Tシャツ', keyword: 'メンズ Tシャツ' }, { slot: 'bottoms', kind: 'ワイドデニム', keyword: 'メンズ ワイド デニム' }] },
@@ -157,6 +180,9 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/product-url') return productUrlHandler(req, res, env);
   if (url.pathname === '/api/coord') return coordHandler(req, res, env);
   if (url.pathname === '/api/coord-image') return coordImageHandler(req, res, env);
+  if (url.pathname === '/api/trends') return trendsHandler(req, res, env);
+  if (url.pathname === '/api/furusato') return furusatoHandler(req, res, env);
+  if (url.pathname === '/api/brand-note') return brandNoteHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {
