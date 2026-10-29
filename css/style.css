@@ -578,3 +578,7 @@ body {
 .radar-shops a { display: block; padding: 2px 0; color: var(--red); }
 .radar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 .radar-actions .btn { min-height: 42px; font-size: 13px; padding: 4px 6px; }
+
+/* 楽天ROOM用ハッシュタグ */
+.room-tags-box { margin-bottom: 12px; }
+.room-tags { margin: 0; font-size: 14px; font-weight: 700; color: #2f5b7c; line-height: 1.8; word-break: break-all; }

@@ -10,6 +10,7 @@ import instagramHandler from '../api/instagram.js';
 import imageHandler from '../api/image.js';
 import plansHandler from '../api/plans.js';
 import ideasHandler from '../api/ideas.js';
+import roomHashtagsHandler from '../api/room-hashtags.js';
 import radarHandler from '../api/radar.js';
 import assetsHandler from '../api/assets.js';
 import seedIdeasHandler from '../api/seed-ideas.js';
@@ -43,7 +44,10 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('Reel と Story に展開')
+    openai: (body) => body.messages[0].content.includes('楽天ROOMのハッシュタグを決める担当')
+      ? aiReply({ common: [{ tag: '#防災', score: 98 }, { tag: '#防災グッズ', score: 96 }, { tag: '#災害対策', score: 92 }, { tag: '#防災準備', score: 88 }, { tag: '#備蓄', score: 80 }],
+        items: Array.from({ length: 8 }, (_, id) => ({ id, tags: [{ tag: '#停電対策', score: 90 }, { tag: '#モバイルバッテリー', score: 85 }, { tag: '#キッチン用品', score: 75 }, { tag: '#プチプラ', score: 60 }] })) })
+      : body.messages[0].content.includes('Reel と Story に展開')
       ? aiReply({
         reel: { title: '防災グッズ、まずコレ', hook: '防災グッズ、何から買えばいい？', cta: '詳しくは投稿にまとめました',
           scenes: [{ type: 'hook', seconds: 2, text: '防災グッズ、何から買えばいい？', narration: '防災グッズ、何から買えばいいか迷いますよね。' },
@@ -109,6 +113,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
   if (url.pathname === '/api/ideas') return ideasHandler(req, res, env);
+  if (url.pathname === '/api/room-hashtags') return roomHashtagsHandler(req, res, env);
   if (url.pathname === '/api/radar') return radarHandler(req, res, env);
   if (url.pathname === '/api/assets') return assetsHandler(req, res, env);
   if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);

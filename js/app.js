@@ -778,6 +778,13 @@
       document.getElementById('room-complete').hidden = !(products.length && doneCount === products.length);
       roomColName.value = rec.collectionName || History.collectionNameFor(rec.topic);
       roomColDone.checked = !!rec.collectionDone;
+      roomTagsCommon.textContent = (rec.roomTagsCommon || []).join(' ') || 'まだ作っていません';
+      roomTagsBtn.textContent = (rec.roomTagsCommon || []).length ? 'ハッシュタグを作り直す' : 'ハッシュタグを作る';
+      // まだ作っていなければ、開いたときに一度だけ作る
+      if (!rec.roomTagsCommon && products.length && products.some(function (x) { return x.intro; }) && !roomTagsAuto[id]) {
+        roomTagsAuto[id] = true;
+        makeRoomTags(id);
+      }
 
       products.forEach(function (p, i) {
         var done = !!doneMap[p.id];
@@ -801,6 +808,7 @@
         top.appendChild(info);
         card.appendChild(top);
         if (p.intro) addSection(card, 'ROOM紹介文', p.intro, 'intro');
+        if ((p.roomTags || []).length) addSection(card, 'ハッシュタグ（' + p.roomTags.length + '個）', p.roomTags.join(' '), 'room-tags');
 
         var actions = el('div', 'actions');
         if (p.code && p.intro) {
@@ -809,7 +817,7 @@
           room.target = '_blank';
           room.rel = 'noopener';
           room.addEventListener('click', function () {
-            legacyCopy(p.intro).then(function () { showToast('紹介文をコピーしました。ROOMで貼り付けて投稿してください'); }, function () {});
+            legacyCopy(roomPostText(p)).then(function () { showToast((p.roomTags || []).length ? '紹介文とハッシュタグをコピーしました。ROOMで貼り付けて投稿してください' : '紹介文をコピーしました。ROOMで貼り付けて投稿してください'); }, function () {});
           });
           actions.appendChild(room);
         }
@@ -819,6 +827,7 @@
         page.rel = 'noopener';
         actions.appendChild(page);
         if (p.intro) actions.appendChild(copyButton('ROOM紹介文をコピー', function () { return p.intro; }));
+        if ((p.roomTags || []).length) actions.appendChild(copyButton('ハッシュタグだけコピー', function () { return p.roomTags.join(' '); }));
         var mark = el('button', 'btn ' + (done ? 'btn-secondary' : 'btn-primary'), done ? 'ROOM投稿済みを取り消す' : 'ROOM投稿済みにする');
         mark.type = 'button';
         mark.addEventListener('click', function () {
@@ -849,6 +858,47 @@
       });
     });
   }
+
+  // ---- 楽天ROOM用ハッシュタグ（企画のテーマ → 購入目的 → 商品の用途 の順で決める） ----
+  var roomTagsCommon = document.getElementById('room-tags-common');
+  var roomTagsBtn = document.getElementById('room-tags-btn');
+  var roomTagsNote = document.getElementById('room-tags-note');
+  var roomTagsAuto = {};
+
+  function roomPostText(p) {
+    return (p.roomTags || []).length ? p.intro + '\n\n' + p.roomTags.join(' ') : p.intro;
+  }
+
+  function makeRoomTags(id) {
+    roomTagsBtn.disabled = true;
+    roomTagsBtn.textContent = 'ハッシュタグを作っています…（10〜30秒）';
+    roomTagsNote.textContent = '';
+    return History.get(id).then(function (rec) {
+      if (!rec) return;
+      var products = rec.products || [];
+      return postJson('api/room-hashtags', {
+        campaignTheme: rec.title || rec.topic,
+        campaignType: rec.postType || '',
+        targetAudience: rec.target || '',
+        priceRange: rec.priceBand || '',
+        items: products.map(function (p) {
+          return { productName: p.name, productCategory: rec.genre || '', productUseCase: p.role || '', roomDescription: p.intro || '', brand: p.brand || '' };
+        })
+      }).then(function (r) {
+        if (r.status !== 200) throw new Error(r.data.error || 'ハッシュタグを作れませんでした');
+        var next = products.map(function (p, i) { return Object.assign({}, p, { roomTags: ((r.data.products || [])[i] || {}).tags || [] }); });
+        return History.update(id, { products: next, roomTagsCommon: r.data.common || [] }).then(function () {
+          if (r.data.notice) showToast(r.data.notice);
+          if (roomPostId === id) renderRoom(id);
+        });
+      });
+    }).catch(function (e) {
+      roomTagsNote.textContent = (e && e.message) || 'ハッシュタグを作れませんでした。もう一度お試しください。';
+    }).then(function () {
+      roomTagsBtn.disabled = false;
+    });
+  }
+  roomTagsBtn.addEventListener('click', function () { if (roomPostId) makeRoomTags(roomPostId); });
 
   roomColName.addEventListener('change', function () {
     if (roomPostId) History.update(roomPostId, { collectionName: roomColName.value.trim() });
@@ -1160,7 +1210,8 @@
               criteria: (copy.summary && copy.summary.points) || [],
               carouselDone: true,
               // 商品を選び直したので、前に作ったReel・Storyは作り直す
-              reel: null, story: null, reelDone: false, storyDone: false
+              reel: null, story: null, reelDone: false, storyDone: false,
+              roomTagsCommon: null // ROOM用ハッシュタグも、選んだ商品で作り直す
             });
           }).then(function () {
             buildAssetsAfterCarousel(id, { style: coverStyleUsed, items: productsFull, images: r[1], bear: r[2] });
