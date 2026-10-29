@@ -92,8 +92,13 @@ test('この企画で広げる：起点の商品を「必ず採用」で先頭�
   assert.equal(first.reason, '本命の1つとして基準にする');
   assert.ok(rest.length >= 15, String(rest.length));
   assert.ok(rest.every((c) => c.code !== 'ugreen:65w'), '起点の商品は追加候補に重ねない');
-  const angleUser = mock.calls.openai.find((b) => b.messages[0].content.includes('探索係')).messages[1].content;
-  assert.match(angleUser, /検索語のヒント.*USB-C 充電器／ワイヤレス充電器／USB-Cケーブル/);
-  assert.match(angleUser, /起点の商品（すでに候補に入っているので、同じ商品は選ばない）: UGREEN/);
-  assert.match(angleUser, /比べる相手になる商品を探す/);
+  // 起点の商品からは、AIの検索語ではなく検索軸で広げる（企画の「追加で探すジャンル」も探す）
+  assert.ok(!mock.calls.openai.some((b) => b.messages[0].content.includes('探索係')));
+  const kws = mock.calls.rakuten.map((c) => c.url.searchParams.get('keyword'));
+  assert.ok(kws.includes('USB-C 充電器') && kws.includes('ワイヤレス充電器'), kws.join(' / '));
+  assert.ok(kws.every((k) => !k.includes('Nexode')), '商品名をそのまま検索しない');
+  // 選ぶAIには、起点の商品のことと、どの方向から集めたかを伝える
+  const selectText = mock.calls.openai.map((b) => b.messages.map((m) => m.content).join('\n')).join('\n');
+  assert.match(selectText, /起点の商品（すでに候補に入っているので、同じ商品は選ばない）: UGREEN/);
+  assert.match(selectText, /似た他ブランドの商品・ほかのコラボ/);
 });

@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.3';
+  var APP_VERSION = '2026-10-30.4';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1844,9 +1844,9 @@
   var PLAN_DRAFTS_KEY = 'room-plan-drafts';
   var AXIS_BUTTONS = [
     ['same_brand', '同ブランドから探す'], ['other_brand', '他ブランドから探す'], ['other_collab', '他のコラボを探す'],
-    ['similar', '似たデザインを探す'], ['same_price', '同価格帯から探す'], ['new_arrival', '新作から探す']
+    ['similar', '似たデザインを探す'], ['same_price', '同価格帯から探す'], ['new_arrival', '新作から探す'], ['match', '合う服・小物を探す']
   ];
-  var AXIS_SHORT = { search: '自分で検索', same_brand: '同ブランド', other_brand: '他ブランド', other_collab: '他のコラボ', similar: '似たデザイン', same_price: '同価格帯', new_arrival: '新作' };
+  var AXIS_SHORT = { match: '合う服・小物', search: '自分で検索', same_brand: '同ブランド', other_brand: '他ブランド', other_collab: '他のコラボ', similar: '似たデザイン', same_price: '同価格帯', new_arrival: '新作' };
 
   function candKey(c) { return c.code || c.url || c.name; }
   function sameItem(a, b) { return !!(a && b && ((a.code && a.code === b.code) || (a.url && a.url === b.url))); }
