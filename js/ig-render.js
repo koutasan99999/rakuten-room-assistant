@@ -245,12 +245,12 @@
   }
 
   // 塗りつぶしの丸いラベル（左上のカテゴリ・右上のページ番号）
-  function pill(ctx, text, x, y, alignRight) {
+  function pill(ctx, text, x, y, alignRight, color) {
     ctx.font = font(32, 600);
     var w = ctx.measureText(text).width + 56;
     var left = alignRight ? x - w : x;
     roundRect(ctx, left, y, w, 64, 32);
-    ctx.fillStyle = C.pill;
+    ctx.fillStyle = color || C.pill;
     ctx.fill();
     ctx.fillStyle = '#FFFFFF';
     ctx.textBaseline = 'middle';
@@ -258,10 +258,16 @@
     ctx.textBaseline = 'alphabetic';
   }
 
-  function label(ctx, text, x, y) { pill(ctx, text, x, y, false); }
+  function label(ctx, text, x, y, color) { pill(ctx, text, x, y, false, color); }
 
-  function pageNumber(ctx, page, total) {
-    pill(ctx, page + '/' + total, SIZE.width - M + 20, M - 12, true);
+  function pageNumber(ctx, page, total, color) {
+    pill(ctx, page + '/' + total, SIZE.width - M + 20, M - 12, true, color);
+  }
+
+  // 2枚目以降の色（表紙のシリーズに合わせる。指定がなければ今までの色）
+  function paletteOf(d) {
+    var p = d.palette || {};
+    return { cardBg: p.cardBg || C.cardBg, accent: p.accent || C.accent, pill: p.pill || C.pill, ctaBg: p.cardBg || C.coverBg };
   }
 
   function centerText(ctx, text, y) {
@@ -342,6 +348,12 @@
   var TEMPLATES = {
     // 1枚目：表紙
     cover: function (ctx, d) {
+      // 選び方の型ごとの表紙（js/ig-covers.js）。「本気出して考えてみた」は下の今までの表紙のまま
+      var covers = window.IgRender && window.IgRender.COVERS;
+      if (d.cover && d.cover.style && d.cover.style !== 'serious_think' && d.cover.title && covers && covers[d.cover.style]) {
+        covers[d.cover.style](ctx, d);
+        return;
+      }
       ctx.fillStyle = C.coverBg;
       ctx.fillRect(0, 0, SIZE.width, SIZE.height);
       var maxW = SIZE.width - M * 2;
@@ -374,10 +386,11 @@
 
     // 2枚目以降：商品カード（薄いグレーの背景に商品を大きく、文字は中央、下にくまの一言メモ）
     item: function (ctx, d) {
-      ctx.fillStyle = C.cardBg;
+      var P = paletteOf(d);
+      ctx.fillStyle = P.cardBg;
       ctx.fillRect(0, 0, SIZE.width, SIZE.height);
-      label(ctx, d.category, M - 20, M - 12);
-      pageNumber(ctx, d.page, d.total);
+      label(ctx, d.category, M - 20, M - 12, P.pill);
+      pageNumber(ctx, d.page, d.total, P.pill);
 
       // 商品画像：背景を抜けた画像はそのまま置き、抜けない写真は角丸で置く
       var ax = 110, ay = 170, aw = SIZE.width - 220, ah = d.role ? 570 : 600;
@@ -400,7 +413,7 @@
       var y = ay + ah + 46;
       var maxW = SIZE.width - M * 2;
       if (d.role) {
-        ctx.fillStyle = C.accent;
+        ctx.fillStyle = P.accent;
         ctx.font = font(32, 700);
         centerText(ctx, d.role, y + 8);
         y += 34;
@@ -513,10 +526,11 @@
 
     // 最後：ROOMへの誘導
     cta: function (ctx, d) {
-      ctx.fillStyle = C.coverBg;
+      var P = paletteOf(d);
+      ctx.fillStyle = P.ctaBg;
       ctx.fillRect(0, 0, SIZE.width, SIZE.height);
-      label(ctx, '楽天ROOM', M - 20, M - 12);
-      pageNumber(ctx, d.page, d.total);
+      label(ctx, '楽天ROOM', M - 20, M - 12, P.pill);
+      pageNumber(ctx, d.page, d.total, P.pill);
       var maxW = SIZE.width - M * 2;
 
       ctx.fillStyle = C.text;
@@ -525,7 +539,7 @@
       ctx.font = font(main.size, 800);
       var y = drawLines(ctx, main.lines, M, 470, main.size * 1.32);
 
-      ctx.fillStyle = C.accent;
+      ctx.fillStyle = P.accent;
       ctx.fillRect(M, y + 20, 96, 6);
       ctx.fillStyle = C.sub;
       ctx.font = font(38, 600);
@@ -554,13 +568,24 @@
   }
 
   // 投稿1つ分（表紙 + 商品カード + ROOM誘導）を作る
-  // post: { topic, category, subtitle, bear, summary?: { typeName, title, lead, verdict }, items: [{ image, shortName, subline, memo, price, role, slug }], ctaMessage }
+  // post: { topic, category, subtitle, bear, cover?: { style, title, accent, sub, badge, price },
+  //         summary?: { typeName, title, lead, verdict }, items: [{ image, shortName, subline, memo, price, role, brand, slug }], ctaMessage }
+  // 表紙の商品画像は、白背景で切り抜けた画像（販促の文字が入っていないことが多い）を優先して最大3枚
+  function coverImages(items) {
+    var withImg = items.filter(function (it) { return it.image; });
+    var clean = withImg.filter(function (it) { return it.image.cutout; });
+    var rest = withImg.filter(function (it) { return !it.image.cutout; });
+    return clean.concat(rest).slice(0, 3).map(function (it) { return it.image; });
+  }
+
   function renderPost(post) {
+    var style = post.cover && post.cover.style;
+    var palette = style && window.IgRender.PALETTES ? window.IgRender.PALETTES[style] : null;
     var hasSummary = !!(post.summary && post.summary.title && post.summary.verdict);
     var offset = hasSummary ? 1 : 0;
     var total = post.items.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear }) }];
+    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, images: coverImages(post.items), items: post.items }) }];
     if (hasSummary) {
       slides.push({
         fileName: '02_summary.png',
@@ -576,13 +601,13 @@
         fileName: pad(page) + '_item_' + pad(i + 1) + '.png',
         canvas: render('item', {
           category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
-          subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear
+          subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear, palette: palette
         })
       });
     });
     slides.push({
       fileName: pad(total) + '_room_cta.png',
-      canvas: render('cta', { page: total, total: total, message: post.ctaMessage || CTA_MESSAGES[0], bear: post.bear })
+      canvas: render('cta', { page: total, total: total, message: post.ctaMessage || CTA_MESSAGES[0], bear: post.bear, palette: palette })
     });
     return slides;
   }
@@ -597,6 +622,11 @@
   }
 
   window.IgRender = {
+    // 表紙のシリーズ（js/ig-covers.js）が使う共通の部品
+    kit: {
+      SIZE: SIZE, M: M, ACCOUNT: ACCOUNT, FONT: FONT, font: font, wrap: wrap, fitText: fitText, roundRect: roundRect,
+      drawBear: drawBear, containRect: containRect, drawContain: drawContain, priceText: priceText
+    },
     SIZE: SIZE,
     TEMPLATES: TEMPLATES,
     CTA_MESSAGES: CTA_MESSAGES,

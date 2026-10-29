@@ -9,6 +9,7 @@ import { normalizeIdea } from '../lib/ideas.js';
 import { sanitizeFreeText } from '../lib/planner.js';
 import { readBrief, briefFromIdea, briefFromPlan, briefFromConditions, explore, seedCandidate } from '../lib/explore.js';
 import { readSeedProduct } from '../lib/seed.js';
+import { coverStyleFor } from '../lib/covers.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, n);
@@ -72,6 +73,8 @@ export default async function handler(req, res, env = process.env) {
       brief,
       title: brief.title || brief.free,
       typeName: CURATION_TYPES[brief.type].name,
+      // 表紙のシリーズ：企画（本気出して考えてみた）は今までの表紙、条件指定は選び方の型に対応する表紙
+      coverStyle: coverStyleFor({ type: brief.type, title: brief.title, series: !!(idea || plan) }),
       idea: idea && { topic: idea.topic, title: idea.title, subtitle: idea.subtitle, postType: idea.postType, genre: idea.genre, target: idea.target, priceBand: idea.priceBand, brands: idea.brands, axis: idea.axis },
       plan,
       angles: result.angles,

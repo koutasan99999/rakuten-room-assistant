@@ -2,6 +2,7 @@
 import { send, checkAccess, readBody } from '../lib/http.js';
 import { buildPostCopy, MAX_POST_ITEMS, fallbackCaptionBody, assembleCaption } from '../lib/instagram.js';
 import { buildHashtags } from '../lib/hashtags.js';
+import { isCoverStyle } from '../lib/covers.js';
 import { maskSecrets } from '../lib/ai.js';
 
 function cleanItem(x) {
@@ -23,6 +24,8 @@ export default async function handler(req, res, env = process.env) {
   const copy = await buildPostCopy({
     theme: String(body.theme).slice(0, 60),
     category: String(body.category || '').slice(0, 20),
+    coverStyle: isCoverStyle(body.coverStyle) || body.coverStyle === 'auto' ? body.coverStyle : 'serious_think',
+    priceBand: String(body.priceBand || '').slice(0, 30),
     items, needSummary: body.needSummary === true, needCaption: body.needCaption === true, collection, env, deadline: startedAt + 25000
   });
   const caption = body.needCaption === true
@@ -34,7 +37,7 @@ export default async function handler(req, res, env = process.env) {
     : undefined;
   const notice = copy.fallback ? 'AIでの文字作成に失敗したため、簡易的な商品名・メモで作りました。' : '';
   return send(res, 200, {
-    topic: copy.topic, category: copy.category, topicSlug: copy.topicSlug, summary: copy.summary, items: copy.items, notice,
+    topic: copy.topic, category: copy.category, topicSlug: copy.topicSlug, summary: copy.summary, items: copy.items, cover: copy.cover, notice,
     caption,
     detail: copy.fallback ? `原因: ${maskSecrets(copy.error || '')}`.slice(0, 300) : undefined
   });
