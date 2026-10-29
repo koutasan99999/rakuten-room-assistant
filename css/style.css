@@ -607,3 +607,4 @@ body {
 .bf-genre { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-detail { background: var(--card); border-radius: 14px; padding: 14px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 8px; }
 .release-title { font-size: 17px; font-weight: 800; }
+.hero-badge { display: inline-block; font-size: 11px; font-weight: 800; color: #fff; background: var(--red); border-radius: 4px; padding: 2px 6px; margin: 0 0 4px; }

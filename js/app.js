@@ -996,6 +996,7 @@
     draft.planId = '';
     draft.coverStyle = 'serious_think'; // 投稿管理から作るときは今までの表紙
     draft.release = null;
+    draft.heroProduct = null;
     draft.layoutSizes = null;
     draft.coverTitle = '';
     draft.coverAccent = '';
@@ -1038,7 +1039,20 @@
       img.alt = '';
       row.appendChild(img);
       var mid = el('div');
+      if (it.hero) mid.appendChild(el('p', 'hero-badge', '表紙の主役（起点の商品）'));
       mid.appendChild(el('p', 'ig-item-name', it.name));
+      if (!it.hero && draft.release) {
+        var makeHero = el('button', 'link-btn', 'この商品を表紙の主役にする');
+        makeHero.type = 'button';
+        makeHero.addEventListener('click', function () {
+          if (!window.confirm('表紙の主役をこの商品に変えますか？（最初に紹介する商品も変わります）')) return;
+          setHero(i);
+          draft.layoutSizes = null;
+          saveDraft();
+          renderComposeItems();
+        });
+        mid.appendChild(makeHero);
+      }
       var role = el('input', 'input');
       role.type = 'text';
       role.maxLength = 14;
@@ -1053,7 +1067,13 @@
         btn.type = 'button';
         btn.setAttribute('aria-label', b[1] < 0 ? '上へ' : b[1] > 0 ? '下へ' : '外す');
         if ((b[1] < 0 && i === 0) || (b[1] > 0 && i === draft.items.length - 1)) btn.disabled = true;
+        // 主役は先頭から動かさない（ほかの商品も主役の上には行けない）
+        if (b[1] !== 0 && (it.hero || (b[1] < 0 && i === 1 && draft.items[0].hero))) btn.disabled = true;
         btn.addEventListener('click', function () {
+          if (b[1] === 0 && it.hero) {
+            if (!window.confirm('この商品は表紙の主役（起点の商品）です。外すと表紙は次の商品になります。外しますか？')) return;
+            draft.heroProduct = null;
+          }
           if (b[1] === 0) draft.items.splice(i, 1);
           else draft.items.splice(i + b[1], 0, draft.items.splice(i, 1)[0]);
           draft.layoutSizes = null; // 商品が変わったので、スライドの配置は自動に戻す
@@ -1176,7 +1196,7 @@
           : { typeName: sum.typeName || 'まず結論', title: sum.title, lead: sum.lead, verdict: sum.verdict },
         items: draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
-          return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, brand: it.brand, slug: c.slug };
+          return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, brand: it.brand, slug: c.slug, hero: !!it.hero };
         }),
         folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post'),
         release: draft.release && (cover || {}).style === 'new_release' ? draft.release : null
@@ -1913,6 +1933,21 @@
     update();
   }
 
+  function findHero(items, hero) {
+    for (var i = 0; i < items.length; i++) {
+      if ((hero.code && items[i].code === hero.code) || (hero.url && items[i].url === hero.url)) return i;
+    }
+    return -1;
+  }
+  // i番目の商品を主役にして先頭へ
+  function setHero(i) {
+    var it = draft.items.splice(i, 1)[0];
+    draft.items.forEach(function (x) { x.hero = false; });
+    it.hero = true;
+    draft.items.unshift(it);
+    draft.heroProduct = { code: it.code, url: it.url, name: it.name, brand: it.brand, price: it.price, image: it.image };
+  }
+
   // 長いタイトルを表紙用に2行に分ける（読点・句点のあと）
   function splitCoverTitle(t) {
     var s = String(t || '').slice(0, 30);
@@ -1950,6 +1985,11 @@
     // 新商品の企画：表紙に、確認できた情報（ラベル・ブランド・発売日）と、選んだタイトルをそのまま使う
     draft.release = d.release || null;
     if (d.release && d.idea) draft.coverTitle = splitCoverTitle(d.idea.title || d.title);
+    // 新商品の企画：起点の商品（heroProduct）を表紙の主役にし、本文でも最初に紹介する。
+    // ユーザーが固定を外して採用しなかったときだけ、主役なし（先頭の商品が表紙）
+    draft.heroProduct = null;
+    var heroAt = d.release && d.release.hero ? findHero(draft.items, d.release.hero) : -1;
+    if (heroAt !== -1) setHero(heroAt);
     draft.coverAccent = '';
     var b = d.brief || {};
     draft.priceBand = b.priceBand || (b.minPrice || b.maxPrice ? (b.minPrice || '') + '〜' + (b.maxPrice || '') + '円' : '');
@@ -3060,7 +3100,7 @@
         exploreProducts({
           idea: idea,
           seed: { name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '', brand: it.brand, reason: idea.howUsed, caption: it.releaseText || '' },
-          release: Object.assign({ mood: view.mood }, view.info)
+          release: Object.assign({ mood: view.mood, hero: { code: it.code, url: it.rakutenUrl || it.sourceUrl, name: it.name, brand: it.brand } }, view.info)
         });
       });
       card.appendChild(go);

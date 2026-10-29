@@ -578,6 +578,13 @@
     return clean.concat(rest).slice(0, 3).map(function (it) { return it.image; });
   }
 
+  // 新商品の表紙：主役（起点の商品）の写真を必ず先頭に
+  function heroImages(items) {
+    var hero = items.filter(function (it) { return it.hero; })[0] || items[0];
+    var rest = items.filter(function (it) { return it !== hero; });
+    return [hero].concat(rest).map(function (it) { return it && it.image; }).filter(Boolean).slice(0, 3);
+  }
+
   // post.layoutSizes: 1スライドに何商品のせるか（ユーザーが変えた配置。無ければ自動）。
   // 商品が少なければ今までどおり1商品1枚、多ければ2〜4商品のスライドを組み合わせて、カルーセルの上限枚数に収める
   function renderPost(post) {
@@ -593,7 +600,7 @@
     var offset = hasSummary ? 1 : 0;
     var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? post.items.map(function (it) { return it.image; }).filter(Boolean).slice(0, 3) : coverImages(post.items), items: post.items }) }];
+    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? heroImages(post.items) : coverImages(post.items), items: post.items }) }];
     if (hasSummary) {
       slides.push({
         fileName: '02_summary.png',
