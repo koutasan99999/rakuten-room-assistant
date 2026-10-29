@@ -130,17 +130,27 @@
 
       <details class="plans-box" id="radar-settings">
         <summary>見るジャンル・ブランド</summary>
-        <p class="hint">1回の更新で、選んだジャンルから6つずつ順番に見ます。</p>
-        <div id="radar-genres" class="radar-genres"></div>
-        <p class="label">フォローするブランド <span id="bf-count" class="tab-count"></span></p>
+        <details class="sub-box" id="radar-genre-box" open>
+          <summary>見るジャンル <span id="rg-count" class="tab-count"></span></summary>
+          <p class="hint">1回の更新で、選んだジャンルから6つずつ順番に見ます。</p>
+          <div class="bulk-bar">
+            <button type="button" id="rg-all" class="btn btn-secondary">全選択</button>
+            <button type="button" id="rg-none" class="btn btn-secondary">クリア</button>
+            <button type="button" class="btn btn-secondary fold-btn" data-fold="radar-genre-box">畳む</button>
+          </div>
+          <div id="radar-genres" class="radar-genres"></div>
+        </details>
+        <details class="sub-box" id="radar-brand-box" open>
+        <summary>フォローするブランド <span id="bf-count" class="tab-count"></span></summary>
         <p class="hint">おすすめブランドは最初から全部選んであります。要らないブランドだけチェックを外してください。検索の回数を抑えるため、1回の更新では、しばらく確認していないブランドから数個ずつ探します（12時間以内に確認したブランドは探し直しません）。</p>
         <div class="bf-tools">
           <label class="field"><span class="field-label">ブランド検索</span><input id="bf-search" class="input" type="text" maxlength="30" placeholder="例：Anker"></label>
           <label class="field"><span class="field-label">ジャンル</span><select id="bf-genre" class="select"></select></label>
         </div>
-        <div class="bf-actions">
-          <button type="button" id="bf-all" class="btn btn-secondary">すべて選択</button>
-          <button type="button" id="bf-none" class="btn btn-secondary">すべて解除</button>
+        <div class="bulk-bar">
+          <button type="button" id="bf-all" class="btn btn-secondary">全選択</button>
+          <button type="button" id="bf-none" class="btn btn-secondary">クリア</button>
+          <button type="button" class="btn btn-secondary fold-btn" data-fold="radar-brand-box">畳む</button>
         </div>
         <p id="bf-genre-note" class="hint"></p>
         <div id="bf-list" class="bf-list"></div>
@@ -148,6 +158,8 @@
           <input id="radar-brand-input" class="input" type="text" maxlength="30" placeholder="一覧にないブランドを追加（例：New Balance）">
           <button type="button" id="radar-brand-add" class="btn btn-secondary">追加</button>
         </div>
+        </details>
+        <button type="button" class="btn btn-secondary fold-btn fold-all" data-fold="radar-settings">ジャンル・ブランドの設定を畳む</button>
       </details>
 
       <!-- ブランド単位の詳細（個別の検索はフォローの設定を変えない） -->
