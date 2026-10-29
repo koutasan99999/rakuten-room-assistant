@@ -15,6 +15,9 @@ import radarHandler from '../api/radar.js';
 import assetsHandler from '../api/assets.js';
 import seedIdeasHandler from '../api/seed-ideas.js';
 import releaseIdeasHandler from '../api/release-ideas.js';
+import searchHandler from '../api/search.js';
+import planTitlesHandler from '../api/plan-titles.js';
+import productUrlHandler from '../api/product-url.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -40,12 +43,24 @@ if (process.env.MOCK) {
         }));
         return json(200, { items, pageCount: 1 });
       }
+      // コラボ・別注で探したとき：起点と同じコラボ・他ブランドのコラボ・別ショップの同じ商品が混ざる
+      const rawKw = url.searchParams.get('keyword');
+      if (/コラボ|別注/.test(rawKw)) {
+        const pg = Number(url.searchParams.get('page')) || 1;
+        const names = ['New Balance × BEAMS 別注 ML2002R グレー スニーカー', 'adidas Originals × CLOT スーパースター ホワイト スニーカー', '【送料無料】adidas Originals × CLOT スーパースター ホワイト スニーカー',
+          'ASICS × KITH GEL-LYTE III ネイビー スニーカー コラボ', 'VANS × NEIGHBORHOOD オールドスクール ブラック スニーカー', 'PUMA × atmos スウェード 別注 スニーカー レッド',
+          'NIKE × sacai コラボ スニーカー ホワイト', 'Onitsuka Tiger × KILL BILL コラボ スニーカー イエロー', 'CONVERSE × MHL 別注 オールスター アイボリー', 'Reebok × Maison Margiela コラボ スニーカー ベージュ'];
+        const items = names.map((n, i) => ({ itemCode: `collab:${pg}-${i}`, itemName: pg > 1 ? n.replace('スニーカー', `スニーカー ${pg}号`) : n, itemPrice: 12000 + i * 1500, itemUrl: `https://item.rakuten.co.jp/collab/${pg}-${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/c/${i}.jpg?_ex=128x128`], shopName: `セレクト${i % 3}`, itemCaption: '' }));
+        return json(200, { items, pageCount: 3 });
+      }
       const min = Number(url.searchParams.get('minPrice')) || 1000;
       const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 10) + (url.searchParams.get('page') || '');
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('新作特集の編集者')
+    openai: (body) => body.messages[0].content.includes('タイトル係')
+      ? aiReply({ titles: [{ title: '大人が履きたい別注スニーカー', why: '落ち着いた色だけ' }, { title: 'コラボスニーカー、結局どれ？', why: '迷う人向け' }, { title: '別注スニーカーの選び方', why: '' }] })
+      : body.messages[0].content.includes('新作特集の編集者')
       ? aiReply({ ideas: [
         { title: 'このバッグ、予約しないと後悔するかも', angle: '予約', searchGenres: ['同じブランドの新作', '秋の新作バッグ'], why: '予約受付中の新作を主役にする' },
         { title: '秋の新作、最初に見てほしいのはこれ', angle: '季節', searchGenres: ['秋の新作小物'], why: '季節の新作の入口にする' },
@@ -126,6 +141,9 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/assets') return assetsHandler(req, res, env);
   if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);
   if (url.pathname === '/api/release-ideas') return releaseIdeasHandler(req, res, env);
+  if (url.pathname === '/api/search') return searchHandler(req, res, env);
+  if (url.pathname === '/api/plan-titles') return planTitlesHandler(req, res, env);
+  if (url.pathname === '/api/product-url') return productUrlHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

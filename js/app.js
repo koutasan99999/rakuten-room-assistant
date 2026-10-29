@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.3';
+  var APP_VERSION = '2026-10-29.4';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1147,7 +1147,9 @@
   // 楽天の商品画像は、このアプリのサーバー経由で読み込む（余白の切り取りに必要）
   function loadProductImage(url) {
     if (!url) return Promise.resolve(null);
-    return fetch('api/image?url=' + encodeURIComponent(url), { headers: { 'X-App-Passcode': getPass() } })
+    // 公式サイトのURLから登録した商品（楽天にない新商品）の画像は、src=official で中継してもらう
+    var official = !/^https:\/\/[^/]*(rakuten\.co\.jp|r10s\.jp|rakuten\.ne\.jp)\//.test(url);
+    return fetch('api/image?url=' + encodeURIComponent(url) + (official ? '&src=official' : ''), { headers: { 'X-App-Passcode': getPass() } })
       .then(function (res) { if (!res.ok) throw new Error('image'); return res.blob(); })
       .then(function (blob) { return window.IgRender.loadImage(URL.createObjectURL(blob)); })
       .then(function (img) { return window.IgRender.trimImage(img); })
@@ -1811,13 +1813,178 @@
     return card;
   }
 
+  // ---- 企画の編集（下書き）：AIの企画はたたき台。タイトル・テーマ・商品・並び順・紹介文を自由に直せて、自動で保存する ----
+  // d.edit: { title, subtitle, theme, direction, genre, coverStyle, catchCopy, edited: {手で直した項目: true}, heroProduct }
+  // d.order: 企画に入れた商品の並び順（候補のキー）、d.search: 「商品を検索して追加」の状態
+  var SERIES_SUFFIX = 'について本気出して考えてみた';
+  var SERIES_RE = /(について)?本気出して考えてみた$/;
+  var PLAN_DRAFTS_KEY = 'room-plan-drafts';
+  var AXIS_BUTTONS = [
+    ['same_brand', '同ブランドから探す'], ['other_brand', '他ブランドから探す'], ['other_collab', '他のコラボを探す'],
+    ['similar', '似たデザインを探す'], ['same_price', '同価格帯から探す'], ['new_arrival', '新作から探す']
+  ];
+  var AXIS_SHORT = { search: '自分で検索', same_brand: '同ブランド', other_brand: '他ブランド', other_collab: '他のコラボ', similar: '似たデザイン', same_price: '同価格帯', new_arrival: '新作' };
+
+  function candKey(c) { return c.code || c.url || c.name; }
+  function sameItem(a, b) { return !!(a && b && ((a.code && a.code === b.code) || (a.url && a.url === b.url))); }
+  function byKey(d, k) {
+    for (var i = 0; i < d.candidates.length; i++) if (candKey(d.candidates[i]) === k) return d.candidates[i];
+    return null;
+  }
+  function heroOf(c) { return { code: c.code || '', url: c.url || '', name: c.name, brand: c.brand || '', price: c.price || 0, image: c.image || '' }; }
+
+  function initEdit(d) {
+    if (d.edit) { d.edit.edited = d.edit.edited || {}; return d.edit; }
+    var title = (d.idea && d.idea.title) || d.title || '';
+    var seed = (d.candidates || []).filter(function (c) { return c.role === '起点商品'; })[0];
+    var hero = d.release && d.release.hero ? Object.assign({}, d.release.hero) : seed ? heroOf(seed) : null;
+    if (hero && !hero.image && seed) hero.image = seed.image;
+    d.edit = {
+      title: title,
+      subtitle: (d.idea && d.idea.subtitle) || (d.plan && d.plan.subtitle) || '',
+      theme: (d.idea && d.idea.topic) || (d.plan && d.plan.topic) || String(title).replace(SERIES_RE, '').slice(0, 30),
+      direction: (d.brief && (d.brief.free || d.brief.axis)) || '',
+      genre: (d.idea && d.idea.genre) || (d.brief && d.brief.genre) || '',
+      coverStyle: d.coverStyle || 'serious_think',
+      catchCopy: d.release ? title : '',
+      edited: {},
+      heroProduct: hero
+    };
+    d.order = (d.candidates || []).filter(function (c) { return c.picked; }).map(candKey);
+    return d.edit;
+  }
+
+  // 企画に入れた商品を、決めた並び順で（新商品の企画では、表紙の主役を先頭に）
+  function syncOrder(d) {
+    var keys = d.candidates.filter(function (c) { return c.picked; }).map(candKey);
+    var order = (d.order || []).filter(function (k, i, a) { return keys.indexOf(k) !== -1 && a.indexOf(k) === i; });
+    keys.forEach(function (k) { if (order.indexOf(k) === -1) order.push(k); });
+    var h = d.edit && d.edit.heroProduct;
+    if (d.release && h) {
+      var at = -1;
+      order.forEach(function (k, i) { if (at === -1 && sameItem(byKey(d, k), h)) at = i; });
+      if (at > 0) order.unshift(order.splice(at, 1)[0]);
+    }
+    d.order = order;
+    return order.map(function (k) { return byKey(d, k); }).filter(Boolean);
+  }
+
+  function planSeries(d) {
+    return d.release ? 'release' : (d.edit.coverStyle || 'serious_think') === 'serious_think' ? 'serious' : 'other';
+  }
+
+  // 企画の下書き：ページを移っても、1日以上たっても消えないように、直近8件をこのiPhoneに残す
+  function loadPlanDrafts() {
+    try {
+      var list = JSON.parse(localStorage.getItem(PLAN_DRAFTS_KEY));
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+  function writePlanDrafts(list) {
+    for (var n = list.length; n >= 1; n--) {
+      try { localStorage.setItem(PLAN_DRAFTS_KEY, JSON.stringify(list.slice(0, n))); return true; } catch (e) {}
+    }
+    return false;
+  }
+  function savePlanDraft(d) {
+    if (!d.draftId) d.draftId = 'pl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    d.updatedAt = Date.now();
+    var copy = Object.assign({}, d);
+    if (copy.search) copy.search = Object.assign({}, copy.search, { items: (copy.search.items || []).slice(-40) });
+    writePlanDrafts([copy].concat(loadPlanDrafts().filter(function (x) { return x.draftId !== d.draftId; })).slice(0, 8));
+  }
+
+  var planDraftsEl = document.getElementById('plan-drafts');
+  function renderPlanDrafts() {
+    if (!planDraftsEl) return;
+    var list = loadPlanDrafts();
+    planDraftsEl.innerHTML = '';
+    planDraftsEl.hidden = !list.length;
+    if (!list.length) return;
+    var box = el('details', 'plan-drafts-box');
+    box.appendChild(el('summary', null, '編集中の企画（' + list.length + '）'));
+    list.forEach(function (x) {
+      var row = el('div', 'plan-draft-row');
+      var info = el('div', 'plan-draft-info');
+      info.appendChild(el('b', null, (x.edit && x.edit.title) || x.title || '無題の企画'));
+      var n = (x.candidates || []).filter(function (c) { return c.picked; }).length;
+      var when = new Date(x.updatedAt || 0);
+      info.appendChild(el('small', null, n + '商品・' + (when.getMonth() + 1) + '/' + when.getDate() + ' ' + when.getHours() + ':' + ('0' + when.getMinutes()).slice(-2) + ' 保存'));
+      row.appendChild(info);
+      var open = el('button', 'btn btn-secondary', '開く');
+      open.type = 'button';
+      open.addEventListener('click', function () {
+        message.hidden = true;
+        genreEl.hidden = true;
+        results.innerHTML = '';
+        renderExplore(x);
+        saveLast('explore', x);
+        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      row.appendChild(open);
+      var del = el('button', 'link-btn', '削除');
+      del.type = 'button';
+      del.addEventListener('click', function () {
+        if (!window.confirm('「' + ((x.edit && x.edit.title) || x.title || '無題の企画') + '」の下書きを削除しますか？')) return;
+        writePlanDrafts(loadPlanDrafts().filter(function (y) { return y.draftId !== x.draftId; }));
+        renderPlanDrafts();
+      });
+      row.appendChild(del);
+      box.appendChild(row);
+    });
+    planDraftsEl.appendChild(box);
+  }
+
+  function planField(label, value, opts) {
+    opts = opts || {};
+    var field = el('label', 'field');
+    field.appendChild(el('span', 'field-label', label));
+    var input = el(opts.multi ? 'textarea' : 'input', opts.multi ? 'textarea' : 'input');
+    if (!opts.multi) input.type = 'text';
+    else input.rows = opts.rows || 2;
+    input.maxLength = opts.max || 60;
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    input.value = value || '';
+    field.appendChild(input);
+    if (opts.hint) field.appendChild(el('span', 'hint', opts.hint));
+    return { field: field, input: input };
+  }
+
   function renderExplore(d) {
+    var edit = initEdit(d);
+    var saveTimer = null;
+    function persist() {
+      clearTimeout(saveTimer);
+      d.title = edit.title || d.title;
+      saveLast('explore', d);
+      savePlanDraft(d);
+    }
+    function persistSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 400); }
+    function isHero(c) { return !!(edit.heroProduct && sameItem(c, edit.heroProduct)); }
+
+    // ---- 見出し：タイトルはその場で直せる。AIの再提案は、押した案だけに置き換える ----
     var head = el('article', 'card curation-head');
-    head.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.idea ? '今日の企画｜' + d.idea.postType : '選び方：' + d.typeName));
-    head.appendChild(el('h2', 'curation-title', d.title));
+    head.appendChild(el('p', 'type-chip', d.plan ? '企画' + d.plan.no + '｜' + d.plan.postType : d.release ? '新商品の企画（新作特集）' : d.idea ? '今日の企画｜' + d.idea.postType : '選び方：' + d.typeName));
+    var t = planField('企画タイトル', edit.title, { multi: true, max: 60 });
+    t.input.classList.add('plan-title-input');
+    var editedMark = el('span', 'idea-edited', '手で直しました');
+    editedMark.hidden = !edit.edited.title;
+    t.field.querySelector('.field-label').appendChild(editedMark);
+    head.appendChild(t.field);
+    addClear(t.input);
+    var suggestBtn = el('button', 'btn btn-secondary plan-suggest-btn', 'AIでタイトルを再提案');
+    suggestBtn.type = 'button';
+    head.appendChild(suggestBtn);
+    var suggestNote = el('p', 'hint', '');
+    suggestNote.hidden = true;
+    head.appendChild(suggestNote);
+    var suggestList = el('div', 'plan-suggest-list');
+    head.appendChild(suggestList);
+
     var anglesBox = el('div', 'angles');
     function drawAngles() {
       anglesBox.innerHTML = '';
+      if (!d.angles.length) return;
       anglesBox.appendChild(el('p', 'angles-label', '今回こんな方向から探しました：'));
       var ul = el('ul', 'angle-list');
       d.angles.forEach(function (a) {
@@ -1829,9 +1996,147 @@
     }
     drawAngles();
     head.appendChild(anglesBox);
-    head.appendChild(el('p', 'hint', 'この中から、Instagram投稿に使う商品を選んでください（1投稿に最大' + MAX_POST_ITEMS + '商品。多いときは1枚に2〜4商品ずつのせて、10枚以内に収めます）。'));
+
+    // 企画の内容（サブタイトル・テーマ・方向性・ジャンル・表紙・キャッチコピー）
+    var details = el('details', 'plan-details');
+    details.open = !d.detailsClosed;
+    details.appendChild(el('summary', null, '企画の内容を編集'));
+    var fSub = planField('サブタイトル', edit.subtitle, { max: 40, placeholder: '例：迷ったので整理しました' });
+    var fTheme = planField('企画テーマ', edit.theme, { max: 30, hint: '表紙・コレクション名に使います（「本気出して考えてみた」の表紙では ○○ の部分）' });
+    var fDir = planField('企画の方向性', edit.direction, { multi: true, max: 200, placeholder: '例：大人が普段使いしやすい、落ち着いた色のものだけ', hint: '「さらに10件探す」でも、この方向性で探します' });
+    var fGenre = planField('対象ジャンル', edit.genre, { max: 30, placeholder: '例：スニーカー' });
+    var styleField = el('label', 'field');
+    styleField.appendChild(el('span', 'field-label', '投稿シリーズ・表紙テンプレート'));
+    var styleSel = el('select', 'select');
+    window.IgRender.COVER_STYLES.forEach(function (s) {
+      var o = el('option', null, s.name);
+      o.value = s.id;
+      styleSel.appendChild(o);
+    });
+    styleSel.value = edit.coverStyle;
+    styleField.appendChild(styleSel);
+    var fCatch = planField('キャッチコピー（表紙の大見出し）', edit.catchCopy, { max: 40, placeholder: '空欄なら画像を作るときにAIが考えます', hint: '「本気出して考えてみた」の表紙では使いません' });
+    [fSub, fTheme, fDir, fGenre].forEach(function (f) { details.appendChild(f.field); addClear(f.input); });
+    details.appendChild(styleField);
+    details.appendChild(fCatch.field);
+    addClear(fCatch.input);
+    head.appendChild(details);
+    details.addEventListener('toggle', function () { d.detailsClosed = !details.open; persistSoon(); });
     results.appendChild(head);
 
+    function bind(input, key, after) {
+      input.addEventListener('input', function () {
+        edit[key] = input.value.trim();
+        edit.edited[key] = true;
+        if (after) after();
+        persistSoon();
+      });
+      input.addEventListener('change', persist);
+    }
+    bind(t.input, 'title', function () {
+      editedMark.hidden = false;
+      // テーマを自分で直していなければ、タイトルに合わせる（本気出して考えてみた の ○○ の部分）
+      if (!edit.edited.theme && planSeries(d) === 'serious') { edit.theme = edit.title.replace(SERIES_RE, '').slice(0, 30); fTheme.input.value = edit.theme; }
+      if (!edit.edited.catchCopy && d.release) { edit.catchCopy = edit.title.slice(0, 40); fCatch.input.value = edit.catchCopy; }
+    });
+    bind(fSub.input, 'subtitle');
+    bind(fTheme.input, 'theme');
+    bind(fDir.input, 'direction');
+    bind(fGenre.input, 'genre');
+    bind(fCatch.input, 'catchCopy');
+    styleSel.addEventListener('change', function () { edit.coverStyle = styleSel.value; edit.edited.coverStyle = true; persist(); });
+
+    function applyTitle(x) {
+      if (planSeries(d) === 'serious') {
+        edit.title = x.replace(SERIES_RE, '') + SERIES_SUFFIX;
+        if (!edit.edited.theme) { edit.theme = x.replace(SERIES_RE, '').slice(0, 30); fTheme.input.value = edit.theme; }
+      } else {
+        edit.title = x;
+        if (d.release && !edit.edited.catchCopy) { edit.catchCopy = x; fCatch.input.value = x; }
+      }
+      edit.edited.title = true;
+      t.input.value = edit.title;
+      editedMark.hidden = false;
+      persist();
+      showToast('タイトルを置き換えました');
+    }
+    function drawSuggestions() {
+      suggestList.innerHTML = '';
+      (d.titleSuggestions || []).forEach(function (s) {
+        var b = el('button', 'plan-suggest-chip');
+        b.type = 'button';
+        b.appendChild(el('b', null, planSeries(d) === 'serious' ? s.title + SERIES_SUFFIX : s.title));
+        if (s.why) b.appendChild(el('small', null, s.why));
+        b.addEventListener('click', function () { applyTitle(s.title); });
+        suggestList.appendChild(b);
+      });
+    }
+    drawSuggestions();
+    suggestBtn.addEventListener('click', function () {
+      suggestBtn.disabled = true;
+      suggestBtn.textContent = 'タイトルを考えています…';
+      var picks = syncOrder(d);
+      var rh = d.release && d.release.hero && edit.heroProduct && sameItem(d.release.hero, edit.heroProduct) ? d.release.hero : null;
+      postJson('api/plan-titles', {
+        plan: {
+          series: planSeries(d), title: edit.title, subtitle: edit.subtitle, theme: edit.theme, direction: edit.direction, genre: edit.genre, catchCopy: edit.catchCopy,
+          avoid: (d.titleSuggestions || []).map(function (s) { return s.title; }),
+          products: picks.map(function (c) { return { name: c.shortName || c.name, brand: c.brand || '', price: c.price }; }),
+          hero: edit.heroProduct ? Object.assign({}, edit.heroProduct, rh ? { status: rh.status || [], releaseDate: rh.releaseDate, releaseMonth: rh.releaseMonth } : {}) : null
+        }
+      }).then(function (r) {
+        if (r.status !== 200) { suggestNote.textContent = (r.data && r.data.error) || 'タイトルを考えられませんでした。'; suggestNote.hidden = false; return; }
+        d.titleSuggestions = r.data.titles || [];
+        suggestNote.textContent = (r.data.notice ? r.data.notice + ' ' : '') + '使いたい案を押すと置き換えます（押さなければ今のタイトルのまま）。';
+        suggestNote.hidden = false;
+        drawSuggestions();
+        persist();
+      }, function () {
+        suggestNote.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+        suggestNote.hidden = false;
+      }).then(function () {
+        suggestBtn.disabled = false;
+        suggestBtn.textContent = 'AIでタイトルを再提案';
+      });
+    });
+
+    // ---- 起点の商品（heroProduct）：編集や商品の追加では変わらない。変える・外すのはユーザーの操作だけ ----
+    var heroBox = el('article', 'card plan-hero');
+    results.appendChild(heroBox);
+    function drawHero() {
+      heroBox.innerHTML = '';
+      heroBox.appendChild(el('p', 'type-chip', d.release ? '表紙の主役（起点の商品）' : '起点の商品'));
+      var h = edit.heroProduct;
+      if (!h) {
+        heroBox.appendChild(el('p', 'hint', '起点の商品は外しています。「企画に入っている商品」の「起点にする」で選び直せます。関連商品は、企画の先頭の商品を基準に探します。'));
+        return;
+      }
+      var top = el('div', 'cand-top');
+      if (h.image) {
+        var img = el('img', 'cand-thumb');
+        img.src = h.image;
+        img.alt = '';
+        img.onerror = function () { img.remove(); };
+        top.appendChild(img);
+      }
+      var info = el('div', 'cand-info');
+      info.appendChild(el('h3', 'cand-name', String(h.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60)));
+      info.appendChild(el('p', 'cand-meta', [h.brand, h.price ? formatPrice(h.price) : ''].filter(Boolean).join('｜')));
+      top.appendChild(info);
+      heroBox.appendChild(top);
+      heroBox.appendChild(el('p', 'hint', '企画の編集や商品の追加では変わりません。変えるときは「企画に入っている商品」の「起点にする」を押してください。'));
+      var off = el('button', 'link-btn', '起点を外す');
+      off.type = 'button';
+      off.addEventListener('click', function () {
+        if (!window.confirm('起点の商品を外しますか？（商品は企画に残ります' + (d.release ? '。表紙の主役は先頭の商品になります' : '') + '）')) return;
+        d.candidates.forEach(function (c) { if (isHero(c)) c.pinned = false; });
+        edit.heroProduct = null;
+        refreshAll();
+      });
+      heroBox.appendChild(off);
+    }
+
+    // ---- 選択バー ----
     var bar = el('div', 'pick-bar');
     var count = el('p', 'pick-count');
     var toPost = el('button', 'btn btn-primary', 'この商品で投稿を作る');
@@ -1840,6 +2145,333 @@
     bar.appendChild(toPost);
     results.appendChild(bar);
 
+    // ---- 企画に入っている商品：並び順・削除・紹介文 ----
+    var planBox = el('section', 'card plan-items');
+    results.appendChild(planBox);
+    function drawPlanItems() {
+      planBox.innerHTML = '';
+      var items = syncOrder(d);
+      planBox.appendChild(el('h3', 'plan-section-title', '企画に入っている商品（' + items.length + '）'));
+      if (!items.length) {
+        planBox.appendChild(el('p', 'hint', '下の「商品を検索して追加」か「AIが集めた候補」から、企画に入れる商品を選んでください。'));
+        return;
+      }
+      planBox.appendChild(el('p', 'hint', '上の商品ほど大きく紹介します。紹介文を書いた商品は、その文章をそのまま使います（空欄ならAIが作ります）。'));
+      items.forEach(function (c, i) {
+        var hero = isHero(c);
+        var row = el('div', 'plan-item' + (hero ? ' hero' : ''));
+        row.appendChild(el('span', 'ig-num', String(i + 1)));
+        var img = el('img');
+        img.src = c.image || '';
+        img.alt = '';
+        img.onerror = function () { img.style.visibility = 'hidden'; };
+        row.appendChild(img);
+        var mid = el('div', 'plan-item-mid');
+        if (hero) mid.appendChild(el('p', 'hero-badge', d.release ? '表紙の主役（起点の商品）' : '起点の商品'));
+        mid.appendChild(el('p', 'ig-item-name', c.shortName || c.name));
+        mid.appendChild(el('p', 'plan-item-meta', [formatPrice(c.price), c.shop].filter(Boolean).join('｜')));
+        if (!hero) {
+          var mk = el('button', 'link-btn', '起点にする');
+          mk.type = 'button';
+          mk.addEventListener('click', function () {
+            d.candidates.forEach(function (x) { if (isHero(x)) x.pinned = false; });
+            edit.heroProduct = heroOf(c);
+            showToast('起点の商品を変えました');
+            refreshAll();
+          });
+          mid.appendChild(mk);
+        }
+        var intro = el('details', 'plan-intro');
+        var sum = el('summary', null, c.intro ? '紹介文（' + c.intro.length + '字）' : '紹介文（空欄ならAIが作ります）');
+        intro.appendChild(sum);
+        var ta = el('textarea', 'textarea');
+        ta.rows = 4;
+        ta.maxLength = 400;
+        ta.value = c.intro || '';
+        ta.placeholder = 'ROOM・Instagramで使う紹介文';
+        ta.addEventListener('input', function () {
+          c.intro = ta.value.trim();
+          c.introEdited = !!c.intro;
+          sum.textContent = c.intro ? '紹介文（' + c.intro.length + '字）' : '紹介文（空欄ならAIが作ります）';
+          persistSoon();
+        });
+        intro.appendChild(ta);
+        mid.appendChild(intro);
+        row.appendChild(mid);
+        var move = el('div', 'ig-move');
+        [['▲', -1], ['▼', 1], ['×', 0]].forEach(function (b) {
+          var btn = el('button', null, b[0]);
+          btn.type = 'button';
+          btn.setAttribute('aria-label', b[1] < 0 ? '上へ' : b[1] > 0 ? '下へ' : '企画から外す');
+          if ((b[1] < 0 && i === 0) || (b[1] > 0 && i === items.length - 1)) btn.disabled = true;
+          // 新商品の企画では、表紙の主役は先頭から動かさない
+          if (d.release && b[1] !== 0 && (hero || (b[1] < 0 && i === 1 && isHero(items[0])))) btn.disabled = true;
+          btn.addEventListener('click', function () {
+            if (b[1] === 0) {
+              if (hero && !window.confirm('この商品は起点の商品です。企画から外すと、起点も外れます。外しますか？')) return;
+              if (hero) edit.heroProduct = null;
+              c.picked = false;
+              c.pinned = false;
+            } else {
+              var k = d.order.indexOf(candKey(c));
+              d.order.splice(k + b[1], 0, d.order.splice(k, 1)[0]);
+            }
+            refreshAll();
+          });
+          move.appendChild(btn);
+        });
+        row.appendChild(move);
+        planBox.appendChild(row);
+      });
+    }
+
+    // ---- 商品を検索して追加（常設）：自分で検索／起点の商品から検索軸を変えて探す ----
+    d.search = d.search || { axis: '', keyword: '', items: [], cursor: null, notice: '', analysis: null, minPrice: '', maxPrice: '', sort: '' };
+    var S = d.search;
+    var searchBox = el('section', 'card plan-search');
+    results.appendChild(searchBox);
+    searchBox.appendChild(el('h3', 'plan-section-title', '商品を検索して追加'));
+    var form = el('form', 'plan-search-form');
+    var kwInput = el('input', 'input');
+    kwInput.type = 'search';
+    kwInput.maxLength = 60;
+    kwInput.placeholder = '商品名・ブランド名・型番・キーワード・カテゴリ';
+    kwInput.value = S.axis === 'search' ? S.keyword : '';
+    kwInput.setAttribute('enterkeyhint', 'search');
+    var kwBtn = el('button', 'btn btn-primary', '検索');
+    kwBtn.type = 'submit';
+    form.appendChild(kwInput);
+    form.appendChild(kwBtn);
+    searchBox.appendChild(form);
+    var opt = el('details', 'plan-search-opt');
+    opt.appendChild(el('summary', null, '価格・並び順'));
+    var optRow = el('div', 'plan-search-opt-row');
+    var minIn = el('input', 'input');
+    minIn.type = 'number'; minIn.inputMode = 'numeric'; minIn.placeholder = '下限（円）'; minIn.value = S.minPrice || '';
+    var maxIn = el('input', 'input');
+    maxIn.type = 'number'; maxIn.inputMode = 'numeric'; maxIn.placeholder = '上限（円）'; maxIn.value = S.maxPrice || '';
+    var sortSel = el('select', 'select');
+    [['', '関連度順'], ['-updateTimestamp', '新しい順'], ['+itemPrice', '安い順'], ['-itemPrice', '高い順']].forEach(function (o) {
+      var x = el('option', null, o[1]);
+      x.value = o[0];
+      sortSel.appendChild(x);
+    });
+    sortSel.value = S.sort || '';
+    optRow.appendChild(minIn);
+    optRow.appendChild(maxIn);
+    optRow.appendChild(sortSel);
+    opt.appendChild(optRow);
+    searchBox.appendChild(opt);
+
+    var refLabel = el('p', 'angles-label', '');
+    searchBox.appendChild(refLabel);
+    var axisRow = el('div', 'plan-axes');
+    var axisBtns = {};
+    AXIS_BUTTONS.forEach(function (a) {
+      var b = el('button', 'plan-axis', a[1]);
+      b.type = 'button';
+      b.addEventListener('click', function () { runSearch(a[0], false); });
+      axisBtns[a[0]] = b;
+      axisRow.appendChild(b);
+    });
+    searchBox.appendChild(axisRow);
+    var searchNote = el('p', 'hint plan-search-note', '');
+    searchBox.appendChild(searchNote);
+    var resultList = el('div', 'cand-list plan-search-results');
+    searchBox.appendChild(resultList);
+    var searchMore = el('button', 'btn btn-secondary', 'さらに10件探す');
+    searchMore.type = 'button';
+    searchBox.appendChild(searchMore);
+
+    function reference() {
+      return edit.heroProduct || syncOrder(d)[0] || null;
+    }
+    function drawRefLabel() {
+      var ref = reference();
+      refLabel.textContent = ref
+        ? '起点の商品から探す（基準：' + String(ref.shortName || ref.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 24) + (edit.heroProduct ? '' : '・企画の先頭の商品') + '）'
+        : '起点の商品から探す（企画に商品を入れると使えます）';
+      AXIS_BUTTONS.forEach(function (a) {
+        axisBtns[a[0]].disabled = !ref;
+        axisBtns[a[0]].classList.toggle('active', S.axis === a[0]);
+      });
+    }
+
+    function resultCard(it) {
+      var inPlan = d.candidates.some(function (c) { return c.picked && sameItem(c, it); });
+      var card = el('article', 'cand-card search-card' + (inPlan ? ' picked' : ''));
+      var top = el('div', 'cand-top');
+      if (it.image) {
+        var img = el('img', 'cand-thumb');
+        img.src = it.image;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function () { img.remove(); };
+        top.appendChild(img);
+      }
+      var info = el('div', 'cand-info');
+      var chips = el('div', 'chips');
+      if (AXIS_SHORT[it.axis]) chips.appendChild(el('span', 'role', AXIS_SHORT[it.axis]));
+      if (it.brand) chips.appendChild(el('span', 'tag', it.brand));
+      info.appendChild(chips);
+      var nm = el('h3', 'cand-name search-name', it.name);
+      info.appendChild(nm);
+      var meta = el('p', 'cand-meta');
+      meta.appendChild(el('strong', null, formatPrice(it.price)));
+      if (it.shop) meta.appendChild(el('span', 'cand-brand', it.shop));
+      info.appendChild(meta);
+      top.appendChild(info);
+      card.appendChild(top);
+      var actions = el('div', 'cand-actions');
+      var add = el('button', 'btn ' + (inPlan ? 'btn-secondary' : 'btn-primary'), inPlan ? '企画に追加済み' : '企画に追加');
+      add.type = 'button';
+      add.disabled = inPlan;
+      add.addEventListener('click', function () { addToPlan(it, 'search'); });
+      actions.appendChild(add);
+      var link = el('a', 'btn btn-secondary cand-link', '楽天で見る');
+      link.href = it.url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      actions.appendChild(link);
+      card.appendChild(actions);
+      return card;
+    }
+    function drawResults() {
+      resultList.innerHTML = '';
+      S.items.forEach(function (it) { resultList.appendChild(resultCard(it)); });
+      searchMore.hidden = !S.axis || !S.items.length;
+      var a = S.analysis;
+      var parts = a && S.axis !== 'search' ? [a.brand && 'ブランド ' + a.brand, a.partner && 'コラボ相手 ' + a.partner, a.category && '種類 ' + a.category, a.color && '色 ' + a.color].filter(Boolean) : [];
+      searchNote.textContent = [S.notice, parts.length ? '起点の分析：' + parts.join('／') : ''].filter(Boolean).join('　');
+      searchNote.hidden = !searchNote.textContent;
+      drawRefLabel();
+    }
+
+    function setSearching(on) {
+      [kwBtn, searchMore].concat(AXIS_BUTTONS.map(function (a) { return axisBtns[a[0]]; })).forEach(function (b) { b.disabled = on; });
+      if (on) { searchNote.textContent = '楽天市場で探しています…（5〜15秒）'; searchNote.hidden = false; }
+      if (!on) drawRefLabel();
+    }
+
+    function runSearch(axis, more) {
+      var ref = reference();
+      if (axis !== 'search' && !ref) { searchNote.textContent = '基準にする商品がありません。先に企画へ商品を1つ入れてください。'; searchNote.hidden = false; return; }
+      if (!more) {
+        S.axis = axis;
+        S.keyword = axis === 'search' ? kwInput.value.trim() : '';
+        S.items = [];
+        S.cursor = null;
+        S.analysis = null;
+      }
+      S.minPrice = minIn.value;
+      S.maxPrice = maxIn.value;
+      S.sort = sortSel.value;
+      var refBody = ref ? {
+        name: ref.name, code: ref.code || '', url: ref.url || '', price: ref.price || 0, brand: ref.brand || '',
+        categoryLabel: d.release && d.release.hero && sameItem(ref, d.release.hero) ? d.release.hero.categoryLabel || '' : ''
+      } : null;
+      var picks = syncOrder(d);
+      var shown = S.items.concat(d.candidates).slice(-280).map(function (x) { return { code: x.code || '', name: String(x.name).slice(0, 80), url: x.url || '' }; });
+      setSearching(true);
+      postJson('api/search', {
+        axis: S.axis, keyword: S.keyword, reference: refBody, cursor: more ? S.cursor : null,
+        minPrice: S.axis === 'search' ? S.minPrice : '', maxPrice: S.axis === 'search' ? S.maxPrice : '', sort: S.axis === 'search' ? S.sort : '',
+        exclude: picks.map(function (c) { return { code: c.code || '', name: String(c.name).slice(0, 100), url: c.url || '' }; }),
+        shown: shown
+      }).then(function (r) {
+        if (r.status !== 200) {
+          S.notice = (r.data && r.data.error) || '検索できませんでした。もう一度お試しください。';
+        } else {
+          S.items = S.items.concat(r.data.items || []);
+          S.cursor = r.data.cursor || null;
+          S.axis = r.data.axis || S.axis;
+          S.analysis = r.data.analysis || S.analysis;
+          S.notice = r.data.notice || ((r.data.items || []).length + '件見つかりました');
+        }
+        setSearching(false);
+        drawResults();
+        persist();
+      }, function () {
+        S.notice = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+        setSearching(false);
+        drawResults();
+      });
+    }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (kwInput.value.trim().replace(/\s/g, '').length < 2) { searchNote.textContent = '2文字以上入れてください（商品名・ブランド名・型番・カテゴリなど）'; searchNote.hidden = false; return; }
+      kwInput.blur();
+      runSearch('search', false);
+    });
+    searchMore.addEventListener('click', function () { runSearch(S.axis, true); });
+
+    // 楽天にない新商品：公式サイトの商品URLから登録（読めない項目は手入力）
+    var official = el('details', 'plan-official');
+    official.appendChild(el('summary', null, '楽天にない新商品を公式URLから登録'));
+    var oUrl = planField('公式サイトの商品ページURL', '', { max: 500, placeholder: 'https://' });
+    oUrl.input.type = 'url';
+    official.appendChild(oUrl.field);
+    var oLoad = el('button', 'btn btn-secondary', 'ページから読み込む');
+    oLoad.type = 'button';
+    official.appendChild(oLoad);
+    var oNote = el('p', 'hint', '商品名・画像・価格を読み取ります。読めなかった項目は手で入れてください。ROOMに登録できるのは楽天の商品だけです。');
+    official.appendChild(oNote);
+    var oName = planField('商品名', '', { max: 120 });
+    var oPrice = planField('価格（円）', '', { max: 9 });
+    oPrice.input.inputMode = 'numeric';
+    var oImage = planField('画像URL', '', { max: 500, placeholder: 'https://' });
+    var oShop = planField('販売元・ブランド', '', { max: 60 });
+    [oName, oPrice, oImage, oShop].forEach(function (f) { official.appendChild(f.field); });
+    var oAdd = el('button', 'btn btn-primary', 'この内容で企画に追加');
+    oAdd.type = 'button';
+    official.appendChild(oAdd);
+    searchBox.appendChild(official);
+    oLoad.addEventListener('click', function () {
+      var u = oUrl.input.value.trim();
+      if (!/^https:\/\//.test(u)) { oNote.textContent = 'https:// で始まるURLを入れてください'; return; }
+      oLoad.disabled = true;
+      oNote.textContent = '読み込んでいます…';
+      postJson('api/product-url', { url: u }).then(function (r) {
+        if (r.status !== 200) { oNote.textContent = ((r.data && r.data.error) || '読み込めませんでした') + '。手で入れて追加できます。'; return; }
+        var p = r.data.product || {};
+        oName.input.value = p.name || '';
+        oPrice.input.value = p.price || '';
+        oImage.input.value = p.image || '';
+        oShop.input.value = p.brand || p.shop || '';
+        oNote.textContent = r.data.notice || '読み込みました。内容を確認して追加してください。';
+      }, function () { oNote.textContent = '通信できませんでした。'; }).then(function () { oLoad.disabled = false; });
+    });
+    oAdd.addEventListener('click', function () {
+      var u = oUrl.input.value.trim();
+      var name = oName.input.value.trim();
+      if (!/^https:\/\//.test(u) || !name) { oNote.textContent = 'URL（https://）と商品名は必ず入れてください'; return; }
+      var image = oImage.input.value.trim();
+      addToPlan({ code: '', url: u, name: name, price: Math.round(Number(String(oPrice.input.value).replace(/[^\d]/g, ''))) || 0, image: /^https:\/\//.test(image) ? image : '', shop: oShop.input.value.trim(), brand: oShop.input.value.trim(), axis: '' }, 'official');
+      [oUrl, oName, oPrice, oImage, oShop].forEach(function (f) { f.input.value = ''; });
+      oNote.textContent = '追加しました。';
+    });
+
+    // 検索結果・公式URLの商品を企画に入れる（タイトル・ほかの商品・起点の商品はそのまま）
+    function addToPlan(it, source) {
+      var c = d.candidates.filter(function (x) { return sameItem(x, it); })[0];
+      if (c && c.picked) { showToast('すでに企画に入っています'); return; }
+      if (syncOrder(d).length >= MAX_POST_ITEMS) { showToast('1投稿にまとめられるのは' + MAX_POST_ITEMS + '商品までです'); return; }
+      if (!c) {
+        c = {
+          code: it.code || '', name: it.name, price: it.price || 0, url: it.url, image: it.image || '', shop: it.shop || '',
+          shortName: '', brand: it.brand || '', role: source === 'official' ? '公式サイト' : '自分で追加', tags: [], kind: '',
+          reason: '', memo: '', angle: AXIS_SHORT[it.axis] || '', seenBefore: false, caption: it.caption || '', added: true, source: source
+        };
+        d.candidates.push(c);
+      }
+      c.picked = true;
+      showToast('企画に追加しました');
+      refreshAll();
+      drawResults();
+    }
+
+    // ---- AIが集めた候補 ----
+    results.appendChild(el('h3', 'plan-section-title plan-cands-title', 'AIが集めた候補'));
     var controls = el('label', 'cand-view');
     controls.appendChild(el('span', null, '並び替え・絞り込み'));
     var select = el('select', 'select');
@@ -1863,7 +2495,7 @@
     moreBox.appendChild(moreNote);
     results.appendChild(moreBox);
 
-    function picked() { return d.candidates.filter(function (c) { return c.picked; }); }
+    function picked() { return syncOrder(d); }
     update.count = function () { return picked().length; };
     function update() {
       var n = picked().length;
@@ -1872,7 +2504,9 @@
       bar.classList.toggle('over', n > MAX_POST_ITEMS);
       toPost.disabled = n === 0;
       toPost.textContent = n > 6 ? '1投稿にまとめる（' + n + '商品）' : 'この商品で投稿を作る';
-      saveLast('explore', d);
+      drawPlanItems();
+      drawRefLabel();
+      persist();
     }
     function draw() {
       list.innerHTML = '';
@@ -1880,16 +2514,27 @@
       if (!view.length) list.appendChild(el('p', 'manage-empty', 'この絞り込みに当てはまる候補はありません。'));
       view.forEach(function (c) { list.appendChild(candidateCard(c, update)); });
     }
-    select.addEventListener('change', function () { d.view = select.value; draw(); saveLast('explore', d); });
+    function refreshAll() {
+      drawHero();
+      draw();
+      update();
+    }
+    select.addEventListener('change', function () { d.view = select.value; draw(); persist(); });
 
     moreBtn.addEventListener('click', function () {
       moreBtn.disabled = true;
       moreBtn.textContent = '探しています…（30〜60秒）';
       moreNote.textContent = '';
+      // 直したタイトル・ジャンル・方向性で探す
+      var brief = Object.assign({}, d.brief, {
+        title: edit.title || d.brief.title,
+        genre: edit.genre,
+        note: [d.brief.note, edit.direction && '企画の方向性（最優先）: ' + edit.direction].filter(Boolean).join('\n').slice(-400)
+      });
       seenForSearch().then(function (seen) {
         return postJson('api/explore', {
-          more: { brief: d.brief, angles: d.angles },
-          exclude: { codes: d.candidates.map(function (c) { return c.code; }), names: d.candidates.map(function (c) { return c.name; }) },
+          more: { brief: brief, angles: d.angles },
+          exclude: { codes: d.candidates.map(function (c) { return c.code; }).filter(Boolean), names: d.candidates.map(function (c) { return c.name; }) },
           seen: seen
         });
       }).then(function (r) {
@@ -1917,26 +2562,28 @@
     toPost.addEventListener('click', function () {
       var items = picked();
       if (!items.length) return;
+      persist();
+      // 紹介文：自分で書いた・前に作った紹介文はそのまま使い、無い商品の分だけAIで作る（料金を抑える）
+      var need = items.filter(function (c) { return !c.intro; });
       toPost.disabled = true;
-      toPost.textContent = 'ROOM紹介文を作っています…（' + items.length + '商品）';
-      // 商品が多いときは、8商品ずつに分けて同時に作る（1回あたりの時間を短くする）
+      toPost.textContent = need.length ? 'ROOM紹介文を作っています…（' + need.length + '商品）' : '投稿の準備をしています…';
       var chunks = [];
-      for (var i = 0; i < items.length; i += 8) chunks.push(items.slice(i, i + 8));
+      for (var i = 0; i < need.length; i += 8) chunks.push(need.slice(i, i + 8));
       Promise.all(chunks.map(function (chunk) {
         return postJson('api/intros', {
-          title: d.title,
+          title: edit.title || d.title,
           items: chunk.map(function (c) { return { name: c.name, price: c.price, role: c.role, brand: c.brand, reason: c.reason, caption: c.caption }; })
         });
       })).then(function (rs) {
-        var intros = [];
         var simple = false;
         rs.forEach(function (r, k) {
-          var list = (r.data && r.data.intros) || [];
-          chunks[k].forEach(function (_, j) { intros.push(list[j] || ''); });
+          var got = (r.data && r.data.intros) || [];
+          chunks[k].forEach(function (c, j) { if (got[j]) c.intro = got[j]; });
           if (r.status !== 200 || (r.data && r.data.notice)) simple = true;
         });
         if (simple) showToast('一部の紹介文は作れなかった・簡易的に作ったので、ROOM登録準備の画面で確認してください');
-        composeFromExplore(d, items, intros);
+        persist();
+        composeFromExplore(d, items, items.map(function (c) { return c.intro || ''; }));
       }, function () {
         showToast('通信できませんでした。電波の良い場所でもう一度お試しください。');
       }).then(function () {
@@ -1945,8 +2592,11 @@
       });
     });
 
+    drawHero();
+    drawResults();
     draw();
     update();
+    renderPlanDrafts();
   }
 
   function findHero(items, hero) {
@@ -1974,37 +2624,31 @@
   // 選んだ商品と企画の情報を持って、Instagram画像づくりへ
   function composeFromExplore(d, items, intros) {
     loadDraft();
+    var edit = initEdit(d);
     draft.items = items.map(function (c, i) {
-      return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.postRole || c.role || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
+      return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.postRole || (c.role === '自分で追加' || c.role === '公式サイト' ? '' : c.role) || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
     });
     draft.postId = d.idea || d.plan ? currentPostId() : '';
-    draft.genre = d.idea ? d.idea.genre || '' : '';
+    // 企画の編集画面で直した内容（タイトル・テーマ・サブタイトル・ジャンル・表紙・キャッチコピー）をそのまま使う
+    draft.genre = edit.genre || (d.idea ? d.idea.genre || '' : '');
     draft.postType = d.idea ? d.idea.postType : d.plan ? d.plan.postType : '';
     draft.planId = d.plan ? d.plan.id : '';
-    if (d.idea) {
-      draft.theme = d.idea.topic;
-      draft.subtitle = d.idea.subtitle || '';
-      draft.category = (d.idea.topic || '').length <= 8 ? d.idea.topic : (d.idea.genre || '').split('・')[0];
-    } else if (d.plan) {
-      draft.theme = d.plan.topic;
-      draft.subtitle = d.plan.subtitle || '';
-      draft.category = d.plan.category || '';
-    } else {
-      draft.theme = String(d.title || '').replace(/(について)?本気出して考えてみた$/, '').slice(0, 30);
-      draft.subtitle = '';
-      draft.category = '';
-    }
+    draft.theme = (edit.theme || String(edit.title || d.title || '').replace(/(について)?本気出して考えてみた$/, '')).slice(0, 30);
+    draft.subtitle = edit.subtitle || '';
+    draft.category = d.plan && !edit.edited.genre ? d.plan.category || ''
+      : !d.idea && !d.plan && !edit.edited.genre && !edit.edited.theme ? '' // 条件指定で探したときは今までどおり空欄
+        : draft.theme.length <= 8 ? draft.theme : (edit.genre || '').split('・')[0];
     draft.layoutSizes = null;
-    // 表紙：発掘ページの「選び方の型」に対応するシリーズ（企画は今までの表紙）。文字は画像を作るときにAIが作る
-    draft.coverStyle = d.coverStyle || 'serious_think';
-    draft.coverTitle = '';
+    // 表紙：企画で選んだシリーズ（表紙テンプレート）。文字は画像を作るときにAIが作る（キャッチコピーを書いたときはそれを使う）
+    draft.coverStyle = edit.coverStyle || d.coverStyle || 'serious_think';
+    draft.coverTitle = edit.catchCopy ? (d.release ? splitCoverTitle(edit.catchCopy) : edit.catchCopy) : '';
     // 新商品の企画：表紙に、確認できた情報（ラベル・ブランド・発売日）と、選んだタイトルをそのまま使う
     draft.release = d.release || null;
-    if (d.release && d.idea) draft.coverTitle = splitCoverTitle(d.idea.title || d.title);
+    if (d.release && !draft.coverTitle) draft.coverTitle = splitCoverTitle(edit.title || d.title);
     // 新商品の企画：起点の商品（heroProduct）を表紙の主役にし、本文でも最初に紹介する。
-    // ユーザーが固定を外して採用しなかったときだけ、主役なし（先頭の商品が表紙）
+    // ユーザーが起点を外したときだけ、主役なし（先頭の商品が表紙）
     draft.heroProduct = null;
-    var heroAt = d.release && d.release.hero ? findHero(draft.items, d.release.hero) : -1;
+    var heroAt = d.release && edit.heroProduct ? findHero(draft.items, edit.heroProduct) : -1;
     if (heroAt !== -1) setHero(heroAt);
     draft.coverAccent = '';
     var b = d.brief || {};
@@ -2016,6 +2660,7 @@
     Promise.all(draft.items.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount, function () {});
     if (draft.postId) {
       History.update(draft.postId, {
+        title: edit.title || d.title, topic: draft.theme, subtitle: draft.subtitle,
         products: draft.items.map(function (p) { return { name: p.name, brand: p.brand, price: p.price }; }),
         brands: draft.items.map(function (p) { return p.brand; }).filter(Boolean)
       });
@@ -3162,7 +3807,10 @@
         exploreProducts({
           idea: idea,
           seed: { name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '', brand: it.brand, reason: idea.howUsed, caption: it.releaseText || '' },
-          release: Object.assign({ mood: view.mood, hero: { code: it.code, url: it.rakutenUrl || it.sourceUrl, name: it.name, brand: it.brand } }, view.info)
+          release: Object.assign({ mood: view.mood, hero: {
+            code: it.code, url: it.rakutenUrl || it.sourceUrl, name: it.name, brand: it.brand, price: it.price, image: it.imageUrl,
+            categoryLabel: it.categoryLabel || '', status: it.status || [], releaseDate: it.releaseDate || null, releaseMonth: it.releaseMonth || null
+          } }, view.info)
         });
       });
       card.appendChild(go);
@@ -3204,6 +3852,7 @@
   try { savedMode = localStorage.getItem(MODE_KEY) || 'idea'; } catch (e) {}
   showMode(savedMode);
   restoreLast();
+  renderPlanDrafts();
   showView();
   updateManageCount();
   freeText.placeholder = PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)];

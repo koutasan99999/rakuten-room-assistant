@@ -29,6 +29,15 @@
     },
     "api/release-ideas.js": {
       "maxDuration": 60
+    },
+    "api/search.js": {
+      "maxDuration": 60
+    },
+    "api/plan-titles.js": {
+      "maxDuration": 30
+    },
+    "api/product-url.js": {
+      "maxDuration": 20
     }
   },
   "headers": [
