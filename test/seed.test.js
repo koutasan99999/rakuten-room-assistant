@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import seedApi from '../api/seed-ideas.js';
-import exploreApi from '../api/explore.js';
+import seedApi from '../server/seed-ideas.js';
+import exploreApi from '../server/explore.js';
 import { fallbackSeedIdeas, readSeedProduct } from '../lib/seed.js';
 import { installFetchMock, makeItems, json, aiReply } from './mock.js';
 

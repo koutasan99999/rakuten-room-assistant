@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import exploreApi from '../api/explore.js';
-import introsApi from '../api/intros.js';
+import exploreApi from '../server/explore.js';
+import introsApi from '../server/intros.js';
 import { balanceSelection, buildPool, fallbackAngles, readBrief, ROLE_TAGS } from '../lib/explore.js';
 import { fallbackIdea } from '../lib/ideas.js';
 import { CATALOG, POST_TYPES } from '../lib/catalog.js';

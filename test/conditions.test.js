@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import discover from '../api/discover.js';
+import discover from '../server/discover.js';
 import { parseBudget, fallbackPlan } from '../lib/planner.js';
 import { resolveFilterGenre, FILTER_GENRES } from '../lib/genres.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';

@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import coordImageApi from '../api/coord-image.js';
+import coordImageApi from '../server/coord-image.js';
 import { readTryOnRequest, tryOnPrompt, generateTryOn, MAX_REFS, IMAGE_MODELS } from '../lib/tryon.js';
 import { installFetchMock, json, imageResponse, TINY_PNG } from './mock.js';
 

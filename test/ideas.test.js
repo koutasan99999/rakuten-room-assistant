@@ -4,8 +4,8 @@ import { CATALOG, POST_TYPES, sampleIdeaSeeds } from '../lib/catalog.js';
 import { normalizeIdea, fallbackIdea, MUST_BUY_SUBTITLES } from '../lib/ideas.js';
 import { briefFromIdea } from '../lib/explore.js';
 import { buildHashtags } from '../lib/hashtags.js';
-import ideasApi from '../api/ideas.js';
-import instagram from '../api/instagram.js';
+import ideasApi from '../server/ideas.js';
+import instagram from '../server/instagram.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
 
 const ENV = { RAKUTEN_APP_ID: 'app', OPENAI_API_KEY: 'sk-test' };

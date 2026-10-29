@@ -1,8 +1,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import instagram from '../api/instagram.js';
-import plansApi from '../api/plans.js';
+import instagram from '../server/instagram.js';
+import plansApi from '../server/plans.js';
 import { COVER_STYLES, COVER_FOR_TYPE, coverStyleFor, finalizeCover, fallbackCover, priceFrom } from '../lib/covers.js';
 import { CURATION_TYPES } from '../lib/themes.js';
 import { installFetchMock, json, aiReply } from './mock.js';

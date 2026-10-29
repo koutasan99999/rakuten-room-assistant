@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import coordApi from '../api/coord.js';
+import coordApi from '../server/coord.js';
 import { slotOf, normalizeLooks, readCoordConditions, slotCaps, relaxSteps, genderOf } from '../lib/coord.js';
 import { installFetchMock, json, aiReply } from './mock.js';
 

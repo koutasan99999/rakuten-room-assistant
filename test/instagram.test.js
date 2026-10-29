@@ -1,8 +1,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
-import handler from '../api/instagram.js';
-import imageHandler from '../api/image.js';
+import handler from '../server/instagram.js';
+import imageHandler from '../server/image.js';
 import { normalizeTopic, memoIssues, fallbackShortName } from '../lib/instagram.js';
 import { installFetchMock, json, aiReply } from './mock.js';
 import '../js/zip.js';

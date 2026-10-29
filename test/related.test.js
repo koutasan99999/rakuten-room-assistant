@@ -1,8 +1,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import searchApi from '../api/search.js';
-import planTitlesApi from '../api/plan-titles.js';
-import exploreApi from '../api/explore.js';
+import searchApi from '../server/search.js';
+import planTitlesApi from '../server/plan-titles.js';
+import exploreApi from '../server/explore.js';
 import { analyzeProduct, isSameProduct, dedupeProducts, findModels } from '../lib/product-analysis.js';
 import { planAxis, relatedSearch, freeSteps } from '../lib/related.js';
 import { diversifyAngles } from '../lib/explore.js';

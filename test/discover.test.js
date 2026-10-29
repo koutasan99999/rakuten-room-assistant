@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../api/discover.js';
+import handler from '../server/discover.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
 
 const ENV = { RAKUTEN_APP_ID: 'app', RAKUTEN_ACCESS_KEY: 'key', OPENAI_API_KEY: 'sk-test' };
