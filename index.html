@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-10-29.2">
+  <meta name="app-version" content="2026-10-29.3">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-10-29.2">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-29.3">
 </head>
 <body>
   <header class="header">
@@ -143,8 +143,8 @@
           <div id="radar-genres" class="radar-genres"></div>
         </details>
         <details class="sub-box" id="radar-brand-box" open>
-        <summary>フォローするブランド <span id="bf-count" class="tab-count"></span></summary>
-        <p class="hint">おすすめブランドは最初から全部選んであります。要らないブランドだけチェックを外してください。検索の回数を抑えるため、1回の更新では、しばらく確認していないブランドから数個ずつ探します（12時間以内に確認したブランドは探し直しません）。</p>
+        <summary>ブランドの新作探し <span id="bf-count" class="tab-count"></span></summary>
+        <p class="hint">「新作を探す」で、そのブランドの新作・予約・再販をすぐ探せます。チェックが入っているブランドは「レーダーを更新」でも自動で探します（最初は全部チェック済み。要らないものだけ外してください）。検索の回数を抑えるため、自動では1回に数ブランドずつ、12時間以内に探したブランドは飛ばします。</p>
         <div class="bf-tools">
           <label class="field"><span class="field-label">ブランド検索</span><input id="bf-search" class="input" type="text" maxlength="30" placeholder="例：Anker"></label>
           <label class="field"><span class="field-label">ジャンル</span><select id="bf-genre" class="select"></select></label>
@@ -157,20 +157,20 @@
         <p id="bf-genre-note" class="hint"></p>
         <div id="bf-list" class="bf-list"></div>
         <div class="radar-add">
-          <input id="radar-brand-input" class="input" type="text" maxlength="30" placeholder="一覧にないブランドを追加（例：New Balance）">
-          <button type="button" id="radar-brand-add" class="btn btn-secondary">追加</button>
+          <input id="radar-brand-input" class="input" type="text" maxlength="30" placeholder="一覧にないブランドの新作を探す（例：New Balance）">
+          <button type="button" id="radar-brand-add" class="btn btn-secondary">探す</button>
         </div>
         </details>
         <button type="button" class="btn btn-secondary fold-btn fold-all" data-fold="radar-settings">ジャンル・ブランドの設定を畳む</button>
       </details>
 
-      <!-- ブランド単位の詳細（個別の検索はフォローの設定を変えない） -->
+      <!-- ブランドの新作探し（個別に探しても、自動で探す設定は変えない） -->
       <section id="brand-detail" class="brand-detail" hidden>
         <button type="button" id="bd-back" class="link-btn">← 新作レーダーに戻る</button>
         <h3 id="bd-name" class="curation-title"></h3>
         <p id="bd-meta" class="hint"></p>
         <div class="bf-actions">
-          <button type="button" id="bd-search" class="btn btn-primary">このブランドの新作を探す</button>
+          <button type="button" id="bd-search" class="btn btn-primary">もう一度探す</button>
           <button type="button" id="bd-follow" class="btn btn-secondary"></button>
         </div>
         <p id="bd-note" class="hint"></p>
@@ -412,16 +412,16 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-10-29.2"></script>
-  <script src="js/history.js?v=2026-10-29.2"></script>
-  <script src="js/radar-store.js?v=2026-10-29.2"></script>
-  <script src="js/brand-follow.js?v=2026-10-29.2"></script>
-  <script src="js/zip.js?v=2026-10-29.2"></script>
-  <script src="js/carousel-layout.js?v=2026-10-29.2"></script>
-  <script src="js/ig-render.js?v=2026-10-29.2"></script>
-  <script src="js/ig-covers.js?v=2026-10-29.2"></script>
-  <script src="js/ig-multi.js?v=2026-10-29.2"></script>
-  <script src="js/reel-story.js?v=2026-10-29.2"></script>
-  <script src="js/app.js?v=2026-10-29.2"></script>
+  <script src="js/store.js?v=2026-10-29.3"></script>
+  <script src="js/history.js?v=2026-10-29.3"></script>
+  <script src="js/radar-store.js?v=2026-10-29.3"></script>
+  <script src="js/brand-follow.js?v=2026-10-29.3"></script>
+  <script src="js/zip.js?v=2026-10-29.3"></script>
+  <script src="js/carousel-layout.js?v=2026-10-29.3"></script>
+  <script src="js/ig-render.js?v=2026-10-29.3"></script>
+  <script src="js/ig-covers.js?v=2026-10-29.3"></script>
+  <script src="js/ig-multi.js?v=2026-10-29.3"></script>
+  <script src="js/reel-story.js?v=2026-10-29.3"></script>
+  <script src="js/app.js?v=2026-10-29.3"></script>
 </body>
 </html>

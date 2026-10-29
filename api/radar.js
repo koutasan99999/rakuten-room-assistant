@@ -12,7 +12,7 @@ export default async function handler(req, res, env = process.env) {
   if (req.method === 'GET') {
     return send(res, 200, {
       groups: RADAR_GROUPS,
-      genres: RADAR_GENRES.map((g) => ({ id: g.id, group: g.group, label: g.label, brands: g.brands })),
+      genres: RADAR_GENRES.map((g) => ({ id: g.id, group: g.group, label: g.label, brands: g.brands, ng: g.ng || [] })),
       statuses: Object.entries(STATUS).map(([id, label]) => ({ id, label })),
       sources: SOURCES.map((s) => ({ id: s.id, label: s.label }))
     });

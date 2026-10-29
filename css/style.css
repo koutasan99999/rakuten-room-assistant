@@ -617,3 +617,8 @@ body {
 .sub-box > summary { font-weight: 800; font-size: 15px; cursor: pointer; padding: 6px 0; }
 .radar-group-head { display: flex; align-items: center; gap: 12px; }
 .radar-group-head .radar-group-label { flex: 1; }
+.bf-row .bf-go { width: auto; min-height: 36px; padding: 4px 12px; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+.bf-row .bf-check { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.bf-row .bf-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
+.bf-row .bf-genre { flex-shrink: 2; min-width: 0; }
+.bf-list { grid-template-columns: minmax(0, 1fr); }
