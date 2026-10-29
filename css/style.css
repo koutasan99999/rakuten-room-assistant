@@ -608,3 +608,12 @@ body {
 .brand-detail { background: var(--card); border-radius: 14px; padding: 14px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 8px; }
 .release-title { font-size: 17px; font-weight: 800; }
 .hero-badge { display: inline-block; font-size: 11px; font-weight: 800; color: #fff; background: var(--red); border-radius: 4px; padding: 2px 6px; margin: 0 0 4px; }
+
+/* 一括操作（全選択・クリア・畳む） */
+.bulk-bar { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 6px 0 10px; }
+.bulk-bar .btn, .fold-all { min-height: 42px; font-size: 14px; }
+.fold-all { width: 100%; margin-top: 12px; }
+.sub-box { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.sub-box > summary { font-weight: 800; font-size: 15px; cursor: pointer; padding: 6px 0; }
+.radar-group-head { display: flex; align-items: center; gap: 12px; }
+.radar-group-head .radar-group-label { flex: 1; }

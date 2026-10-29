@@ -2739,14 +2739,35 @@
     });
   }
 
+  // ジャンルをまとめて選ぶ・外す（ids に入っているものだけ）
+  function setRadarGenres(ids, on) {
+    var s = radarSettings();
+    s.genres = s.genres.filter(function (id) { return ids.indexOf(id) === -1; });
+    if (on) s.genres = s.genres.concat(ids);
+    Radar.saveSettings(s);
+    renderRadarSettings();
+  }
+
   function renderRadarSettings() {
     var settings = radarSettings();
     radarGenresEl.innerHTML = '';
+    var known = radarMeta.genres.map(function (x) { return x.id; });
+    document.getElementById('rg-count').textContent = '選択中 ' + settings.genres.filter(function (id) { return known.indexOf(id) !== -1; }).length + ' / ' + known.length;
     radarMeta.groups.forEach(function (g) {
       var row = el('div', 'radar-group');
-      row.appendChild(el('span', 'radar-group-label', g.label));
+      var list = radarMeta.genres.filter(function (x) { return x.group === g.id; });
+      var ids = list.map(function (x) { return x.id; });
+      var head = el('div', 'radar-group-head');
+      head.appendChild(el('span', 'radar-group-label', g.label + '（' + ids.filter(function (id) { return settings.genres.indexOf(id) !== -1; }).length + '/' + ids.length + '）'));
+      [['全選択', true], ['クリア', false]].forEach(function (a) {
+        var btn = el('button', 'link-btn', a[0]);
+        btn.type = 'button';
+        btn.addEventListener('click', function () { setRadarGenres(ids, a[1]); });
+        head.appendChild(btn);
+      });
+      row.appendChild(head);
       var chips = el('div', 'radar-chips');
-      radarMeta.genres.filter(function (x) { return x.group === g.id; }).forEach(function (x) {
+      list.forEach(function (x) {
         var on = settings.genres.indexOf(x.id) !== -1;
         var b = el('button', 'radar-chip' + (on ? ' on' : ''), x.label);
         b.type = 'button';
@@ -2764,6 +2785,17 @@
     renderBrandManager();
   }
 
+  document.getElementById('rg-all').addEventListener('click', function () { setRadarGenres(radarMeta.genres.map(function (x) { return x.id; }), true); });
+  document.getElementById('rg-none').addEventListener('click', function () { setRadarGenres(radarMeta.genres.map(function (x) { return x.id; }), false); });
+  // 「畳む」：その欄を閉じて、見出しが見える位置に戻す
+  Array.prototype.forEach.call(document.querySelectorAll('.fold-btn'), function (b) {
+    b.addEventListener('click', function () {
+      var box = document.getElementById(b.getAttribute('data-fold'));
+      box.open = false;
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+
   function showRadarLast() {
     var s = radarSettings();
     if (s.lastScanAt) {
@@ -2775,7 +2807,7 @@
   // 巡回：選んだジャンルから6つずつ順番に（毎回同じジャンルにならないように）
   function scanRadar() {
     var s = radarSettings();
-    if (!s.genres.length) { showToast('見るジャンルを選んでください'); document.getElementById('radar-settings').open = true; return; }
+    if (!s.genres.length) { showToast('見るジャンルを選んでください'); document.getElementById('radar-settings').open = true; document.getElementById('radar-genre-box').open = true; return; }
     var n = s.genres.length;
     var genres = [];
     for (var i = 0; i < Math.min(6, n); i++) genres.push(s.genres[(s.cursor + i) % n]);
@@ -2845,7 +2877,7 @@
     return Math.round(min / 60 / 24) + '日前に確認' + (min > 60 * 24 * 3 ? '（情報が古い可能性があります）' : '');
   }
 
-  // 検索・ジャンルで絞った一覧（「すべて選択／解除」はこの一覧が対象）
+  // 検索・ジャンルで絞った一覧（「全選択／クリア」はこの一覧が対象）
   function bfVisible() {
     var q = bfSearch.value.trim().toLowerCase();
     var g = bfGenre.value;
@@ -2863,7 +2895,7 @@
     bfCount.textContent = '選択中 ' + on + ' / ' + all.length;
     var g = bfGenre.value;
     bfGenreNote.textContent = g && s.excludedGenres.indexOf(g) !== -1
-      ? '「' + genreLabel(g) + '」はジャンルごと外しています（あとから追加されるブランドも対象外）。「すべて選択」で戻せます。'
+      ? '「' + genreLabel(g) + '」はジャンルごと外しています（あとから追加されるブランドも対象外）。「全選択」で戻せます。'
       : '';
     bfList.innerHTML = '';
     var list = bfVisible();
