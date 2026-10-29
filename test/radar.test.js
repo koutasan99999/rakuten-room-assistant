@@ -110,3 +110,25 @@ test('レーダーAPI：新作・予約の商品だけを状態・日付つき�
   assert.ok(meta.genres.find((g) => g.id === 'sneaker').brands.includes('Onitsuka Tiger'));
   assert.equal(meta.statuses.length, 8);
 });
+
+test('アクセサリーにカー用品が混ざらない（ジャンルごとの除外語）', async () => {
+  mock = installFetchMock({
+    rakuten: (url) => {
+      const kw = url.searchParams.get('keyword');
+      return json(200, {
+        items: [
+          { itemCode: `n:${kw}`, itemName: 'agete ネックレス 新作 2026年11月20日発売', itemPrice: 22000, itemUrl: 'https://item.rakuten.co.jp/n/1/', mediumImageUrls: [], shopName: 'N', itemCaption: '' },
+          { itemCode: `c:${kw}`, itemName: 'カー用品 車用 アクセサリー 新作 ドリンクホルダー', itemPrice: 1980, itemUrl: 'https://item.rakuten.co.jp/c/1/', mediumImageUrls: [], shopName: 'C', itemCaption: '' }
+        ],
+        pageCount: 1
+      });
+    },
+    openai: () => json(500, {})
+  });
+  const { status, data } = await call({ genres: ['accessory'] });
+  assert.equal(status, 200);
+  assert.ok(data.items.some((x) => x.name.includes('ネックレス')));
+  assert.ok(data.items.every((x) => !x.name.includes('カー用品')), data.items.map((x) => x.name).join('/'));
+  const meta = (await call(undefined, 'GET')).data;
+  assert.ok(meta.genres.find((g) => g.id === 'accessory').ng.includes('カー用品'));
+});

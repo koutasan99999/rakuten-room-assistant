@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.2';
+  var APP_VERSION = '2026-10-29.3';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -2525,10 +2525,16 @@
     return function (it) { return (brand[it.brand] || 0) + (genre[it.category] || 0) + (it.score || 0) * 0.5; };
   }
 
+  // ジャンルに混ざった別の商品（アクセサリーのカー用品など）。以前に貯まった分も一覧に出さない
+  function offGenre(it) {
+    var g = radarMeta.genres.filter(function (x) { return x.id === it.category; })[0];
+    return !!(g && g.ng && !it.followedBrand && g.ng.some(function (w) { return String(it.name || '').indexOf(w) !== -1; }));
+  }
+
   function radarFiltered(all, settings) {
     var price = rf.price.value ? rf.price.value.split('-').map(Number) : null;
     var list = all.filter(function (it) {
-      if (it.hidden) return false;
+      if (it.hidden || offGenre(it)) return false;
       if (rf.fav.checked && !it.favorite) return false;
       if (rf.status.value && !hasStatus(it, rf.status.value)) return false;
       if (rf.period.value && !inPeriod(it, rf.period.value)) return false;
@@ -2672,7 +2678,7 @@
   // ダッシュボード：保存してある商品の数（押すとその一覧へ）
   function renderRadarDash() {
     return Radar.list().then(function (all) {
-      var list = all.filter(function (it) { return !it.hidden; });
+      var list = all.filter(function (it) { return !it.hidden && !offGenre(it); });
       var cards = [
         ['今日の新着', 'new_today', '', function (it) { return inPeriod(it, 'new_today'); }],
         ['予約受付中', '', 'PRE_ORDER', function (it) { return hasStatus(it, 'PRE_ORDER'); }],
@@ -2912,7 +2918,7 @@
     var s = brandState();
     var all = window.BrandFollow.catalog(radarMeta.genres, s);
     var on = all.filter(function (b) { return window.BrandFollow.isFollowed(b, s); }).length;
-    bfCount.textContent = '選択中 ' + on + ' / ' + all.length;
+    bfCount.textContent = '自動で探す ' + on + ' / ' + all.length;
     var g = bfGenre.value;
     bfGenreNote.textContent = g && s.excludedGenres.indexOf(g) !== -1
       ? '「' + genreLabel(g) + '」はジャンルごと外しています（あとから追加されるブランドも対象外）。「全選択」で戻せます。'
@@ -2936,9 +2942,9 @@
       label.appendChild(el('span', 'bf-name', b.name));
       label.appendChild(el('span', 'bf-genre', b.genres.map(genreLabel).join('・') + (b.custom ? '（追加）' : '')));
       row.appendChild(label);
-      var more = el('button', 'link-btn', '詳細');
+      var more = el('button', 'btn btn-secondary bf-go', '新作を探す');
       more.type = 'button';
-      more.addEventListener('click', function () { showBrandDetail(b.name); });
+      more.addEventListener('click', function () { showBrandDetail(b.name, true); });
       row.appendChild(more);
       bfList.appendChild(row);
     });
@@ -2967,26 +2973,30 @@
   var bdFollowBtn = document.getElementById('bd-follow');
   var bdCurrent = '';
 
-  function showBrandDetail(name) {
+  // search: true なら、しばらく探していないときはすぐ探す（12時間以内に探した結果があれば、それを見せて検索を節約）
+  function showBrandDetail(name, search) {
     bdCurrent = name;
     brandDetail.hidden = false;
     document.getElementById('radar-settings').open = false;
     bdNote.textContent = '';
     drawBrandDetail();
     brandDetail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var last = window.BrandFollow.lastChecked(brandState(), name);
+    if (search && (!last || Date.now() - last >= window.BrandFollow.CACHE_MS)) bdSearchBtn.click();
+    else if (search) bdNote.textContent = agoText(last).replace('に確認', 'に探した結果です') + '。最新にするには「もう一度探す」を押してください。';
   }
 
   function drawBrandDetail() {
     var s = brandState();
     var b = window.BrandFollow.catalog(radarMeta.genres, s).filter(function (x) { return x.name.toLowerCase() === bdCurrent.toLowerCase(); })[0] || { name: bdCurrent, genres: [] };
     var followed = window.BrandFollow.isFollowed(b, s);
-    bdName.textContent = b.name;
-    bdMeta.textContent = (b.genres.map(genreLabel).join('・') || 'ジャンル未設定') + '｜' + (followed ? 'フォロー中' : 'フォローしていません') + '｜' + agoText(window.BrandFollow.lastChecked(s, b.name));
-    bdFollowBtn.textContent = followed ? 'フォローを外す' : 'フォローする';
+    bdName.textContent = b.name + 'の新作探し';
+    bdMeta.textContent = (b.genres.map(genreLabel).join('・') || 'ジャンル未設定') + '｜' + (followed ? 'レーダーでも自動で探す' : 'レーダーでは探さない') + '｜' + agoText(window.BrandFollow.lastChecked(s, b.name));
+    bdFollowBtn.textContent = followed ? '自動で探すのをやめる' : 'レーダーでも自動で探す';
     Radar.list().then(function (all) {
       var mine = all.filter(function (it) { return !it.hidden && it.brand && it.brand.toLowerCase() === b.name.toLowerCase(); });
       bdList.innerHTML = '';
-      if (!mine.length) { bdList.appendChild(el('p', 'manage-empty', 'まだこのブランドの商品はありません。「このブランドの新作を探す」で探せます。')); return; }
+      if (!mine.length) { bdList.appendChild(el('p', 'manage-empty', bdSearchBtn.disabled ? '探しています…' : 'まだこのブランドの新作は見つかっていません。「もう一度探す」で探せます。')); return; }
       var groups = [
         ['予約受付中', function (it) { return hasStatus(it, 'PRE_ORDER'); }],
         ['新作・発売予定', function (it) { return hasStatus(it, 'NEW') || hasStatus(it, 'COMING_SOON') || hasStatus(it, 'NEW_COLOR'); }],
@@ -3022,7 +3032,7 @@
       bdNote.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
     }).then(function () {
       bdSearchBtn.disabled = false;
-      bdSearchBtn.textContent = 'このブランドの新作を探す';
+      bdSearchBtn.textContent = 'もう一度探す';
     });
   });
   bdFollowBtn.addEventListener('click', function () {
@@ -3167,10 +3177,11 @@
   document.getElementById('radar-brand-add').addEventListener('click', function () {
     var b = radarBrandInput.value.trim();
     if (!b) return;
+    // 一覧に足して（自動で探す対象にも入る）、すぐにそのブランドの新作を探す
     window.BrandFollow.addCustom(brandState(), b, bfGenre.value);
     radarBrandInput.value = '';
     renderBrandManager();
-    showToast(b + ' をフォローしました');
+    showBrandDetail(b, true);
   });
   addClear(radarBrandInput);
 
