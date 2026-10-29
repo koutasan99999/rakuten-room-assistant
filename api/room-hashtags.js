@@ -3,7 +3,7 @@ import { send, checkAccess, readBody } from '../lib/http.js';
 import { generateRoomHashtags } from '../lib/room-hashtags.js';
 import { maskSecrets } from '../lib/ai.js';
 
-const MAX_ITEMS = 10;
+const MAX_ITEMS = 20;
 const str = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, n);
 
 export default async function handler(req, res, env = process.env) {
