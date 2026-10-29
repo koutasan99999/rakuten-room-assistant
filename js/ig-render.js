@@ -593,7 +593,7 @@
     var offset = hasSummary ? 1 : 0;
     var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, images: coverImages(post.items), items: post.items }) }];
+    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? post.items.map(function (it) { return it.image; }).filter(Boolean).slice(0, 3) : coverImages(post.items), items: post.items }) }];
     if (hasSummary) {
       slides.push({
         fileName: '02_summary.png',

@@ -33,7 +33,8 @@
     ['value_pick', 'コスパ重視（ダーク × ゴールド）'],
     ['trend_pick', 'トレンド（文字主体）'],
     ['unique_pick', '変わり種（ちょいズラし）'],
-    ['buy_this_first', '買っとけ（カーキ × チェックリスト）']
+    ['buy_this_first', '買っとけ（カーキ × チェックリスト）'],
+    ['new_release', '新商品（新作特集）']
   ];
 
   // 2枚目以降（商品カード・ROOM誘導）も、表紙と色味をそろえる
@@ -48,7 +49,8 @@
     value_pick: { cardBg: '#E9E6E1', accent: '#A57F35', pill: '#2A2724' },
     trend_pick: { cardBg: '#EFEEEB', accent: '#C4553A', pill: '#151515' },
     unique_pick: { cardBg: '#F0ECE3', accent: '#2F7F7A', pill: '#2F7F7A' },
-    buy_this_first: { cardBg: '#ECE8DA', accent: '#5E6B3C', pill: '#5E6B3C' }
+    buy_this_first: { cardBg: '#ECE8DA', accent: '#5E6B3C', pill: '#5E6B3C' },
+    new_release: { cardBg: '#F2F0EC', accent: '#B4475A', pill: '#1A1A1A' }
   };
 
   // ---- 共通の部品 ----
@@ -230,6 +232,13 @@
   function spaced(text) { return String(text).split('').join(' '); }
 
   // ---- テンプレート ----
+  // 新商品の表紙の雰囲気（商品のジャンルで変える）
+  var RELEASE_MOODS = {
+    fashion: { bg: '#F4EFE9', glow: '#E9D9D3', ink: '#1A1A1A', sub: '#5A5250', accent: '#B4475A', family: SERIF, label: '#1A1A1A', labelText: '#FFFFFF' },
+    gadget: { bg: '#14171C', glow: '#22303F', ink: '#F5F7FA', sub: '#AEB8C4', accent: '#4FA3FF', family: GOTHIC, label: '#4FA3FF', labelText: '#0B1220' },
+    living: { bg: '#F3F1EA', glow: '#E2E8DF', ink: '#1E1E1E', sub: '#55595A', accent: '#3E7C6B', family: GOTHIC, label: '#3E7C6B', labelText: '#FFFFFF' }
+  };
+
   var COVERS = {
     // まずコレ：白〜アイボリー、黒の太いゴシック、マスタードのアクセント。「まずコレ」を一番大きく
     must_buy: function (ctx, d) {
@@ -516,6 +525,67 @@
       ctx.fillText(d.cover.sub || '', M, t.bottom + 110);
       drawProducts(ctx, d.images, { x: M - 10, y: Math.max(t.bottom + 190, 720), w: W - M * 2 - 100, h: 1250 - Math.max(t.bottom + 190, 720) }, { tilt: [-0.07, 0.05, -0.03], card: true });
       bearCorner(ctx, d, '#1E1E1E', 180);
+    },
+
+    // 新商品：商品画像が主役の新作特集。上に大きく商品、その下に情報ラベル（NEW・予約受付中・今週発売など、確認できたものだけ）、
+    // 大きなタイトル、ブランド名と発売日。雰囲気はジャンルで変える（ファッション・雑貨／家電・ガジェット／生活雑貨）
+    new_release: function (ctx, d) {
+      var rel = d.release || {};
+      var S = RELEASE_MOODS[rel.mood] || RELEASE_MOODS.living;
+      ctx.fillStyle = S.bg;
+      ctx.fillRect(0, 0, W, H);
+      ctx.font = f(28, 700, LATIN);
+      ctx.fillStyle = S.sub;
+      ctx.fillText(spaced('NEW ARRIVALS'), M, 104);
+      ctx.textAlign = 'right';
+      ctx.font = f(28, 700, GOTHIC);
+      ctx.fillText(K.ACCOUNT.name + 'の新作チェック', W - M, 104);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = S.sub;
+      ctx.fillRect(M, 128, W - M * 2, 2);
+
+      // 主役の商品画像（後ろにやわらかい円）
+      var imgs = (d.images || []).filter(Boolean);
+      var hero = { x: M, y: 160, w: W - M * 2, h: 600 };
+      ctx.fillStyle = S.glow;
+      ctx.beginPath();
+      ctx.ellipse(W / 2, hero.y + hero.h / 2 + 20, 380, 280, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (imgs[0]) drawProducts(ctx, [imgs[0]], { x: hero.x + 60, y: hero.y, w: hero.w - 120, h: hero.h }, { shadow: 'rgba(0,0,0,0.25)' });
+      // ほかの商品も小さく（2〜3個）
+      imgs.slice(1, 3).forEach(function (img, i) {
+        var s = 170;
+        var x = W - M - s - i * (s + 16);
+        var y = hero.y + hero.h - s + 10;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+        K.roundRect(ctx, x, y, s, s, 18);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+        ctx.restore();
+        K.drawContain(ctx, img, x + 12, y + 12, s - 24, s - 24);
+      });
+
+      // 情報ラベル
+      var x = M;
+      var ly = 790;
+      (rel.labels && rel.labels.length ? rel.labels : ['NEW']).slice(0, 4).forEach(function (t) {
+        x += pillText(ctx, t, x, ly, { font: f(32, 800, GOTHIC), fill: S.label, color: S.labelText, h: 60, r: 6, padX: 22 }) + 12;
+      });
+
+      // タイトル
+      var t = drawTitle(ctx, d.cover.title, d.cover.accent, {
+        x: M, y: 950, size: 104, minSize: 64, maxWidth: W - M * 2 - 120, weight: 800, family: S.family, color: S.ink, accentColor: S.accent, lineHeight: 1.22
+      });
+      // ブランド・発売日
+      var info = [rel.brand, rel.dateText].filter(Boolean).join('　｜　') || d.cover.sub || '';
+      if (info) {
+        var fit = K.fitText(ctx, info, { size: 38, minSize: 28, weight: 700, maxWidth: W - M * 2 - 220, maxLines: 1 });
+        ctx.font = f(fit.size, 700, GOTHIC);
+        ctx.fillStyle = S.sub;
+        ctx.fillText(fit.lines[0], M, Math.min(t.bottom + 90, H - 120));
+      }
+      bearCorner(ctx, d, S.sub, 150);
     },
 
     // 買っとけ：カーキ・オリーブ・生成り。実用品カタログのようなチェックリスト。断定は強め、派手にはしない

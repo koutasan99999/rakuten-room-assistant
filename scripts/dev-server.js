@@ -14,6 +14,7 @@ import roomHashtagsHandler from '../api/room-hashtags.js';
 import radarHandler from '../api/radar.js';
 import assetsHandler from '../api/assets.js';
 import seedIdeasHandler from '../api/seed-ideas.js';
+import releaseIdeasHandler from '../api/release-ideas.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -44,7 +45,14 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('楽天ROOMのハッシュタグを決める担当')
+    openai: (body) => body.messages[0].content.includes('新作特集の編集者')
+      ? aiReply({ ideas: [
+        { title: 'このバッグ、予約しないと後悔するかも', angle: '予約', searchGenres: ['同じブランドの新作', '秋の新作バッグ'], why: '予約受付中の新作を主役にする' },
+        { title: '秋の新作、最初に見てほしいのはこれ', angle: '季節', searchGenres: ['秋の新作小物'], why: '季節の新作の入口にする' },
+        { title: '完売確実の新作バッグ', angle: '煽り', searchGenres: ['新作'], why: 'NG確認用' },
+        { title: '今月の新作で、いちばん気になったもの', angle: '編集部のおすすめ', searchGenres: ['新作 雑貨'], why: '個人の目線でまとめる' }
+      ] })
+      : body.messages[0].content.includes('楽天ROOMのハッシュタグを決める担当')
       ? aiReply({ common: [{ tag: '#防災', score: 98 }, { tag: '#防災グッズ', score: 96 }, { tag: '#災害対策', score: 92 }, { tag: '#防災準備', score: 88 }, { tag: '#備蓄', score: 80 }],
         items: Array.from({ length: 8 }, (_, id) => ({ id, tags: [{ tag: '#停電対策', score: 90 }, { tag: '#モバイルバッテリー', score: 85 }, { tag: '#キッチン用品', score: 75 }, { tag: '#プチプラ', score: 60 }] })) })
       : body.messages[0].content.includes('Reel と Story に展開')
@@ -117,6 +125,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/radar') return radarHandler(req, res, env);
   if (url.pathname === '/api/assets') return assetsHandler(req, res, env);
   if (url.pathname === '/api/seed-ideas') return seedIdeasHandler(req, res, env);
+  if (url.pathname === '/api/release-ideas') return releaseIdeasHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

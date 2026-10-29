@@ -21,12 +21,14 @@ export default async function handler(req, res, env = process.env) {
   if (!checkAccess(req, res, env)) return;
 
   const body = await readBody(req);
+  // mode: 'brand' は1つのブランドだけを詳しく探す（フォローの設定は変えない）
+  const brand = body.mode === 'brand' ? str(body.brand, 30) : '';
   const genres = (Array.isArray(body.genres) ? body.genres : []).map((g) => str(g, 30)).filter((g) => findRadarGenre(g)).slice(0, 6);
-  if (!genres.length) return send(res, 400, { error: '見るジャンルを選んでください' });
+  if (!genres.length && !brand) return send(res, 400, { error: '見るジャンルを選んでください' });
   const brands = (Array.isArray(body.brands) ? body.brands : []).map((b) => str(b, 30)).filter(Boolean).slice(0, 5);
   const round = Math.max(0, parseInt(body.round, 10) || 0) % 1000;
 
-  const r = await scanRadar({ genres, brands, round, env, referer: requestReferer(req, env), until: startedAt + 48000 });
+  const r = await scanRadar({ genres, brands: brand ? [brand] : brands, round, brand, env, referer: requestReferer(req, env), until: startedAt + 48000 });
   if (!r.items.length && r.lastError) {
     return send(res, 502, { error: '楽天市場の商品を取得できませんでした。少し時間をおいてもう一度お試しください。', detail: r.lastError.message });
   }

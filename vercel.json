@@ -26,6 +26,9 @@
     },
     "api/room-hashtags.js": {
       "maxDuration": 60
+    },
+    "api/release-ideas.js": {
+      "maxDuration": 60
     }
   }
 }
