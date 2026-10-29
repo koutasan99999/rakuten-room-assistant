@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.2';
+  var APP_VERSION = '2026-10-30.3';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -3687,7 +3687,7 @@
   var modeTabs = document.querySelectorAll('.mode-tab');
   function showMode(mode) {
     Array.prototype.forEach.call(modeTabs, function (t) { t.classList.toggle('active', t.getAttribute('data-mode') === mode); });
-    ['idea', 'cond', 'random', 'radar', 'trend'].forEach(function (m) { var x = document.getElementById('mode-' + m); if (x) x.hidden = m !== mode; });
+    ['idea', 'cond', 'random', 'radar', 'trend', 'coord'].forEach(function (m) { var x = document.getElementById('mode-' + m); if (x) x.hidden = m !== mode; });
     try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
   }
   Array.prototype.forEach.call(modeTabs, function (t) {
@@ -5815,5 +5815,74 @@
   }
 
   if (furusatoEl) renderFurusato();
+
+  // ---- 「コーデを作る」の入口：起点にする服・靴・バッグを、自分で検索して選ぶ ----
+  // （今までは、ファッションの商品カードの「この商品でコーデを作る」からしか始められず、入口が見つけにくかった）
+  var coordEntry = document.getElementById('coord-entry');
+  function renderCoordEntry() {
+    if (!coordEntry) return;
+    coordEntry.innerHTML = '';
+    coordEntry.appendChild(el('p', 'editor-note', '起点にするアイテム（スニーカー・バッグ・アウターなど）を探して選ぶと、AIが相性の良い実在の商品で全身コーデを3パターン提案します。提案のあとは、アイテムの入れ替え・追加・削除が自由にできます。'));
+    var form = el('form', 'plan-search-form');
+    var kw = el('input', 'input');
+    kw.type = 'search';
+    kw.maxLength = 60;
+    kw.placeholder = '例：ニューバランス 1906R、黒 レザー ショルダーバッグ';
+    kw.setAttribute('enterkeyhint', 'search');
+    var btn = el('button', 'btn btn-primary', '検索');
+    btn.type = 'submit';
+    form.appendChild(kw);
+    form.appendChild(btn);
+    coordEntry.appendChild(form);
+    addClear(kw);
+    var quick = el('div', 'radar-chips coord-quick');
+    ['メンズ スニーカー', 'レディース スニーカー', 'ショルダーバッグ', 'ダウンジャケット', 'ニット', 'ワイドパンツ', 'ローファー', 'キャップ'].forEach(function (w) {
+      var b = el('button', 'radar-chip', w);
+      b.type = 'button';
+      b.addEventListener('click', function () { kw.value = w; run(); });
+      quick.appendChild(b);
+    });
+    coordEntry.appendChild(quick);
+    var note = el('p', 'hint', '');
+    coordEntry.appendChild(note);
+    var list = el('div', 'cand-list');
+    coordEntry.appendChild(list);
+    function run() {
+      var q = kw.value.trim();
+      if (q.replace(/\s/g, '').length < 2) { note.textContent = '2文字以上入れてください'; return; }
+      btn.disabled = true;
+      note.textContent = '楽天市場で探しています…（別のアプリを開いても大丈夫です）';
+      list.innerHTML = '';
+      jobCall('related', { axis: 'search', keyword: q, exclude: [], shown: [] }, { label: 'コーデの起点：' + q, genre: 'ファッション' }).then(function (r) {
+        btn.disabled = false;
+        if (r.status !== 200) { note.textContent = r.data.error || '探せませんでした'; return; }
+        var items = r.data.items || [];
+        note.textContent = items.length ? items.length + '件見つかりました。起点にする商品の「この商品でコーデを作る」を押してください。' : '見つかりませんでした。言葉を変えてみてください。';
+        items.forEach(function (it) {
+          var card = el('article', 'cand-card');
+          var top = el('div', 'cand-top');
+          var img = el('img', 'cand-thumb');
+          img.src = it.image || ''; img.alt = ''; img.loading = 'lazy';
+          img.onerror = function () { img.style.visibility = 'hidden'; };
+          top.appendChild(img);
+          var info = el('div', 'cand-info');
+          info.appendChild(el('h3', 'cand-name', String(it.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60)));
+          var meta = el('p', 'cand-meta');
+          meta.appendChild(el('strong', 'cand-price', formatPrice(it.price)));
+          meta.appendChild(el('span', 'cand-shop', it.shop || ''));
+          info.appendChild(meta);
+          top.appendChild(info);
+          card.appendChild(top);
+          var acts = el('div', 'actions');
+          acts.appendChild(coordButton(function () { return { name: it.name, code: it.code, price: it.price, url: it.url, image: it.image, shop: it.shop, brand: it.brand || '', caption: it.caption || '' }; }));
+          if (it.url) { var a = el('a', 'btn btn-secondary', '商品ページを見る'); a.href = it.url; a.target = '_blank'; a.rel = 'noopener'; acts.appendChild(a); }
+          card.appendChild(acts);
+          list.appendChild(card);
+        });
+      });
+    }
+    form.addEventListener('submit', function (e) { e.preventDefault(); kw.blur(); run(); });
+  }
+  renderCoordEntry();
 
 })();
