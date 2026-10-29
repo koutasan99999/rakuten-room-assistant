@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.7';
+  var APP_VERSION = '2026-10-30.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -512,7 +512,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -521,6 +521,9 @@
     manageView.hidden = view !== 'manage';
     discoverView.hidden = view !== 'discover';
     composeView.hidden = view !== 'compose';
+    var jv = document.getElementById('view-jobs');
+    if (jv) jv.hidden = view !== 'jobs';
+    if (view === 'jobs' && typeof renderJobs === 'function') renderJobs();
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
       t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
     });
@@ -1433,8 +1436,8 @@
   window.addEventListener('hashchange', showView);
 
   var buttonLabels = {};
-  var LOADING_DISCOVER = '商品を探しています…<br><span class="sub">AIが選ぶまで10〜50秒ほどかかります</span>';
-  var LOADING_EXPLORE = '商品を探しています…<br><span class="sub">いくつかの方向から探すので、30〜60秒ほどかかります</span>';
+  var LOADING_DISCOVER = '商品を探しています…<br><span class="sub">AIが選ぶまで10〜50秒ほどかかります。別のアプリを開いても大丈夫です（戻ると続きから進み、結果は「検索ジョブ」にも残ります）</span>';
+  var LOADING_EXPLORE = '商品を探しています…<br><span class="sub">いくつかの方向から探すので、30〜60秒ほどかかります。別のアプリを開いても大丈夫です（戻ると続きから進み、結果は「検索ジョブ」にも残ります）</span>';
   function setLoading(on, activeBtn, text) {
     [searchBtn, discoverBtn, ideasBtn].forEach(function (b) {
       if (!buttonLabels[b.id]) buttonLabels[b.id] = b.textContent;
@@ -1453,49 +1456,28 @@
     setLoading(true, btn, loadingHtml || LOADING_DISCOVER);
     loading.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    var controller = window.AbortController ? new AbortController() : null;
-    var timer = setTimeout(function () { if (controller) controller.abort(); }, 75000);
-
-    return fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
-      body: JSON.stringify(body),
-      signal: controller ? controller.signal : undefined
-    })
-      .then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (data) {
-          return { status: res.status, data: data };
-        });
-      })
-      .then(function (r) {
-        if (r.status === 401 && r.data.needPasscode) {
-          var hadPass = !!getPass();
-          var input = window.prompt(hadPass ? '合言葉が違うようです。もう一度入力してください' : '合言葉を入力してください');
-          if (input) {
-            setPass(input.trim());
-            resetBtn.hidden = false;
-            return request(path, body, btn, onSuccess, loadingHtml);
-          }
-          showMessage('合言葉を入力すると使えるようになります。', true);
-          return;
-        }
-        if (r.status !== 200) {
-          showMessage(r.data.error || 'うまく取得できませんでした。もう一度お試しください。', true, r.data.detail);
-          return;
-        }
-        var products = r.data.products || r.data.candidates || [];
-        if (r.data.notice) showMessage(r.data.notice, products.length === 0, r.data.detail);
-        onSuccess(r.data, products);
-      })
-      .catch(function (e) {
-        var timeout = e && e.name === 'AbortError';
-        showMessage(timeout ? '時間がかかりすぎたため中断しました。もう一度お試しください。'
-          : '通信できませんでした。電波の良い場所でもう一度お試しください。', true);
-      })
-      .then(function () {
-        clearTimeout(timer);
-        setLoading(false, btn);
-      });
+    // 検索ジョブとして進める（別のアプリを開いても、戻ると続きから。結果は「検索ジョブ」にも残る）
+    var type = path === 'api/explore' ? 'explore' : 'discover';
+    var info = { label: jobLabelFor(type, body), genre: body.genre || (body.idea && body.idea.genre) || '' };
+    return jobCall(type, body, info).then(function (r) {
+      if (r.status === 401) { showMessage('合言葉を入力すると使えるようになります。', true); return; }
+      if (r.status !== 200) {
+        showMessage(r.data.error || 'うまく取得できませんでした。もう一度お試しください。', true, r.data.detail);
+        return;
+      }
+      var products = r.data.products || r.data.candidates || [];
+      if (r.data.notice || r.data.partialNote) showMessage([r.data.notice, r.data.partialNote].filter(Boolean).join(' '), products.length === 0, r.data.detail);
+      onSuccess(r.data, products);
+    }).then(function () {
+      setLoading(false, btn);
+    });
+  }
+  function jobLabelFor(type, body) {
+    if (type === 'discover') return 'ランダム発掘';
+    if (body.idea) return body.idea.title || '企画から探す';
+    if (body.more) return 'さらに10件探す';
+    if (body.planId) return '最初の10投稿の企画';
+    return [body.free, body.type && body.type !== 'auto' ? body.type : ''].filter(Boolean).join('・') || '条件を指定して探す';
   }
 
   // 楽天やROOMに移って戻ったとき、iPhoneがページを読み込み直しても結果が消えないよう保存しておく
@@ -1723,15 +1705,20 @@
       request('api/explore', body, btn || null, function (data, candidates) {
         if (!candidates.length) return;
         markSeen(candidates, 'shown');
-        var d = {
-          brief: data.brief, title: data.title, typeName: data.typeName, idea: data.idea, plan: data.plan, coverStyle: data.coverStyle,
-          release: body.release || null,
-          angles: data.angles || [], candidates: candidates, view: 'recommend'
-        };
+        var d = exploreView(data, body);
         saveLast('explore', d);
         renderExplore(d);
       }, LOADING_EXPLORE);
     });
+  }
+
+  // 探した結果から、候補の画面の材料を作る（検索ジョブの「結果を見る」でも使う）
+  function exploreView(data, body) {
+    return {
+      brief: data.brief, title: data.title, typeName: data.typeName, idea: data.idea, plan: data.plan, coverStyle: data.coverStyle,
+      release: (body && body.release) || null,
+      angles: data.angles || [], candidates: data.candidates || [], view: 'recommend'
+    };
   }
 
   var VIEWS = [
@@ -2401,12 +2388,12 @@
       var picks = syncOrder(d);
       var shown = S.items.concat(d.candidates).slice(-280).map(function (x) { return { code: x.code || '', name: String(x.name).slice(0, 80), url: x.url || '' }; });
       setSearching(true);
-      postJson('api/search', {
+      jobCall('related', {
         axis: S.axis, keyword: S.keyword, reference: refBody, cursor: more ? S.cursor : null,
         minPrice: S.axis === 'search' ? S.minPrice : '', maxPrice: S.axis === 'search' ? S.maxPrice : '', sort: S.axis === 'search' ? S.sort : '',
         exclude: picks.map(function (c) { return { code: c.code || '', name: String(c.name).slice(0, 100), url: c.url || '' }; }),
         shown: shown
-      }).then(function (r) {
+      }, { label: (S.axis === 'search' ? '検索：' + S.keyword : (AXIS_SHORT[S.axis] || '関連商品') + '（' + String((ref && ref.name) || '').slice(0, 16) + '）') + (more ? '・続き' : ''), genre: edit.genre || '' }).then(function (r) {
         if (r.status !== 200) {
           S.notice = (r.data && r.data.error) || '検索できませんでした。もう一度お試しください。';
         } else {
@@ -2560,11 +2547,11 @@
         note: [d.brief.note, edit.direction && '企画の方向性（最優先）: ' + edit.direction].filter(Boolean).join('\n').slice(-400)
       });
       seenForSearch().then(function (seen) {
-        return postJson('api/explore', {
+        return jobCall('explore_more', {
           more: { brief: brief, angles: d.angles },
           exclude: { codes: d.candidates.map(function (c) { return c.code; }).filter(Boolean), names: d.candidates.map(function (c) { return c.name; }) },
           seen: seen
-        });
+        }, { label: 'さらに10件：' + String(d.title || '').slice(0, 24), genre: (d.brief && d.brief.genre) || '' });
       }).then(function (r) {
         var added = (r.data && r.data.candidates) || [];
         if (r.status !== 200 || !added.length) {
@@ -3062,11 +3049,11 @@
       snote.textContent = '楽天市場で探しています…';
       var exclude = [h];
       view.looks.forEach(function (l) { l.items.forEach(function (it) { if (it.product) exclude.push(it.product); }); });
-      postJson('api/search', {
+      jobCall('related', {
         axis: 'search', keyword: q, maxPrice: S.maxPrice || undefined,
         exclude: exclude.slice(0, 40).map(function (p) { return { code: p.code, name: p.name, url: p.url }; }),
         shown: S.items.map(function (p) { return { code: p.code, name: p.name, url: p.url }; })
-      }).then(function (r) {
+      }, { label: 'コーデの検索：' + q + (more ? '・続き' : ''), genre: 'ファッション' }).then(function (r) {
         if (r.status !== 200) { snote.textContent = (r.data && r.data.error) || '検索できませんでした。'; return; }
         var got = r.data.items || [];
         S.items = S.items.concat(got);
@@ -3437,21 +3424,13 @@
       t.innerHTML = 'コーデを考えて、楽天で実在の商品を探しています…<br><span class="sub">30〜60秒ほどかかります</span>';
       wait.appendChild(t);
       body.insertBefore(wait, body.firstChild);
-      postJson('api/coord', { hero: h, conditions: c }).then(function (r) {
+      persist(); // 画面を閉じても、終わったときにこのコーデへ結果を入れられるように保存しておく
+      window.CoordStore.save(view);
+      jobCall('coord', { hero: h, conditions: c }, { label: 'コーデ：' + coordTitleOf(view), genre: 'ファッション', meta: { coordId: view.id } }).then(function (r) {
         if (r.status !== 200) {
           view.notice = (r.data && r.data.error) || 'コーデを作れませんでした。もう一度お試しください。';
         } else {
-          var fresh = r.data.looks || [];
-          // 手で編集したコーデは残し、編集していない枠だけを新しい提案で埋める（最大3つ。編集したものが多ければそれ以上も残す）
-          var out = view.looks.map(function (l) { return l.edited ? l : null; });
-          var k = 0;
-          for (var i = 0; i < out.length; i++) if (!out[i] && fresh[k]) out[i] = fresh[k++];
-          while (out.filter(Boolean).length < 3 && fresh[k]) out.push(fresh[k++]);
-          view.looks = out.filter(Boolean).map(function (l, n) { if (!l.edited) l.id = 'look' + Date.now().toString(36) + n; return l; });
-          view.heroSlot = r.data.heroSlot;
-          view.gender = r.data.gender;
-          view.aiLooks = JSON.parse(JSON.stringify(fresh)); // AIの提案内容（手で変えた内容と見比べられるように残す）
-          view.notice = r.data.notice || '';
+          mergeCoordResult(view, r.data);
           form.open = false;
         }
         persist();
@@ -3670,6 +3649,21 @@
   }
 
   renderCoordSaved();
+
+  // コーデの提案を入れる：手で編集したコーデは残し、編集していない枠だけを新しい提案で埋める（最大3つ。編集したものが多ければそれ以上も残す）
+  function mergeCoordResult(view, data) {
+    var fresh = data.looks || [];
+    var out = view.looks.map(function (l) { return l.edited ? l : null; });
+    var k = 0;
+    for (var i = 0; i < out.length; i++) if (!out[i] && fresh[k]) out[i] = fresh[k++];
+    while (out.filter(Boolean).length < 3 && fresh[k]) out.push(fresh[k++]);
+    view.looks = out.filter(Boolean).map(function (l, n) { if (!l.edited) l.id = 'look' + Date.now().toString(36) + n; return l; });
+    view.heroSlot = data.heroSlot;
+    view.gender = data.gender;
+    view.aiLooks = JSON.parse(JSON.stringify(fresh)); // AIの提案内容（手で変えた内容と見比べられるように残す）
+    view.notice = [data.notice, data.partialNote].filter(Boolean).join(' ');
+    view.updatedAt = Date.now();
+  }
 
   function coordButton(getProduct) {
     var b = el('button', 'btn btn-coord', 'この商品でコーデを作る');
@@ -4504,33 +4498,29 @@
     // フォロー中のブランドのうち、しばらく確認していないものだけを数個（全部を毎回は探さない）
     var bs = brandState();
     var scanBrands = window.BrandFollow.pickForScan(radarMeta.genres, bs);
-    postJson('api/radar', { genres: genres, brands: scanBrands, round: s.round }).then(function (r) {
-      if (r.status !== 200) {
-        radarMessage.textContent = r.data.error || 'うまく取得できませんでした。もう一度お試しください。';
-        radarMessage.className = 'message error';
-        radarMessage.hidden = false;
-        return;
-      }
-      window.BrandFollow.markChecked(bs, scanBrands);
-      return Radar.merge(r.data.items || []).then(function (res) {
-        var next = radarSettings();
-        next.cursor = (s.cursor + genres.length) % Math.max(1, n);
-        next.round = s.round + 1;
-        next.lastScanAt = Date.now();
-        Radar.saveSettings(next);
-        showRadarLast();
-        var labels = genres.map(function (id) { var g = radarMeta.genres.filter(function (x) { return x.id === id; })[0]; return g ? g.label : id; });
-        radarMessage.textContent = (r.data.notice || (r.data.items.length + '件見つかりました（新しく見つけた商品 ' + res.added + '件）')) +
-          (res.changed ? '。気になる商品のうち' + res.changed + '件に変化があります' : '') + '。今回見たジャンル：' + labels.join('・');
-        radarMessage.className = 'message';
-        radarMessage.hidden = false;
-        renderRadarDash();
-        renderRadarList();
-      });
-    }, function () {
-      radarMessage.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
-      radarMessage.className = 'message error';
+    var labels = genres.map(function (id) { var g = radarMeta.genres.filter(function (x) { return x.id === id; })[0]; return g ? g.label : id; });
+    function msg(text, error) {
+      radarMessage.textContent = text;
+      radarMessage.className = 'message' + (error ? ' error' : '');
       radarMessage.hidden = false;
+    }
+    // 検索語を決めてから（楽天は呼ばない）、小さなタスクに分けた検索ジョブで探す
+    postJson('api/radar', { mode: 'plan', genres: genres, brands: scanBrands, round: s.round }).then(function (p) {
+      if (p.status !== 200) throw new Error((p.data && p.data.error) || 'うまく始められませんでした');
+      return Jobs.start('radar', { queries: p.data.queries, brands: scanBrands, genres: genres }, {
+        label: 'レーダー更新：' + labels.join('・'), genre: labels.join('・'), meta: { cursor: s.cursor, round: s.round }
+      });
+    }).then(function (job) {
+      msg('探しています。別のアプリを開いても大丈夫です（戻ると続きから進みます。結果は「検索ジョブ」にも残ります）。', false);
+      return waitJob(job).then(function (j) {
+        var r = jobResponse(j);
+        if (r.status !== 200) { msg(r.data.error || 'うまく取得できませんでした。もう一度お試しください。', true); return; }
+        var m = j.meta || {};
+        msg(((r.data.items || []).length ? r.data.items.length + '件見つかりました（新しく見つけた商品 ' + (m.added || 0) + '件）' : '今回は新作・予約の商品が見つかりませんでした。ジャンルを変えて更新してみてください') +
+          (m.changed ? '。気になる商品のうち' + m.changed + '件に変化があります' : '') + '。今回見たジャンル：' + labels.join('・') + (r.data.partialNote ? '。' + r.data.partialNote : ''), false);
+      });
+    }).catch(function (e) {
+      msg(e && e.message ? e.message : '通信できませんでした。電波の良い場所でもう一度お試しください。', true);
     }).then(function () {
       radarScanBtn.disabled = false;
       radarLoading.hidden = true;
@@ -4679,18 +4669,19 @@
     var name = bdCurrent;
     bdSearchBtn.disabled = true;
     bdSearchBtn.textContent = '探しています…（10〜20秒）';
-    postJson('api/radar', { mode: 'brand', brand: name }).then(function (r) {
-      if (r.status !== 200) { bdNote.textContent = r.data.error || '探せませんでした。'; return; }
-      // 確認した日時は残す（キャッシュ）。フォローの設定は変えない
-      window.BrandFollow.markChecked(brandState(), [name]);
-      return Radar.merge(r.data.items || []).then(function (res) {
-        bdNote.textContent = (r.data.items || []).length + '件見つかりました（新しく見つけた商品 ' + res.added + '件）';
-        drawBrandDetail();
-        renderRadarDash();
-        renderRadarList();
+    postJson('api/radar', { mode: 'plan', brand: name }).then(function (p) {
+      if (p.status !== 200) throw new Error((p.data && p.data.error) || '探せませんでした。');
+      return Jobs.start('brand', { queries: p.data.queries, brands: [name], brand: name }, { label: name + 'の新作探し', genre: name });
+    }).then(function (job) {
+      bdNote.textContent = '探しています。別のアプリを開いても大丈夫です（戻ると続きから進みます）。';
+      return waitJob(job).then(function (j) {
+        var r = jobResponse(j);
+        if (r.status !== 200) { bdNote.textContent = r.data.error || '探せませんでした。'; return; }
+        bdNote.textContent = (r.data.items || []).length + '件見つかりました（新しく見つけた商品 ' + ((j.meta || {}).added || 0) + '件）' + (r.data.partialNote ? '。' + r.data.partialNote : '');
+        if (bdCurrent === name) drawBrandDetail();
       });
-    }, function () {
-      bdNote.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+    }).catch(function (e) {
+      bdNote.textContent = e && e.message ? e.message : '通信できませんでした。電波の良い場所でもう一度お試しください。';
     }).then(function () {
       bdSearchBtn.disabled = false;
       bdSearchBtn.textContent = 'もう一度探す';
@@ -4882,4 +4873,255 @@
     resetBtn.hidden = true;
     showToast('合言葉を消しました');
   });
+
+  // ---- 検索ジョブ（js/search-jobs.js）：検索を画面から切り離し、このiPhoneに記録しながら進める ----
+  // 別のアプリを開いて通信が切れても、アプリに戻ると続きから自動で進む。再読み込みしても消えない。
+  var Jobs = window.SearchJobs;
+  Jobs.passcode = getPass;
+  function singleTask(path) { return function (p) { return [{ path: path, body: p.body }]; }; }
+  Jobs.register('discover', { tasks: singleTask('api/discover'), count: function (r) { return (r.products || []).length; } });
+  Jobs.register('explore', { tasks: singleTask('api/explore'), count: function (r) { return (r.candidates || []).length; } });
+  Jobs.register('explore_more', { tasks: singleTask('api/explore'), count: function (r) { return (r.candidates || []).length; } });
+  Jobs.register('related', { tasks: singleTask('api/search'), count: function (r) { return (r.items || []).length; } });
+  Jobs.register('coord', { tasks: singleTask('api/coord'), count: function (r) { return (r.looks || []).reduce(function (s, l) { return s + l.items.filter(function (x) { return x.product; }).length; }, 0); } });
+  // 新作レーダー・ブランドの新作探し：検索語を2つずつの小さなタスクに分ける（一部が失敗しても、取れた分は使える）
+  function radarTasks(p) {
+    var out = [];
+    for (var i = 0; i < p.queries.length; i += 2) {
+      var qs = p.queries.slice(i, i + 2);
+      out.push({ path: 'api/radar', body: { mode: 'part', queries: qs, brands: p.brands || [] }, label: qs.map(function (q) { return q.keyword; }).join('・') });
+    }
+    return out;
+  }
+  function radarMerge(results) {
+    var items = [], scanned = [], ids = {};
+    results.forEach(function (r) {
+      (r.items || []).forEach(function (it) { if (!ids[it.productId]) { ids[it.productId] = true; items.push(it); } });
+      scanned = scanned.concat(r.scanned || []);
+    });
+    return { items: items, scanned: scanned };
+  }
+  Jobs.register('radar', { tasks: radarTasks, merge: radarMerge, count: function (r) { return (r.items || []).length; } });
+  Jobs.register('brand', { tasks: radarTasks, merge: radarMerge, count: function (r) { return (r.items || []).length; } });
+
+  var JOB_TYPE_JA = { discover: 'ランダム発掘', explore: 'テーマ別の商品検索', explore_more: 'テーマ別の商品検索（さらに10件）', radar: '新作・予約・再販レーダー', brand: 'ブランドの新作探し', related: '関連商品・商品検索', coord: 'コーデ用の商品検索' };
+
+  // ジョブの結果を、今までの postJson と同じ形（{ status, data }）にする
+  function jobResponse(job) {
+    if (job.status === 'completed' || job.status === 'partial') {
+      var d = Object.assign({}, job.result || {});
+      if (job.status === 'partial') d.partialNote = jobPartialText(job);
+      return { status: 200, data: d, job: job };
+    }
+    var needPass = job.tasks.some(function (t) { return t.code === 401; });
+    return { status: job.status === 'cancelled' ? 499 : needPass ? 401 : 502, data: { error: job.status === 'cancelled' ? '検索をキャンセルしました' : job.error || '検索できませんでした。もう一度お試しください。' }, job: job };
+  }
+  function jobPartialText(job) {
+    var ok = job.tasks.filter(function (t) { return t.state === 'done'; }).length;
+    return (job.count != null ? job.count + '件取得' : ok + '/' + job.tasks.length + '件の検索が成功') + '・一部の検索に失敗しました（「検索ジョブ」から失敗した部分だけやり直せます）';
+  }
+  function waitJob(job) { return new Promise(function (resolve) { Jobs.whenDone(job, resolve); }); }
+  // 検索ジョブとして呼ぶ。合言葉が必要なら1度だけ聞いて、失敗した部分をやり直す
+  function jobCall(type, body, info) {
+    return Jobs.start(type, { body: body }, info).then(function (job) {
+      return waitJob(job).then(function (j) {
+        var r = jobResponse(j);
+        if (r.status !== 401) return r;
+        var input = window.prompt('合言葉を入力してください');
+        if (!input) return r;
+        setPass(input.trim());
+        resetBtn.hidden = false;
+        return Jobs.retryFailed(j.id).then(waitJob).then(jobResponse);
+      });
+    }, function (e) {
+      return { status: 429, data: { error: e.message } };
+    });
+  }
+
+  // 終わったときに、画面を開いていなくても必要な保存をする（レーダーの商品を貯める・発掘の結果を残す など）
+  // hadWaiter: 検索を始めた画面がまだ開いている（その画面が表示と保存をする）
+  Jobs.notify = function (job, hadWaiter) {
+    drawJobsBadge();
+    if (location.hash.indexOf('#jobs') === 0) renderJobs();
+    var ok = job.status === 'completed' || job.status === 'partial';
+    if (!hadWaiter && job.status !== 'cancelled') showToast('「' + job.label + '」の検索が' + (ok ? '終わりました' : '失敗しました') + '（検索ジョブで確認できます）');
+    if (!ok || !job.result) return;
+    var r = job.result;
+    if (job.type === 'radar' || job.type === 'brand') {
+      return Radar.merge(r.items || []).then(function (res) {
+        job.meta = Object.assign({}, job.meta, { added: res.added, changed: res.changed });
+        if (job.type === 'brand') window.BrandFollow.markChecked(brandState(), [job.params.brand]);
+        if (job.type === 'radar') {
+          window.BrandFollow.markChecked(brandState(), job.params.brands || []);
+          var s = radarSettings();
+          var m = job.meta || {};
+          s.cursor = ((m.cursor || 0) + (job.params.genres || []).length) % Math.max(1, s.genres.length);
+          s.round = (m.round || 0) + 1;
+          s.lastScanAt = Date.now();
+          Radar.saveSettings(s);
+          showRadarLast();
+        }
+        renderRadarDash();
+        renderRadarList();
+      });
+    }
+    if (hadWaiter) return; // 画面が開いていれば、その画面が保存と表示をする
+    if (job.type === 'discover' && (r.products || []).length) {
+      recordStat(r.genreId, 'shown');
+      rememberProducts(r.products);
+      saveLast('discover', r);
+    }
+    if (job.type === 'explore' && (r.candidates || []).length) {
+      markSeen(r.candidates, 'shown');
+      saveLast('explore', exploreView(r, job.params.body));
+    }
+    if (job.type === 'coord' && job.meta && job.meta.coordId) {
+      var v = window.CoordStore.get(job.meta.coordId);
+      if (v) { mergeCoordResult(v, r); window.CoordStore.save(v); saveLast('coord', v); renderCoordSaved(); }
+    }
+  };
+
+  // 検索ジョブの画面
+  var jobsView = document.getElementById('view-jobs');
+  var jobsList = document.getElementById('jobs-list');
+  var jobsCount = document.getElementById('jobs-count');
+  function drawJobsBadge() {
+    Jobs.list().then(function (list) {
+      var active = list.filter(function (j) { return j.status === 'queued' || j.status === 'running'; }).length;
+      var unseen = list.filter(function (j) { return !j.seen && j.finishedAt && j.status !== 'cancelled'; }).length;
+      jobsCount.textContent = active ? '検索中' + active : unseen ? '新着' + unseen : '';
+      jobsCount.classList.toggle('busy', !!active);
+    });
+  }
+  function timeText(t) {
+    if (!t) return '';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  // 進み具合：正確な割合は分からないので、％は出さない。終わった検索の数と、経過時間だけ
+  function jobProgress(j) {
+    var done = j.tasks.filter(function (t) { return t.state === 'done'; }).length;
+    var failed = j.tasks.filter(function (t) { return t.state === 'failed'; }).length;
+    var interrupted = j.tasks.some(function (t) { return t.state === 'pending' && t.interruptions; });
+    var retry = j.tasks.filter(function (t) { return t.state === 'pending' && t.retryAt > Date.now(); })[0];
+    var parts = [];
+    if (j.tasks.length > 1) parts.push('検索 ' + done + '/' + j.tasks.length + ' 件が終了' + (failed ? '（失敗 ' + failed + '）' : ''));
+    if (j.status === 'running' && j.startedAt) parts.push('経過 ' + Math.round((Date.now() - j.startedAt) / 1000) + '秒');
+    if (retry) parts.push('一時的なエラーのため、少し待ってやり直します');
+    else if (interrupted) parts.push('通信が切れたので、続きから再開しています');
+    return parts.join('｜');
+  }
+  function renderJobs() {
+    if (!jobsList) return;
+    Jobs.list().then(function (list) {
+      jobsList.innerHTML = '';
+      if (!list.length) { jobsList.appendChild(el('p', 'manage-empty', 'まだ検索ジョブはありません。商品発掘・新作レーダー・企画やコーデの検索を始めると、ここに記録されます。')); return; }
+      list.forEach(function (j) {
+        var card = el('article', 'card job-card job-' + j.status);
+        var head = el('div', 'chips');
+        head.appendChild(el('span', 'job-state ' + j.status, Jobs.STATUS_JA[j.status] || j.status));
+        head.appendChild(el('span', 'tag', JOB_TYPE_JA[j.type] || j.type));
+        if (!j.seen && j.finishedAt && j.status !== 'cancelled') head.appendChild(el('span', 'seen', '未確認'));
+        card.appendChild(head);
+        card.appendChild(el('h3', 'cand-name', j.label));
+        var rows = [
+          ['ジャンル', j.genre],
+          ['開始', timeText(j.createdAt)],
+          ['取得した商品', j.count != null ? j.count + '件' : (j.status === 'running' || j.status === 'queued' ? '検索中' : '')],
+          ['完了', timeText(j.finishedAt)],
+          ['進み具合', j.status === 'running' || j.status === 'queued' ? jobProgress(j) : ''],
+          ['エラー', j.error]
+        ].filter(function (x) { return x[1]; });
+        var dl = el('dl', 'radar-facts');
+        rows.forEach(function (x) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); });
+        card.appendChild(dl);
+        if (j.status === 'partial') card.appendChild(el('p', 'hint', jobPartialText(j)));
+        var acts = el('div', 'actions');
+        if ((j.status === 'completed' || j.status === 'partial') && j.result) {
+          var open = el('button', 'btn btn-primary', '結果を見る');
+          open.type = 'button';
+          open.addEventListener('click', function () { openJobResult(j); });
+          acts.appendChild(open);
+        }
+        if (j.status === 'partial' || j.status === 'failed') {
+          var retry = el('button', 'btn btn-secondary', '失敗した部分だけやり直す');
+          retry.type = 'button';
+          retry.addEventListener('click', function () { Jobs.retryFailed(j.id).then(function () { renderJobs(); drawJobsBadge(); }); });
+          acts.appendChild(retry);
+        }
+        if (j.status === 'queued' || j.status === 'running') {
+          var cancel = el('button', 'btn btn-secondary', 'キャンセル');
+          cancel.type = 'button';
+          cancel.addEventListener('click', function () { Jobs.cancel(j.id).then(renderJobs); });
+          acts.appendChild(cancel);
+        } else {
+          var del = el('button', 'link-btn', '記録を削除');
+          del.type = 'button';
+          del.addEventListener('click', function () { Jobs.remove(j.id).then(function () { renderJobs(); drawJobsBadge(); }); });
+          acts.appendChild(del);
+        }
+        card.appendChild(acts);
+        var box = el('div', 'job-result');
+        card.appendChild(box);
+        card.jobResultBox = box;
+        jobsList.appendChild(card);
+      });
+    });
+  }
+  // 結果を見る：それぞれの画面に、保存してある結果をそのまま出す（検索し直さない）
+  function openJobResult(j) {
+    Jobs.markSeen(j.id).then(drawJobsBadge);
+    var r = j.result;
+    if (j.type === 'discover') {
+      location.hash = '#discover';
+      showMode('random');
+      message.hidden = true; results.innerHTML = '';
+      saveLast('discover', r);
+      renderDiscover(r);
+    } else if (j.type === 'explore') {
+      location.hash = '#discover';
+      message.hidden = true; results.innerHTML = '';
+      var d = exploreView(r, j.params.body);
+      saveLast('explore', d);
+      renderExplore(d);
+    } else if (j.type === 'radar' || j.type === 'brand') {
+      location.hash = '#discover';
+      showMode('radar');
+      if (j.type === 'brand') showBrandDetail(j.params.brand, false);
+      else { renderRadarList(); document.getElementById('radar-list').scrollIntoView({ behavior: 'smooth' }); }
+    } else if (j.type === 'coord' && j.meta && window.CoordStore.get(j.meta.coordId)) {
+      location.hash = '#discover';
+      message.hidden = true; results.innerHTML = '';
+      renderCoord(window.CoordStore.get(j.meta.coordId));
+    } else {
+      // 関連商品・商品検索：見つけた商品をこの画面で一覧にする
+      var card = Array.prototype.filter.call(jobsList.children, function (c) { return c.jobResultBox && c.querySelector('.cand-name').textContent === j.label; })[0];
+      var box = card ? card.jobResultBox : jobsList;
+      box.innerHTML = '';
+      (r.items || r.candidates || r.products || []).forEach(function (it) {
+        var row = el('div', 'coord-item');
+        var img = el('img', 'coord-thumb'); img.src = it.image || ''; img.alt = ''; row.appendChild(img);
+        var mid = el('div', 'coord-item-mid');
+        mid.appendChild(el('p', 'coord-name', it.name));
+        mid.appendChild(el('p', 'coord-meta', formatPrice(it.price) + (it.shop ? '　' + it.shop : '')));
+        if (it.url) { var a = el('a', 'link-btn', '商品ページを見る'); a.href = it.url; a.target = '_blank'; a.rel = 'noopener'; mid.appendChild(a); }
+        row.appendChild(mid);
+        box.appendChild(row);
+      });
+      return;
+    }
+    window.scrollTo({ top: 0 });
+  }
+  Jobs.on(function () {
+    drawJobsBadge();
+    if (location.hash.indexOf('#jobs') === 0) {
+      clearTimeout(Jobs._redraw);
+      Jobs._redraw = setTimeout(renderJobs, 150);
+    }
+  });
+  // 開いたときに、終わっていない検索を続きから進める
+  Jobs.resume();
+  drawJobsBadge();
+  setInterval(function () { if (location.hash.indexOf('#jobs') === 0 && !document.hidden) renderJobs(); }, 5000);
+
 })();
