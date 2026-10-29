@@ -156,7 +156,9 @@ test('ハッシュタグ：テーマごとに中身が変わり、15〜25個・�
     assert.equal(new Set(tags).size, tags.length);
     assert.ok(tags.includes('#ganka_kuma') && tags.includes('#眼科医くま'));
   }
-  for (const t of ['#防災', '#防災グッズ', '#防災リュック', '#備蓄', '#まずこれ', '#何を買えばいい', '#防災備蓄', '#便利グッズ']) assert.ok(bousai.includes(t), t);
+  for (const t of ['#防災', '#防災グッズ', '#防災リュック', '#備蓄', '#まずこれ', '#何を買えばいい', '#防災備蓄', '#災害対策', '#防災準備']) assert.ok(bousai.includes(t), t);
+  // 防災は「便利グッズ」ではなく防災で探す人に向けたタグ（#便利グッズ #生活便利グッズ は付けない）
+  assert.ok(!bousai.includes('#便利グッズ') && !bousai.includes('#生活便利グッズ'));
   for (const t of ['#香水', '#香水初心者', '#フレグランス', '#香水選び']) assert.ok(kosui.includes(t), t);
   assert.ok(!kosui.includes('#防災') && !kosui.includes('#便利グッズ'));
   // AIのタグが多すぎても25個まで、アカウントのタグは残る

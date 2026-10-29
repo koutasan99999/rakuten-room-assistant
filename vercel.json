@@ -23,6 +23,9 @@
     },
     "api/radar.js": {
       "maxDuration": 60
+    },
+    "api/room-hashtags.js": {
+      "maxDuration": 60
     }
   }
 }

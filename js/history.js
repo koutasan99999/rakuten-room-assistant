@@ -11,6 +11,7 @@
 //   series: 表紙のシリーズ（must_buy など）、criteria: 2枚目に書いた選び方の基準
 //   carouselDone / reelDone / storyDone: カルーセル・Reel・Story を作ったか
 //   reel: { title, hook, cta, seconds, scenes, narration }、story: { hook, hookSub, title, points, text, sub }
+//   roomTagsCommon: 楽天ROOM用ハッシュタグの企画共通タグ（商品ごとのタグは products[].roomTags）
 //   metrics: 将来の記録用 { reach, saves, shares, profileVisits, roomClicks, sales }（今は空）
 //   createdAt, updatedAt
 // }
@@ -34,7 +35,7 @@
   }
 
   var FIELDS = ['title', 'topic', 'subtitle', 'genre', 'postType', 'target', 'priceBand', 'brands', 'products', 'status', 'collectionName', 'collectionDone', 'roomDone',
-    'series', 'criteria', 'carouselDone', 'reelDone', 'storyDone', 'reel', 'story', 'metrics'];
+    'series', 'criteria', 'carouselDone', 'reelDone', 'storyDone', 'reel', 'story', 'metrics', 'roomTagsCommon'];
 
   // 楽天ROOMのコレクション名の提案（Instagramのテーマとそろえて、ROOM内で迷わないように）
   function collectionNameFor(topic) {
