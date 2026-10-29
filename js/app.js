@@ -2738,14 +2738,101 @@
     return row;
   }
 
+  // 種類（パンツ・バッグ…）から枠を決める（サーバーの lib/coord.js の slotOf と同じ考え方）
+  var COORD_SLOT_RULES = [
+    ['shoes', '靴', /スニーカー|シューズ|ブーツ|ローファー|サンダル|パンプス|スリッポン|革靴|靴(?!下)/],
+    ['bag', 'バッグ', /バッグ|リュック|バックパック|トート|ショルダー|サコッシュ|ポーチ|ボストン/],
+    ['onepiece', 'ワンピース', /ワンピース|オールインワン|サロペット/],
+    ['outer', 'アウター', /ジャケット|コート|ダウン|ブルゾン|マウンテンパーカー|フリース|アウター/],
+    ['bottoms', 'ボトムス', /パンツ|ジーンズ|デニム|スラックス?|チノ|スカート|ショーツ/],
+    ['tops', 'トップス', /Tシャツ|ロンT|パーカー|スウェット|トレーナー|ニット|カーディガン|シャツ|ブラウス|ベスト|トップス|カットソー/],
+    ['hat', '帽子', /キャップ|ニット帽|ビーニー|ハット|帽子/],
+    ['accessory', 'アクセサリー', /ネックレス|ピアス|イヤリング|リング|ブレスレット|腕時計|時計|サングラス|メガネ|眼鏡|マフラー|ストール|手袋|ソックス|靴下|ベルト|財布/]
+  ];
+  function coordSlotOf(name) {
+    var s = String(name || '').normalize('NFKC');
+    for (var i = 0; i < COORD_SLOT_RULES.length; i++) {
+      var m = s.match(COORD_SLOT_RULES[i][2]);
+      if (m) return { slot: COORD_SLOT_RULES[i][0], slotLabel: COORD_SLOT_RULES[i][1], kind: m[0] };
+    }
+    return { slot: 'accessory', slotLabel: 'アイテム', kind: 'アイテム' };
+  }
+  function coordTotal(view, look) {
+    return (view.heroProduct.price || 0) + look.items.reduce(function (s, it) { return s + (it.product ? it.product.price || 0 : 0); }, 0);
+  }
+  function coordTitleOf(view) {
+    var h = view.heroProduct;
+    return view.title || ((h.brand ? h.brand + 'の' : '') + coordSlotOf(h.name).kind + 'で作るコーデ');
+  }
+
+  // 保存したコーデの一覧（商品発掘の画面の上）。開くと、続きから編集できる
+  var coordSavedEl = document.getElementById('coord-saved');
+  function renderCoordSaved() {
+    if (!coordSavedEl || !window.CoordStore) return;
+    var list = window.CoordStore.list();
+    coordSavedEl.innerHTML = '';
+    coordSavedEl.hidden = !list.length;
+    if (!list.length) return;
+    var box = el('details', 'plan-drafts-box');
+    box.appendChild(el('summary', null, '保存したコーデ（' + list.length + '）'));
+    list.forEach(function (v) {
+      var row = el('div', 'plan-draft-row');
+      var open = el('button', 'plan-draft-open');
+      open.type = 'button';
+      open.appendChild(el('b', null, coordTitleOf(v)));
+      open.appendChild(el('small', null, (v.looks || []).length + 'パターン｜' + new Date(v.updatedAt || v.createdAt).toLocaleDateString('ja-JP') + (v.igStatus === 'posted' ? '｜Instagram投稿済み' : '')));
+      open.addEventListener('click', function () {
+        var x = window.CoordStore.get(v.id);
+        if (!x) return;
+        message.hidden = true;
+        genreEl.hidden = true;
+        results.innerHTML = '';
+        saveLast('coord', x);
+        renderCoord(x);
+        window.scrollTo({ top: results.offsetTop - 8, behavior: 'smooth' });
+      });
+      var del = el('button', 'link-btn', '削除');
+      del.type = 'button';
+      del.addEventListener('click', function () {
+        if (!window.confirm('「' + coordTitleOf(v) + '」を削除しますか？')) return;
+        window.CoordStore.remove(v.id);
+        renderCoordSaved();
+      });
+      row.appendChild(open);
+      row.appendChild(del);
+      box.appendChild(row);
+    });
+    coordSavedEl.appendChild(box);
+  }
+
   function renderCoord(view) {
     var c = view.conditions;
     var h = view.heroProduct;
+    view.title = view.title || '';
+    view.igStatus = view.igStatus || 'none';
+    // 編集の保存：画面の続き（再読み込み用）と、保存したコーデの両方に入れる（3パターンを作ったあとは自動で保存）
+    function persist() {
+      view.updatedAt = Date.now();
+      saveLast('coord', view);
+      if (view.looks.length || view.title) { window.CoordStore.save(view); renderCoordSaved(); }
+    }
+    function markEdited(look) { look.edited = true; }
+
     var head = el('article', 'card curation-head');
     head.appendChild(el('p', 'type-chip', 'AIコーデスタジオ'));
-    head.appendChild(el('h2', 'curation-title', 'この商品でコーデを作る'));
+    var tf = el('label', 'field');
+    tf.appendChild(el('span', 'field-label', 'コーデ名（企画タイトル）'));
+    var titleIn = el('input', 'input plan-title-input');
+    titleIn.type = 'text';
+    titleIn.maxLength = 40;
+    titleIn.placeholder = coordTitleOf({ heroProduct: h });
+    titleIn.value = view.title;
+    titleIn.addEventListener('input', function () { view.title = titleIn.value.trim(); persist(); });
+    tf.appendChild(titleIn);
+    head.appendChild(tf);
+    addClear(titleIn);
     head.appendChild(coordProductRow(h, '起点のアイテム', { hero: true }));
-    head.appendChild(el('p', 'hint', 'AIが考えるのはコーデの方向性と探す言葉だけです。商品はすべて楽天市場で実際に売られているものから探します。'));
+    head.appendChild(el('p', 'hint', 'AIが考えるのはコーデの方向性と探す言葉だけです。商品はすべて楽天市場で実際に売られているものから探します。入れた商品は、あなたが変えない限りAIが勝手に変えることはありません。'));
     results.appendChild(head);
 
     // 条件（すべて空欄でも、AIがおまかせで提案する）
@@ -2763,7 +2850,7 @@
         s.appendChild(opt);
       });
       s.value = c[key];
-      s.addEventListener('change', function () { c[key] = s.value; saveLast('coord', view); });
+      s.addEventListener('change', function () { c[key] = s.value; persist(); });
       f.appendChild(s);
       grid.appendChild(f);
     }
@@ -2775,7 +2862,7 @@
       i.maxLength = 60;
       i.placeholder = placeholder;
       i.value = c[key] || '';
-      i.addEventListener('input', function () { c[key] = i.value.trim(); saveLast('coord', view); });
+      i.addEventListener('input', function () { c[key] = i.value.trim(); persist(); });
       f.appendChild(i);
       grid.appendChild(f);
     }
@@ -2789,15 +2876,203 @@
     txt('避けたいブランド', 'avoidBrands', '例：ロゴが大きいブランド名');
     txt('色の好み', 'colors', '例：黒・グレー中心、差し色なし');
     form.appendChild(grid);
-    var go = el('button', 'btn btn-primary', view.looks.length ? 'この条件で3パターンを作り直す' : 'コーデを3パターン提案してもらう');
+    var go = el('button', 'btn btn-primary', '');
     go.type = 'button';
     form.appendChild(go);
-    if (view.looks.length) form.appendChild(el('p', 'hint', '作り直すと、今の3パターンは新しい提案に置き換わります（確認があります）。'));
+    var goNote = el('p', 'hint', '');
+    form.appendChild(goNote);
+    function drawGo() {
+      var kept = view.looks.filter(function (l) { return l.edited; }).length;
+      go.textContent = !view.looks.length ? 'コーデを3パターン提案してもらう' : kept >= view.looks.length ? '手で編集していないコーデがありません' : 'この条件で作り直す（編集したコーデは残す）';
+      go.disabled = view.looks.length > 0 && kept >= view.looks.length;
+      goNote.textContent = view.looks.length ? '作り直すのは、まだ手で編集していないコーデだけです。自分で入れ替え・追加・削除をしたコーデはそのまま残ります。' : '';
+    }
+    drawGo();
     results.appendChild(form);
 
     var body = el('div', 'coord-looks');
     results.appendChild(body);
 
+    // ---- 商品を検索して、入れ替える・追加する（常設） ----
+    var S = view.search = view.search || { keyword: '', maxPrice: '', items: [], target: null, lookId: '' };
+    var sbox = el('section', 'card plan-search coord-search');
+    sbox.appendChild(el('h3', 'plan-section-title', '商品を検索して入れ替える・追加する'));
+    var targetLine = el('div', 'coord-target');
+    sbox.appendChild(targetLine);
+    var sform = el('form', 'plan-search-form');
+    var kw = el('input', 'input');
+    kw.type = 'search';
+    kw.maxLength = 60;
+    kw.placeholder = '商品名・ブランド名・キーワード（例：メンズ ワイドスラックス 黒）';
+    kw.value = S.keyword;
+    kw.setAttribute('enterkeyhint', 'search');
+    var kwBtn = el('button', 'btn btn-primary', '検索');
+    kwBtn.type = 'submit';
+    sform.appendChild(kw);
+    sform.appendChild(kwBtn);
+    sbox.appendChild(sform);
+    var capRow = el('div', 'coord-cap-row');
+    var capIn = el('input', 'input');
+    capIn.type = 'number';
+    capIn.inputMode = 'numeric';
+    capIn.placeholder = '上限の価格（円・空欄なら指定なし）';
+    capIn.value = S.maxPrice || '';
+    capIn.addEventListener('input', function () { S.maxPrice = capIn.value; });
+    capRow.appendChild(capIn);
+    sbox.appendChild(capRow);
+    var snote = el('p', 'hint', '');
+    sbox.appendChild(snote);
+    var sres = el('div', 'cand-list plan-search-results');
+    sbox.appendChild(sres);
+    var smore = el('button', 'btn btn-secondary', 'さらに10件探す');
+    smore.type = 'button';
+    sbox.appendChild(smore);
+
+    function lookById(id) { return view.looks.filter(function (l) { return l.id === id; })[0] || view.looks[0] || null; }
+    function drawTarget() {
+      targetLine.innerHTML = '';
+      if (!view.looks.length) { targetLine.appendChild(el('p', 'hint', '先にコーデを提案してもらうか、「空のコーデを追加」で自分で作り始めてください。')); return; }
+      var t = S.target && lookById(S.target.lookId);
+      var item = t && t.items[S.target.index];
+      if (item) {
+        var p = el('p', 'coord-target-text');
+        p.appendChild(document.createTextNode('入れ替え先：コーデ' + String.fromCharCode(65 + view.looks.indexOf(t)) + ' の '));
+        p.appendChild(el('b', null, item.slotLabel + '（' + item.kind + '）'));
+        var cancel = el('button', 'link-btn', '入れ替えをやめる');
+        cancel.type = 'button';
+        cancel.addEventListener('click', function () { S.target = null; drawTarget(); drawResults(); persist(); });
+        p.appendChild(cancel);
+        targetLine.appendChild(p);
+      }
+      var f = el('label', 'field coord-add-to');
+      f.appendChild(el('span', 'field-label', '「コーデに追加」の追加先'));
+      var s = el('select', 'select');
+      view.looks.forEach(function (l, i) {
+        var o = el('option', null, 'コーデ' + String.fromCharCode(65 + i) + '：' + (l.name || '').slice(0, 20));
+        o.value = l.id;
+        s.appendChild(o);
+      });
+      s.value = (lookById(S.lookId) || {}).id || '';
+      s.addEventListener('change', function () { S.lookId = s.value; persist(); });
+      f.appendChild(s);
+      targetLine.appendChild(f);
+    }
+
+    function inLook(look, p) {
+      return look && (sameItem(h, p) || look.items.some(function (it) { return it.product && sameItem(it.product, p); }));
+    }
+    function toCoordProduct(it) {
+      return { code: it.code || '', name: it.name, brand: it.brand || '', price: it.price || 0, image: it.image || '', url: it.url || '', shop: it.shop || '', caption: String(it.caption || '').slice(0, 200), fetchedAt: new Date().toISOString() };
+    }
+    function drawResults() {
+      sres.innerHTML = '';
+      smore.hidden = !S.items.length;
+      var t = S.target && lookById(S.target.lookId);
+      var targetItem = t && t.items[S.target.index];
+      var addLook = lookById(S.lookId);
+      S.items.forEach(function (it) {
+        var card = el('article', 'cand-card');
+        var top = el('div', 'cand-top');
+        var img = el('img', 'cand-thumb');
+        img.src = it.image || '';
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function () { img.style.visibility = 'hidden'; };
+        top.appendChild(img);
+        var info = el('div', 'cand-info');
+        info.appendChild(el('h3', 'cand-name', it.name.replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60)));
+        var meta = el('p', 'cand-meta');
+        meta.appendChild(el('strong', 'cand-price', formatPrice(it.price)));
+        meta.appendChild(el('span', 'cand-shop', it.shop || ''));
+        info.appendChild(meta);
+        top.appendChild(info);
+        card.appendChild(top);
+        var acts = el('div', 'actions');
+        var rep = el('button', 'btn btn-primary', targetItem ? 'このアイテムと入れ替える' : '入れ替え先を選んでください');
+        rep.type = 'button';
+        rep.disabled = !targetItem || inLook(t, it);
+        rep.addEventListener('click', function () {
+          var s = coordSlotOf(it.name);
+          targetItem.product = toCoordProduct(it);
+          targetItem.source = 'user';
+          // 違う種類の商品で入れ替えたときは、枠の名前も商品に合わせる（例：バッグの枠にパンツ → ボトムス）
+          if (s.slotLabel !== 'アイテム' && s.slot !== targetItem.slot) { targetItem.slot = s.slot; targetItem.slotLabel = s.slotLabel; targetItem.kind = s.kind; }
+          markEdited(t);
+          S.target = null;
+          persist();
+          drawLooks();
+          drawTarget();
+          drawResults();
+          showToast('入れ替えました（ほかのアイテムはそのまま）');
+        });
+        var add = el('button', 'btn btn-secondary', inLook(addLook, it) ? 'コーデに追加済み' : 'コーデに追加');
+        add.type = 'button';
+        add.disabled = !addLook || inLook(addLook, it);
+        add.addEventListener('click', function () {
+          var s = coordSlotOf(it.name);
+          addLook.items.push({ slot: s.slot, slotLabel: s.slotLabel, kind: s.kind, keyword: S.keyword, color: '', cap: null, product: toCoordProduct(it), options: [], source: 'user' });
+          markEdited(addLook);
+          persist();
+          drawLooks();
+          drawResults();
+          showToast('コーデ' + String.fromCharCode(65 + view.looks.indexOf(addLook)) + 'に追加しました');
+        });
+        acts.appendChild(rep);
+        acts.appendChild(add);
+        if (it.url) {
+          var a = el('a', 'link-btn', '商品ページを見る');
+          a.href = it.url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          acts.appendChild(a);
+        }
+        card.appendChild(acts);
+        sres.appendChild(card);
+      });
+    }
+    function runSearch(more) {
+      var q = kw.value.trim();
+      if (q.replace(/\s/g, '').length < 2) { snote.textContent = '2文字以上入れてください（商品名・ブランド名・キーワード）'; return; }
+      S.keyword = q;
+      if (!more) S.items = [];
+      kwBtn.disabled = smore.disabled = true;
+      snote.textContent = '楽天市場で探しています…';
+      var exclude = [h];
+      view.looks.forEach(function (l) { l.items.forEach(function (it) { if (it.product) exclude.push(it.product); }); });
+      postJson('api/search', {
+        axis: 'search', keyword: q, maxPrice: S.maxPrice || undefined,
+        exclude: exclude.slice(0, 40).map(function (p) { return { code: p.code, name: p.name, url: p.url }; }),
+        shown: S.items.map(function (p) { return { code: p.code, name: p.name, url: p.url }; })
+      }).then(function (r) {
+        if (r.status !== 200) { snote.textContent = (r.data && r.data.error) || '検索できませんでした。'; return; }
+        var got = r.data.items || [];
+        S.items = S.items.concat(got);
+        snote.textContent = got.length ? got.length + '件見つかりました' + (more ? '（表示済みの商品は除いています）' : '') : (r.data.notice || '見つかりませんでした。言葉を変えてみてください。');
+        persist();
+        drawResults();
+      }, function () {
+        snote.textContent = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+      }).then(function () { kwBtn.disabled = smore.disabled = false; });
+    }
+    sform.addEventListener('submit', function (e) { e.preventDefault(); runSearch(false); });
+    smore.addEventListener('click', function () { runSearch(true); });
+    addClear(kw);
+
+    // 入れ替えを始める：その枠の種類・色・性別の言葉を検索欄に入れて、検索欄へ移る（言葉は自由に直せる）
+    function startReplace(look, index) {
+      var it = look.items[index];
+      S.target = { lookId: look.id, index: index };
+      S.lookId = look.id;
+      var g = view.gender === 'mens' ? 'メンズ' : view.gender === 'ladies' ? 'レディース' : '';
+      kw.value = [g, it.color, it.kind].filter(Boolean).join(' ');
+      drawTarget();
+      drawResults();
+      sbox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      kw.focus();
+    }
+
+    // ---- 3パターンのコーデ（編集できる） ----
+    var collageCache = {};
     function drawLooks() {
       body.innerHTML = '';
       if (view.notice) body.appendChild(el('p', 'hint coord-notice', view.notice));
@@ -2805,93 +3080,203 @@
         var card = el('article', 'card coord-look');
         var lh = el('div', 'idea-head');
         lh.appendChild(el('span', 'idea-no', String.fromCharCode(65 + li)));
-        lh.appendChild(el('span', 'plan-type', look.style || 'コーデ'));
+        var styleSel = el('select', 'select coord-style-sel');
+        COORD_STYLES.slice(1).concat(look.style && COORD_STYLES.indexOf(look.style) === -1 ? [look.style] : []).forEach(function (s) {
+          var o = el('option', null, s);
+          o.value = s;
+          styleSel.appendChild(o);
+        });
+        styleSel.value = look.style || '大人カジュアル';
+        styleSel.addEventListener('change', function () { look.style = styleSel.value; markEdited(look); persist(); drawGo(); });
+        lh.appendChild(styleSel);
+        if (look.edited) lh.appendChild(el('span', 'idea-edited', '手で編集'));
         card.appendChild(lh);
-        card.appendChild(el('h3', 'idea-title', look.name));
+        var nameIn = el('input', 'input coord-look-name');
+        nameIn.type = 'text';
+        nameIn.maxLength = 30;
+        nameIn.value = look.name || '';
+        nameIn.placeholder = 'コーデの名前';
+        nameIn.addEventListener('input', function () { look.name = nameIn.value.trim(); markEdited(look); persist(); drawGo(); });
+        card.appendChild(nameIn);
         if (look.concept) card.appendChild(el('p', 'idea-sub', look.concept));
-        var total = h.price || 0;
+
         var items = el('div', 'coord-items');
         items.appendChild(coordProductRow(h, '起点', { hero: true }));
-        look.items.forEach(function (it) {
+        look.items.forEach(function (it, i) {
+          var row;
           if (!it.product) {
-            var empty = el('div', 'coord-item empty');
-            empty.appendChild(el('span', 'role', it.slotLabel));
-            empty.appendChild(el('p', 'hint', it.kind + '：条件に合う商品が見つかりませんでした（探した言葉：' + it.keyword + '）'));
-            items.appendChild(empty);
-            return;
-          }
-          total += it.product.price || 0;
-          var row = coordProductRow(it.product, it.slotLabel + '｜' + it.kind);
-          // AIが見つけたほかの候補に切り替えられる（選んだものは印を付けて、作り直さない限り変えない）
-          var others = (it.options || []).filter(function (o) { return o.url !== it.product.url; });
-          if (others.length) {
-            var alt = el('details', 'coord-alt');
-            alt.appendChild(el('summary', null, 'ほかの候補（' + others.length + '）'));
-            others.forEach(function (o) {
-              var b = el('button', 'coord-alt-btn');
-              b.type = 'button';
-              b.appendChild(el('span', null, String(o.name).slice(0, 40)));
-              b.appendChild(el('b', null, formatPrice(o.price)));
-              b.addEventListener('click', function () {
-                it.product = o;
-                it.source = 'user';
-                saveLast('coord', view);
-                drawLooks();
-                showToast(it.slotLabel + 'を入れ替えました（ほかのアイテムはそのまま）');
+            row = el('div', 'coord-item empty');
+            row.appendChild(el('span', 'role', it.slotLabel));
+            row.appendChild(el('p', 'hint', it.kind + '：まだ商品が入っていません' + (it.keyword ? '（AIが探した言葉：' + it.keyword + '）' : '')));
+          } else {
+            row = coordProductRow(it.product, it.slotLabel + '｜' + it.kind);
+            if (it.source === 'user') row.querySelector('.chips').appendChild(el('span', 'idea-edited', '自分で選択'));
+            // AIが見つけたほかの候補（そのアイテムだけ入れ替わる）
+            var others = (it.options || []).filter(function (o) { return !sameItem(o, it.product); });
+            if (others.length) {
+              var alt = el('details', 'coord-alt');
+              alt.appendChild(el('summary', null, 'AIが見つけたほかの候補（' + others.length + '）'));
+              others.forEach(function (o) {
+                var b = el('button', 'coord-alt-btn');
+                b.type = 'button';
+                b.appendChild(el('span', null, String(o.name).slice(0, 40)));
+                b.appendChild(el('b', null, formatPrice(o.price)));
+                b.addEventListener('click', function () {
+                  it.product = o;
+                  it.source = 'user';
+                  markEdited(look);
+                  persist();
+                  drawLooks();
+                  showToast(it.slotLabel + 'を入れ替えました（ほかのアイテムはそのまま）');
+                });
+                alt.appendChild(b);
               });
-              alt.appendChild(b);
-            });
-            row.querySelector('.coord-item-mid').appendChild(alt);
+              row.querySelector('.coord-item-mid').appendChild(alt);
+            }
           }
-          if (it.source === 'user') row.querySelector('.chips').appendChild(el('span', 'idea-edited', '自分で選択'));
+          var tools = el('div', 'coord-tools');
+          [['▲', -1, '上へ'], ['▼', 1, '下へ']].forEach(function (m) {
+            var b = el('button', 'coord-tool', m[0]);
+            b.type = 'button';
+            b.setAttribute('aria-label', m[2]);
+            b.disabled = (m[1] < 0 && i === 0) || (m[1] > 0 && i === look.items.length - 1);
+            b.addEventListener('click', function () {
+              look.items.splice(i + m[1], 0, look.items.splice(i, 1)[0]);
+              if (S.target && S.target.lookId === look.id) S.target = null;
+              markEdited(look);
+              persist();
+              drawLooks();
+              drawTarget();
+            });
+            tools.appendChild(b);
+          });
+          var rep = el('button', 'coord-tool wide', it.product ? '入れ替える' : '探して入れる');
+          rep.type = 'button';
+          rep.addEventListener('click', function () { startReplace(look, i); });
+          tools.appendChild(rep);
+          var del = el('button', 'coord-tool', '削除');
+          del.type = 'button';
+          del.addEventListener('click', function () {
+            if (!window.confirm((it.product ? '「' + String(it.product.name).slice(0, 24) + '」' : 'この枠') + 'をコーデから外しますか？')) return;
+            look.items.splice(i, 1);
+            if (S.target && S.target.lookId === look.id) S.target = null;
+            markEdited(look);
+            persist();
+            drawLooks();
+            drawTarget();
+            drawResults();
+          });
+          tools.appendChild(del);
+          row.appendChild(tools);
           items.appendChild(row);
         });
         card.appendChild(items);
+
+        var addBtn = el('button', 'btn btn-secondary', 'アイテムを探して追加');
+        addBtn.type = 'button';
+        addBtn.addEventListener('click', function () {
+          S.target = null;
+          S.lookId = look.id;
+          drawTarget();
+          drawResults();
+          sbox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          kw.focus();
+        });
+        card.appendChild(addBtn);
+
         var sum = el('p', 'coord-total');
         sum.appendChild(document.createTextNode('合計 '));
-        sum.appendChild(el('strong', null, formatPrice(total)));
+        sum.appendChild(el('strong', null, formatPrice(coordTotal(view, look))));
         sum.appendChild(document.createTextNode('（起点のアイテム込み・' + (look.items.filter(function (x) { return x.product; }).length + 1) + '点）'));
         card.appendChild(sum);
+
+        // 実物商品コラージュ（画像生成AIは使わず、選んだ商品の写真を並べる）
+        var colBtn = el('button', 'btn btn-secondary', '実物商品コラージュを見る');
+        colBtn.type = 'button';
+        var colBox = el('div', 'coord-collage');
+        var sig = function () { return [h.url].concat(look.items.map(function (x) { return x.product ? x.product.url : ''; })).join('|') + look.name; };
+        if (collageCache[look.id] && collageCache[look.id].sig === sig()) colBox.appendChild(collageCache[look.id].img);
+        colBtn.addEventListener('click', function () {
+          colBtn.disabled = true;
+          colBtn.textContent = '商品写真を読み込んでいます…';
+          var list = [{ p: h, label: '起点', hero: true }].concat(look.items.filter(function (x) { return x.product; }).map(function (x) { return { p: x.product, label: x.kind }; }));
+          Promise.all(list.map(function (x) { return loadProductImage(x.p.image); })).then(function (imgs) {
+            var canvas = window.CoordCollage.render(list.map(function (x, k) { return { image: imgs[k], label: x.label, price: x.p.price, hero: x.hero }; }), { title: look.name || coordTitleOf(view), total: coordTotal(view, look) });
+            var img = el('img', 'coord-collage-img');
+            img.alt = 'コーデ' + String.fromCharCode(65 + li) + 'の実物商品コラージュ';
+            img.src = canvas.toDataURL('image/jpeg', 0.9);
+            collageCache[look.id] = { sig: sig(), img: img };
+            colBox.innerHTML = '';
+            colBox.appendChild(img);
+            var miss = imgs.filter(function (x) { return !x; }).length;
+            if (miss) colBox.appendChild(el('p', 'hint', miss + '件の商品写真を読み込めませんでした。'));
+          }).then(function () {
+            colBtn.disabled = false;
+            colBtn.textContent = '実物商品コラージュを作り直す';
+          });
+        });
+        card.appendChild(colBtn);
+        card.appendChild(colBox);
         body.appendChild(card);
       });
+      var blank = el('button', 'btn btn-secondary', '空のコーデを追加（自分で組む）');
+      blank.type = 'button';
+      blank.addEventListener('click', function () {
+        var look = { id: 'look' + Date.now().toString(36), name: '自分で組んだコーデ', style: c.style !== 'おまかせ' ? c.style : '大人カジュアル', concept: '', items: [], edited: true };
+        view.looks.push(look);
+        S.lookId = look.id;
+        persist();
+        drawLooks();
+        drawTarget();
+        drawGo();
+      });
+      body.appendChild(blank);
     }
 
     go.addEventListener('click', function () {
-      if (view.looks.length && !window.confirm('今の3パターンを、新しい提案に置き換えますか？（自分で選んだ商品も置き換わります）')) return;
+      var keep = view.looks.filter(function (l) { return l.edited; });
+      if (view.looks.length && !window.confirm('手で編集していないコーデを、新しい提案に置き換えますか？' + (keep.length ? '（編集したコーデ' + keep.length + 'つはそのまま残します）' : ''))) return;
       go.disabled = true;
       go.textContent = 'コーデを考えて、商品を探しています…';
-      body.innerHTML = '';
       var wait = el('div', 'loading');
       wait.appendChild(el('div', 'spinner'));
       var t = el('p');
       t.innerHTML = 'コーデを考えて、楽天で実在の商品を探しています…<br><span class="sub">30〜60秒ほどかかります</span>';
       wait.appendChild(t);
-      body.appendChild(wait);
+      body.insertBefore(wait, body.firstChild);
       postJson('api/coord', { hero: h, conditions: c }).then(function (r) {
         if (r.status !== 200) {
           view.notice = (r.data && r.data.error) || 'コーデを作れませんでした。もう一度お試しください。';
         } else {
-          view.looks = r.data.looks || [];
+          var fresh = r.data.looks || [];
+          // 手で編集したコーデは残し、編集していない枠だけを新しい提案で埋める（最大3つ。編集したものが多ければそれ以上も残す）
+          var out = view.looks.map(function (l) { return l.edited ? l : null; });
+          var k = 0;
+          for (var i = 0; i < out.length; i++) if (!out[i] && fresh[k]) out[i] = fresh[k++];
+          while (out.filter(Boolean).length < 3 && fresh[k]) out.push(fresh[k++]);
+          view.looks = out.filter(Boolean).map(function (l, n) { if (!l.edited) l.id = 'look' + Date.now().toString(36) + n; return l; });
           view.heroSlot = r.data.heroSlot;
           view.gender = r.data.gender;
-          view.aiLooks = JSON.parse(JSON.stringify(view.looks)); // AIの提案内容（あとで手動の変更と見比べられるように残す）
+          view.aiLooks = JSON.parse(JSON.stringify(fresh)); // AIの提案内容（手で変えた内容と見比べられるように残す）
           view.notice = r.data.notice || '';
-          view.updatedAt = Date.now();
           form.open = false;
         }
-        saveLast('coord', view);
+        persist();
         drawLooks();
+        drawTarget();
       }, function () {
         view.notice = '通信できませんでした。電波の良い場所でもう一度お試しください。';
         drawLooks();
-      }).then(function () {
-        go.disabled = false;
-        go.textContent = view.looks.length ? 'この条件で3パターンを作り直す' : 'コーデを3パターン提案してもらう';
-      });
+      }).then(function () { drawGo(); });
     });
 
     drawLooks();
+    results.appendChild(sbox);
+    drawTarget();
+    drawResults();
   }
+
+  renderCoordSaved();
 
   function coordButton(getProduct) {
     var b = el('button', 'btn btn-coord', 'この商品でコーデを作る');
