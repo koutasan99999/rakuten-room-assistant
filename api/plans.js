@@ -13,7 +13,7 @@ export default function handler(req, res) {
       postType: p.postType, purpose: p.purpose, roles: p.slots.map((s) => s.label)
     })),
     // cover: その型で作る表紙のシリーズと、見本の大見出し（選択画面の小さな表紙の見本に使う）
-    types: Object.entries(CURATION_TYPES).map(([id, t]) => {
+    types: Object.entries(CURATION_TYPES).filter(([, t]) => !t.hidden).map(([id, t]) => {
       const style = COVER_FOR_TYPE[id] === 'auto' ? 'serious_think' : COVER_FOR_TYPE[id];
       const ex = COVER_STYLES[style].examples[0] || '';
       return { id, name: t.name, desc: t.desc, cover: { style, title: ex, accent: COVER_STYLES[style].accent || '' } };
