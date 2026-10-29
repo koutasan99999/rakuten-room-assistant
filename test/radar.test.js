@@ -132,3 +132,32 @@ test('アクセサリーにカー用品が混ざらない（ジャンルごと�
   const meta = (await call(undefined, 'GET')).data;
   assert.ok(meta.genres.find((g) => g.id === 'accessory').ng.includes('カー用品'));
 });
+
+test('検索ジョブ用：検索語だけを返す（楽天は呼ばない）・一部の検索語だけ探す・全部失敗したときだけエラー', async () => {
+  mock = installFetchMock({
+    rakuten: (url) => {
+      const kw = url.searchParams.get('keyword');
+      if (kw.includes('壊れる')) return json(500, { error: 'x' });
+      return json(200, { items: [{ itemCode: `a:${kw}`, itemName: `New Balance 2002R ${kw} 【予約】2026年11月20日発売`, itemPrice: 19800, itemUrl: 'https://item.rakuten.co.jp/a/1/', mediumImageUrls: [], shopName: 'A店', itemCaption: '' }], pageCount: 1 });
+    },
+    openai: () => json(500, {})
+  });
+  const plan = await call({ mode: 'plan', genres: ['sneaker', 'bag'], brands: ['New Balance'], round: 1 });
+  assert.equal(plan.status, 200);
+  assert.ok(plan.data.queries.length >= 4);
+  assert.equal(mock.calls.rakuten.length, 0);
+  assert.ok(plan.data.queries.every((q) => q.genre && q.keyword));
+  const brandPlan = await call({ mode: 'plan', brand: 'BEAMS' });
+  assert.ok(brandPlan.data.queries.every((q) => q.keyword.startsWith('BEAMS ')));
+
+  const part = await call({ mode: 'part', queries: plan.data.queries.slice(0, 2), brands: ['New Balance'] });
+  assert.equal(part.status, 200);
+  assert.equal(mock.calls.rakuten.length, 2);
+  assert.ok(part.data.items.length >= 1);
+  const half = await call({ mode: 'part', queries: [{ genre: 'sneaker', keyword: 'スニーカー 予約' }, { genre: 'sneaker', keyword: '壊れる 予約' }] });
+  assert.equal(half.status, 200); // 一部でも取れたら、その分を返す
+  assert.ok(half.data.scanned.some((s) => s.error));
+  const bad = await call({ mode: 'part', queries: [{ genre: 'sneaker', keyword: '壊れる' }] });
+  assert.equal(bad.status, 502);
+  assert.equal((await call({ mode: 'part', queries: [] })).status, 400);
+});

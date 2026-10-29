@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-10-29.7">
+  <meta name="app-version" content="2026-10-30.1">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-10-29.7">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-30.1">
 </head>
 <body>
   <header class="header">
@@ -18,6 +18,7 @@
     <nav class="view-tabs" aria-label="画面の切り替え">
       <a href="#discover" class="view-tab" data-view="discover">商品発掘</a>
       <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+      <a href="#jobs" class="view-tab" data-view="jobs">検索ジョブ <span id="jobs-count" class="tab-count"></span></a>
     </nav>
   </header>
 
@@ -261,6 +262,13 @@
     <div id="results" class="results"></div>
   </main>
 
+  <!-- 検索ジョブ：検索の記録と進み具合。別のアプリを開いても、戻ると続きから進む -->
+  <main class="container" id="view-jobs" hidden>
+    <h2 class="curation-title">検索ジョブ</h2>
+    <p class="hint">検索を始めたら、ほかの画面へ移ったり、別のアプリを開いたりしても大丈夫です。通信が切れた分は、アプリに戻ると自動で続きから進みます。終わった結果はこのiPhoneに保存され、再検索せずに見られます。ブラウザを閉じている間は進みません（開き直すと続きから進みます）。</p>
+    <div id="jobs-list" class="jobs-list"></div>
+  </main>
+
   <main class="container" id="view-manage" hidden>
     <div class="status-tabs" id="status-tabs" role="tablist"></div>
     <div id="ig-bar" class="ig-bar" hidden>
@@ -417,20 +425,21 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-10-29.7"></script>
-  <script src="js/history.js?v=2026-10-29.7"></script>
-  <script src="js/radar-store.js?v=2026-10-29.7"></script>
-  <script src="js/brand-follow.js?v=2026-10-29.7"></script>
-  <script src="js/zip.js?v=2026-10-29.7"></script>
-  <script src="js/carousel-layout.js?v=2026-10-29.7"></script>
-  <script src="js/ig-render.js?v=2026-10-29.7"></script>
-  <script src="js/ig-covers.js?v=2026-10-29.7"></script>
-  <script src="js/ig-coord.js?v=2026-10-29.7"></script>
-  <script src="js/ig-multi.js?v=2026-10-29.7"></script>
-  <script src="js/reel-story.js?v=2026-10-29.7"></script>
-  <script src="js/coord-store.js?v=2026-10-29.7"></script>
-  <script src="js/coord-collage.js?v=2026-10-29.7"></script>
-  <script src="js/image-store.js?v=2026-10-29.7"></script>
-  <script src="js/app.js?v=2026-10-29.7"></script>
+  <script src="js/store.js?v=2026-10-30.1"></script>
+  <script src="js/history.js?v=2026-10-30.1"></script>
+  <script src="js/search-jobs.js?v=2026-10-30.1"></script>
+  <script src="js/radar-store.js?v=2026-10-30.1"></script>
+  <script src="js/brand-follow.js?v=2026-10-30.1"></script>
+  <script src="js/zip.js?v=2026-10-30.1"></script>
+  <script src="js/carousel-layout.js?v=2026-10-30.1"></script>
+  <script src="js/ig-render.js?v=2026-10-30.1"></script>
+  <script src="js/ig-covers.js?v=2026-10-30.1"></script>
+  <script src="js/ig-coord.js?v=2026-10-30.1"></script>
+  <script src="js/ig-multi.js?v=2026-10-30.1"></script>
+  <script src="js/reel-story.js?v=2026-10-30.1"></script>
+  <script src="js/coord-store.js?v=2026-10-30.1"></script>
+  <script src="js/coord-collage.js?v=2026-10-30.1"></script>
+  <script src="js/image-store.js?v=2026-10-30.1"></script>
+  <script src="js/app.js?v=2026-10-30.1"></script>
 </body>
 </html>
