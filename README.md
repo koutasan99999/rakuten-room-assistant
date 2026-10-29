@@ -333,3 +333,9 @@ AIが使えないときは、企画の検索語から角度を作り、見つけ
 npm test                 # 自動テスト
 MOCK=1 npm run dev       # APIキーなしで画面を確認（http://localhost:3000）
 ```
+
+## 更新するとき（版のそろえ方）
+更新の直後に、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなることがある。そのため：
+- `index.html` の `<meta name="app-version">`・各ファイルの `?v=`・`js/app.js` の `APP_VERSION` を同じ値にする（`test/version.test.js` で確認）。画面やプログラムを変えたら、この値を上げる
+- 版が合わないときは、アプリが最新の画面を1回だけ自動で読み直す
+- `vercel.json` で画面・プログラムをキャッシュせず毎回確認させる（`Cache-Control: no-cache`）
