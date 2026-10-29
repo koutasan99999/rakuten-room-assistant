@@ -18,6 +18,7 @@ import releaseIdeasHandler from '../api/release-ideas.js';
 import searchHandler from '../api/search.js';
 import planTitlesHandler from '../api/plan-titles.js';
 import productUrlHandler from '../api/product-url.js';
+import coordHandler from '../api/coord.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -58,7 +59,13 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('タイトル係')
+    openai: (body) => body.messages[0].content.includes('コーディネーター')
+      ? aiReply({ looks: [
+        { name: 'きれいめカジュアル', style: 'きれいめ', concept: '落ち着いた色で、起点のアイテムを主役にする', items: [{ slot: 'tops', kind: 'ニット', keyword: 'メンズ ニット グレー' }, { slot: 'bottoms', kind: 'スラックス', keyword: 'メンズ スラックス' }, { slot: 'bag', kind: 'レザーバッグ', keyword: 'メンズ レザー バッグ' }] },
+        { name: '大人ストリート', style: 'ストリート', concept: 'ゆるいシルエットで程よく力を抜く', items: [{ slot: 'outer', kind: 'ブルゾン', keyword: 'メンズ ブルゾン' }, { slot: 'tops', kind: 'Tシャツ', keyword: 'メンズ Tシャツ' }, { slot: 'bottoms', kind: 'ワイドデニム', keyword: 'メンズ ワイド デニム' }] },
+        { name: '休日カジュアル', style: '大人カジュアル', concept: '動きやすさ優先の休日コーデ', items: [{ slot: 'tops', kind: 'スウェット', keyword: 'メンズ スウェット' }, { slot: 'bottoms', kind: 'チノパン', keyword: 'メンズ チノパン' }, { slot: 'bag', kind: 'ショルダーバッグ', keyword: 'メンズ ショルダーバッグ' }] }
+      ] })
+      : body.messages[0].content.includes('タイトル係')
       ? aiReply({ titles: [{ title: '大人が履きたい別注スニーカー', why: '落ち着いた色だけ' }, { title: 'コラボスニーカー、結局どれ？', why: '迷う人向け' }, { title: '別注スニーカーの選び方', why: '' }] })
       : body.messages[0].content.includes('新作特集の編集者')
       ? aiReply({ ideas: [
@@ -144,6 +151,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/search') return searchHandler(req, res, env);
   if (url.pathname === '/api/plan-titles') return planTitlesHandler(req, res, env);
   if (url.pathname === '/api/product-url') return productUrlHandler(req, res, env);
+  if (url.pathname === '/api/coord') return coordHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

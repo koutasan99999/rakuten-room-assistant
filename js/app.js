@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.4';
+  var APP_VERSION = '2026-10-29.5';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -220,6 +220,7 @@
       seedBtn.type = 'button';
       seedBtn.addEventListener('click', function () { opts.onSeed(p); });
       actions.appendChild(seedBtn);
+      if (isFashion(p.name)) actions.appendChild(coordButton(function () { return p; }));
     }
     // ROOMの投稿画面を直接開く（ROOMアプリが入っていればアプリで開くことがある）。
     // 押した瞬間に紹介文もコピーしておくので、投稿画面で貼り付けるだけで済む
@@ -1494,6 +1495,7 @@
     else if (last.mode === 'discover' && (last.data.products || []).length) renderDiscover(last.data);
     else if (last.mode === 'seed' && last.data.product && (last.data.ideas || []).length) renderSeed(last.data, false);
     else if (last.mode === 'release' && last.data.item && (last.data.ideas || []).length) renderRelease(last.data, false);
+    else if (last.mode === 'coord' && last.data.heroProduct) renderCoord(last.data);
   }
 
   // 発掘結果をInstagramの投稿文に使える1つの文章にする
@@ -1810,6 +1812,12 @@
     link.rel = 'noopener';
     actions.appendChild(link);
     card.appendChild(actions);
+    if (isFashion(c.name)) {
+      var co = el('button', 'link-btn cand-coord', 'この商品でコーデを作る');
+      co.type = 'button';
+      co.addEventListener('click', function () { startCoord(c); });
+      card.appendChild(co);
+    }
     return card;
   }
 
@@ -2669,6 +2677,229 @@
     location.hash = '#compose';
   }
 
+  // ---- AIコーデスタジオ（フェーズ1）：起点のファッションアイテムから、実在の商品で全身コーデを3パターン ----
+  // AIはコーデの方向性と検索語だけを考え、商品は楽天の検索結果から入る。起点のアイテムは heroProduct として保持する。
+  var FASHION_RE = /スニーカー|シューズ|ブーツ|ローファー|サンダル|パンプス|スリッポン|革靴|バッグ|リュック|バックパック|トート|サコッシュ|ジャケット|コート|ダウン|ブルゾン|パーカー|フリース|Tシャツ|ロンT|シャツ|ブラウス|ニット|カーディガン|スウェット|トレーナー|パンツ|ジーンズ|デニム|スラックス|チノ|スカート|ワンピース|キャップ|帽子|ハット|ビーニー|ネックレス|ピアス|イヤリング|リング|ブレスレット|腕時計|サングラス|マフラー|ストール/;
+  var FASHION_CATS = ['mens', 'ladies', 'sneaker', 'shoes', 'bag', 'wallet', 'accessory', 'watch', 'sunglasses'];
+  function isFashion(name, category) {
+    return FASHION_CATS.indexOf(category || '') !== -1 || FASHION_RE.test(String(name || ''));
+  }
+  var COORD_STYLES = ['おまかせ', 'きれいめ', '大人カジュアル', 'ストリート', 'シンプル', '韓国系', 'モード', 'アメカジ', 'アウトドア'];
+  var COORD_SEASONS = ['おまかせ', '春', '夏', '秋', '冬', 'オールシーズン'];
+  var COORD_BUDGETS = [['none', '指定なし'], ['10000', '1万円以内'], ['30000', '3万円以内'], ['50000', '5万円以内'], ['100000', '10万円以内']];
+
+  // product: { name, code, price, url, image, shop, brand, categoryLabel }
+  function startCoord(product) {
+    message.hidden = true;
+    genreEl.hidden = true;
+    results.innerHTML = '';
+    var view = {
+      id: 'co' + Date.now().toString(36),
+      heroProduct: {
+        name: product.name, code: product.code || '', price: product.price || 0, url: product.url || '', image: product.image || '',
+        shop: product.shop || '', brand: product.brand || '', categoryLabel: product.categoryLabel || '', caption: String(product.caption || '').slice(0, 200)
+      },
+      conditions: { gender: '', style: 'おまかせ', season: 'おまかせ', budget: 'none', age: '', scene: '', likeBrands: '', avoidBrands: '', colors: '' },
+      looks: [], notice: '', createdAt: Date.now()
+    };
+    saveLast('coord', view);
+    renderCoord(view);
+    window.scrollTo({ top: results.offsetTop - 8, behavior: 'smooth' });
+  }
+
+  function coordProductRow(p, label, opts) {
+    opts = opts || {};
+    var row = el('div', 'coord-item' + (opts.hero ? ' hero' : ''));
+    var img = el('img', 'coord-thumb');
+    img.src = p.image || '';
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = function () { img.style.visibility = 'hidden'; };
+    row.appendChild(img);
+    var mid = el('div', 'coord-item-mid');
+    var chips = el('div', 'chips');
+    chips.appendChild(el('span', opts.hero ? 'hero-badge' : 'role', label));
+    if (p.brand) chips.appendChild(el('span', 'tag', p.brand));
+    mid.appendChild(chips);
+    var nm = el('p', 'coord-name', p.name);
+    mid.appendChild(nm);
+    var meta = el('p', 'coord-meta');
+    meta.appendChild(el('strong', null, formatPrice(p.price)));
+    if (p.shop) meta.appendChild(el('span', null, p.shop));
+    mid.appendChild(meta);
+    if (p.url) {
+      var a = el('a', 'link-btn coord-link', '商品ページを見る');
+      a.href = p.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      mid.appendChild(a);
+    }
+    row.appendChild(mid);
+    return row;
+  }
+
+  function renderCoord(view) {
+    var c = view.conditions;
+    var h = view.heroProduct;
+    var head = el('article', 'card curation-head');
+    head.appendChild(el('p', 'type-chip', 'AIコーデスタジオ'));
+    head.appendChild(el('h2', 'curation-title', 'この商品でコーデを作る'));
+    head.appendChild(coordProductRow(h, '起点のアイテム', { hero: true }));
+    head.appendChild(el('p', 'hint', 'AIが考えるのはコーデの方向性と探す言葉だけです。商品はすべて楽天市場で実際に売られているものから探します。'));
+    results.appendChild(head);
+
+    // 条件（すべて空欄でも、AIがおまかせで提案する）
+    var form = el('details', 'card coord-cond');
+    form.open = !view.looks.length;
+    form.appendChild(el('summary', null, 'コーデの条件（空欄ならおまかせ）'));
+    var grid = el('div', 'coord-cond-grid');
+    function sel(label, key, options) {
+      var f = el('label', 'field');
+      f.appendChild(el('span', 'field-label', label));
+      var s = el('select', 'select');
+      options.forEach(function (o) {
+        var opt = el('option', null, Array.isArray(o) ? o[1] : o);
+        opt.value = Array.isArray(o) ? o[0] : o;
+        s.appendChild(opt);
+      });
+      s.value = c[key];
+      s.addEventListener('change', function () { c[key] = s.value; saveLast('coord', view); });
+      f.appendChild(s);
+      grid.appendChild(f);
+    }
+    function txt(label, key, placeholder) {
+      var f = el('label', 'field');
+      f.appendChild(el('span', 'field-label', label));
+      var i = el('input', 'input');
+      i.type = 'text';
+      i.maxLength = 60;
+      i.placeholder = placeholder;
+      i.value = c[key] || '';
+      i.addEventListener('input', function () { c[key] = i.value.trim(); saveLast('coord', view); });
+      f.appendChild(i);
+      grid.appendChild(f);
+    }
+    sel('メンズ・レディース', 'gender', [['', 'おまかせ（商品から判断）'], ['mens', 'メンズ'], ['ladies', 'レディース']]);
+    sel('スタイル', 'style', COORD_STYLES);
+    sel('季節', 'season', COORD_SEASONS);
+    sel('予算（全身）', 'budget', COORD_BUDGETS);
+    txt('年齢層', 'age', '例：30代');
+    txt('着用シーン', 'scene', '例：休日の買い物、オフィスカジュアル');
+    txt('好きなブランド', 'likeBrands', '例：BEAMS、URBAN RESEARCH');
+    txt('避けたいブランド', 'avoidBrands', '例：ロゴが大きいブランド名');
+    txt('色の好み', 'colors', '例：黒・グレー中心、差し色なし');
+    form.appendChild(grid);
+    var go = el('button', 'btn btn-primary', view.looks.length ? 'この条件で3パターンを作り直す' : 'コーデを3パターン提案してもらう');
+    go.type = 'button';
+    form.appendChild(go);
+    if (view.looks.length) form.appendChild(el('p', 'hint', '作り直すと、今の3パターンは新しい提案に置き換わります（確認があります）。'));
+    results.appendChild(form);
+
+    var body = el('div', 'coord-looks');
+    results.appendChild(body);
+
+    function drawLooks() {
+      body.innerHTML = '';
+      if (view.notice) body.appendChild(el('p', 'hint coord-notice', view.notice));
+      view.looks.forEach(function (look, li) {
+        var card = el('article', 'card coord-look');
+        var lh = el('div', 'idea-head');
+        lh.appendChild(el('span', 'idea-no', String.fromCharCode(65 + li)));
+        lh.appendChild(el('span', 'plan-type', look.style || 'コーデ'));
+        card.appendChild(lh);
+        card.appendChild(el('h3', 'idea-title', look.name));
+        if (look.concept) card.appendChild(el('p', 'idea-sub', look.concept));
+        var total = h.price || 0;
+        var items = el('div', 'coord-items');
+        items.appendChild(coordProductRow(h, '起点', { hero: true }));
+        look.items.forEach(function (it) {
+          if (!it.product) {
+            var empty = el('div', 'coord-item empty');
+            empty.appendChild(el('span', 'role', it.slotLabel));
+            empty.appendChild(el('p', 'hint', it.kind + '：条件に合う商品が見つかりませんでした（探した言葉：' + it.keyword + '）'));
+            items.appendChild(empty);
+            return;
+          }
+          total += it.product.price || 0;
+          var row = coordProductRow(it.product, it.slotLabel + '｜' + it.kind);
+          // AIが見つけたほかの候補に切り替えられる（選んだものは印を付けて、作り直さない限り変えない）
+          var others = (it.options || []).filter(function (o) { return o.url !== it.product.url; });
+          if (others.length) {
+            var alt = el('details', 'coord-alt');
+            alt.appendChild(el('summary', null, 'ほかの候補（' + others.length + '）'));
+            others.forEach(function (o) {
+              var b = el('button', 'coord-alt-btn');
+              b.type = 'button';
+              b.appendChild(el('span', null, String(o.name).slice(0, 40)));
+              b.appendChild(el('b', null, formatPrice(o.price)));
+              b.addEventListener('click', function () {
+                it.product = o;
+                it.source = 'user';
+                saveLast('coord', view);
+                drawLooks();
+                showToast(it.slotLabel + 'を入れ替えました（ほかのアイテムはそのまま）');
+              });
+              alt.appendChild(b);
+            });
+            row.querySelector('.coord-item-mid').appendChild(alt);
+          }
+          if (it.source === 'user') row.querySelector('.chips').appendChild(el('span', 'idea-edited', '自分で選択'));
+          items.appendChild(row);
+        });
+        card.appendChild(items);
+        var sum = el('p', 'coord-total');
+        sum.appendChild(document.createTextNode('合計 '));
+        sum.appendChild(el('strong', null, formatPrice(total)));
+        sum.appendChild(document.createTextNode('（起点のアイテム込み・' + (look.items.filter(function (x) { return x.product; }).length + 1) + '点）'));
+        card.appendChild(sum);
+        body.appendChild(card);
+      });
+    }
+
+    go.addEventListener('click', function () {
+      if (view.looks.length && !window.confirm('今の3パターンを、新しい提案に置き換えますか？（自分で選んだ商品も置き換わります）')) return;
+      go.disabled = true;
+      go.textContent = 'コーデを考えて、商品を探しています…';
+      body.innerHTML = '';
+      var wait = el('div', 'loading');
+      wait.appendChild(el('div', 'spinner'));
+      var t = el('p');
+      t.innerHTML = 'コーデを考えて、楽天で実在の商品を探しています…<br><span class="sub">30〜60秒ほどかかります</span>';
+      wait.appendChild(t);
+      body.appendChild(wait);
+      postJson('api/coord', { hero: h, conditions: c }).then(function (r) {
+        if (r.status !== 200) {
+          view.notice = (r.data && r.data.error) || 'コーデを作れませんでした。もう一度お試しください。';
+        } else {
+          view.looks = r.data.looks || [];
+          view.heroSlot = r.data.heroSlot;
+          view.gender = r.data.gender;
+          view.aiLooks = JSON.parse(JSON.stringify(view.looks)); // AIの提案内容（あとで手動の変更と見比べられるように残す）
+          view.notice = r.data.notice || '';
+          view.updatedAt = Date.now();
+          form.open = false;
+        }
+        saveLast('coord', view);
+        drawLooks();
+      }, function () {
+        view.notice = '通信できませんでした。電波の良い場所でもう一度お試しください。';
+        drawLooks();
+      }).then(function () {
+        go.disabled = false;
+        go.textContent = view.looks.length ? 'この条件で3パターンを作り直す' : 'コーデを3パターン提案してもらう';
+      });
+    });
+
+    drawLooks();
+  }
+
+  function coordButton(getProduct) {
+    var b = el('button', 'btn btn-coord', 'この商品でコーデを作る');
+    b.type = 'button';
+    b.addEventListener('click', function () { startCoord(getProduct()); });
+    return b;
+  }
+
   // ---- 探し方の切り替え（企画から／条件を指定して／完全ランダム。1つずつ開く） ----
   var MODE_KEY = 'room-search-mode';
   var modeTabs = document.querySelectorAll('.mode-tab');
@@ -3299,6 +3530,11 @@
       startRelease(it);
     });
     actions.appendChild(plan);
+    if (isFashion(it.name, it.category)) {
+      actions.appendChild(coordButton(function () {
+        return { name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '', brand: it.brand, categoryLabel: it.categoryLabel };
+      }));
+    }
     var link = el('a', 'btn btn-secondary', '商品ページを見る');
     link.href = it.sourceUrl;
     link.target = '_blank';
