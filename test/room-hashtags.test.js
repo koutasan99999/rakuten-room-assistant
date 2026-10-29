@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import api from '../api/room-hashtags.js';
+import api from '../server/room-hashtags.js';
 import { generateRoomHashtags } from '../lib/room-hashtags.js';
 import { allowTag, themeGenres } from '../lib/tag-rules.js';
 import { buildHashtags } from '../lib/hashtags.js';

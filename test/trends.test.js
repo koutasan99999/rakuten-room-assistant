@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import trendsApi from '../api/trends.js';
-import furusatoApi from '../api/furusato.js';
+import trendsApi from '../server/trends.js';
+import furusatoApi from '../server/furusato.js';
 import { parseTrendsRss } from '../lib/trends.js';
 import { guessBrand, aggregateBrands } from '../lib/brand-discovery.js';
 import { parseQuantity, parseDelivery, parseTeiki, perTenThousand, toFurusatoItem } from '../lib/furusato.js';

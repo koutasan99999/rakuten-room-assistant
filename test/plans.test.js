@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { SERIES_PLANS } from '../lib/plans.js';
 import { CURATION_TYPES } from '../lib/themes.js';
-import plansApi from '../api/plans.js';
+import plansApi from '../server/plans.js';
 import { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } from './mock.js';
 
 const ENV = { RAKUTEN_APP_ID: 'app', OPENAI_API_KEY: 'sk-test' };

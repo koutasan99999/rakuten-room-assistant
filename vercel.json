@@ -1,58 +1,7 @@
 {
   "functions": {
-    "api/discover.js": {
+    "api/*.js": {
       "maxDuration": 60
-    },
-    "api/instagram.js": {
-      "maxDuration": 30
-    },
-    "api/ideas.js": {
-      "maxDuration": 60
-    },
-    "api/explore.js": {
-      "maxDuration": 60
-    },
-    "api/intros.js": {
-      "maxDuration": 60
-    },
-    "api/seed-ideas.js": {
-      "maxDuration": 60
-    },
-    "api/assets.js": {
-      "maxDuration": 60
-    },
-    "api/radar.js": {
-      "maxDuration": 60
-    },
-    "api/room-hashtags.js": {
-      "maxDuration": 60
-    },
-    "api/release-ideas.js": {
-      "maxDuration": 60
-    },
-    "api/search.js": {
-      "maxDuration": 60
-    },
-    "api/plan-titles.js": {
-      "maxDuration": 30
-    },
-    "api/product-url.js": {
-      "maxDuration": 20
-    },
-    "api/coord.js": {
-      "maxDuration": 60
-    },
-    "api/coord-image.js": {
-      "maxDuration": 60
-    },
-    "api/trends.js": {
-      "maxDuration": 30
-    },
-    "api/furusato.js": {
-      "maxDuration": 30
-    },
-    "api/brand-note.js": {
-      "maxDuration": 30
     }
   },
   "headers": [

@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import assetsApi from '../api/assets.js';
+import assetsApi from '../server/assets.js';
 import { normalizeReel, normalizeStory, REEL_MIN_SEC, REEL_MAX_SEC } from '../lib/assets.js';
 import { installFetchMock, json, aiReply } from './mock.js';
 

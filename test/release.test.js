@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import releaseApi from '../api/release-ideas.js';
+import releaseApi from '../server/release-ideas.js';
 import { titleIssues, readReleaseProduct, fallbackReleaseTitles, toReleaseIdea, moodOf, MIN_TITLES, MAX_TITLES } from '../lib/release.js';
 import { normalizeIdea } from '../lib/ideas.js';
 import { coverStyleFor } from '../lib/covers.js';

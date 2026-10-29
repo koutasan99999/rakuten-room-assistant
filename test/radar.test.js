@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import radarApi from '../api/radar.js';
+import radarApi from '../server/radar.js';
 import { parseDates, detectStatus, detectBrand, mergeItems, planQueries, QUERY_TYPES } from '../lib/radar.js';
 import { RADAR_GENRES, RADAR_GROUPS } from '../lib/radar-genres.js';
 import { installFetchMock, json } from './mock.js';

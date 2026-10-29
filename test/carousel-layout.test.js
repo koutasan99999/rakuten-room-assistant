@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import '../js/carousel-layout.js';
-import instagram from '../api/instagram.js';
+import instagram from '../server/instagram.js';
 import { MAX_POST_ITEMS } from '../lib/instagram.js';
 import { installFetchMock, json, aiReply } from './mock.js';
 
