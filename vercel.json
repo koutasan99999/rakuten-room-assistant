@@ -38,6 +38,9 @@
     },
     "api/product-url.js": {
       "maxDuration": 20
+    },
+    "api/coord.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
