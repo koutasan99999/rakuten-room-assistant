@@ -1,6 +1,22 @@
 (function () {
   'use strict';
 
+  // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
+  // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
+  var APP_VERSION = '2026-10-29.2';
+  var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
+  if (pageVersion !== APP_VERSION) {
+    var triedFor = '';
+    try { triedFor = sessionStorage.getItem('room-reload-for') || ''; } catch (e) {}
+    if (triedFor !== APP_VERSION) {
+      try { sessionStorage.setItem('room-reload-for', APP_VERSION); } catch (e) {}
+      location.replace(location.pathname + '?v=' + encodeURIComponent(APP_VERSION) + location.hash);
+      return;
+    }
+  } else if (/[?&]v=/.test(location.search) && window.history && history.replaceState) {
+    history.replaceState(null, '', location.pathname + location.hash); // 読み直し用の ?v= はアドレスから消す
+  }
+
   var PASS_KEY = 'room-passcode';
   var STATS_KEY = 'room-genre-stats';
   var RECENT_KEY = 'room-recent-items';
@@ -2752,7 +2768,8 @@
     var settings = radarSettings();
     radarGenresEl.innerHTML = '';
     var known = radarMeta.genres.map(function (x) { return x.id; });
-    document.getElementById('rg-count').textContent = '選択中 ' + settings.genres.filter(function (id) { return known.indexOf(id) !== -1; }).length + ' / ' + known.length;
+    var rgCount = document.getElementById('rg-count');
+    if (rgCount) rgCount.textContent = '選択中 ' + settings.genres.filter(function (id) { return known.indexOf(id) !== -1; }).length + ' / ' + known.length;
     radarMeta.groups.forEach(function (g) {
       var row = el('div', 'radar-group');
       var list = radarMeta.genres.filter(function (x) { return x.group === g.id; });
@@ -2785,12 +2802,15 @@
     renderBrandManager();
   }
 
-  document.getElementById('rg-all').addEventListener('click', function () { setRadarGenres(radarMeta.genres.map(function (x) { return x.id; }), true); });
-  document.getElementById('rg-none').addEventListener('click', function () { setRadarGenres(radarMeta.genres.map(function (x) { return x.id; }), false); });
+  [['rg-all', true], ['rg-none', false]].forEach(function (b) {
+    var btn = document.getElementById(b[0]);
+    if (btn) btn.addEventListener('click', function () { setRadarGenres(radarMeta.genres.map(function (x) { return x.id; }), b[1]); });
+  });
   // 「畳む」：その欄を閉じて、見出しが見える位置に戻す
   Array.prototype.forEach.call(document.querySelectorAll('.fold-btn'), function (b) {
     b.addEventListener('click', function () {
       var box = document.getElementById(b.getAttribute('data-fold'));
+      if (!box) return;
       box.open = false;
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
@@ -2807,7 +2827,7 @@
   // 巡回：選んだジャンルから6つずつ順番に（毎回同じジャンルにならないように）
   function scanRadar() {
     var s = radarSettings();
-    if (!s.genres.length) { showToast('見るジャンルを選んでください'); document.getElementById('radar-settings').open = true; document.getElementById('radar-genre-box').open = true; return; }
+    if (!s.genres.length) { showToast('見るジャンルを選んでください'); document.getElementById('radar-settings').open = true; var gb = document.getElementById('radar-genre-box'); if (gb) gb.open = true; return; }
     var n = s.genres.length;
     var genres = [];
     for (var i = 0; i < Math.min(6, n); i++) genres.push(s.genres[(s.cursor + i) % n]);
