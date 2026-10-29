@@ -56,6 +56,7 @@ test('fallbackReleaseTitles: 3案以上、確認できた情報だけ', () => {
   for (const x of t) {
     assert.deepEqual(titleIssues(x.title, p), [], x.title);
     assert.ok(!/本気出して考えてみた/.test(x.title));
+    assert.ok(x.title.length <= 24, '表紙に載る短いキャッチコピー: ' + x.title);
   }
   const plain = readReleaseProduct({ ...RAW, brand: '', status: ['NEW'], releaseDate: null }, NOW);
   assert.ok(fallbackReleaseTitles(plain).length >= 2);

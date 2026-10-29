@@ -239,6 +239,101 @@
     living: { bg: '#F3F1EA', glow: '#E2E8DF', ink: '#1E1E1E', sub: '#55595A', accent: '#3E7C6B', family: GOTHIC, label: '#3E7C6B', labelText: '#FFFFFF' }
   };
 
+  // ---- 新商品の表紙：商品写真から色を取る ----
+  var MAX_UPSCALE = 1.35; // これ以上拡大すると画質が目立って落ちるので、大きくしない
+
+  function luma(c) { return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]; }
+  function mixRgb(a, b, t) { return [0, 1, 2].map(function (k) { return Math.round(a[k] * (1 - t) + b[k] * t); }); }
+  function rgb(c) { return 'rgb(' + c.join(',') + ')'; }
+
+  // 写真の代表色（main：色のある部分を重く）、平均、下の端の色
+  function imageTone(img) {
+    if (!img) return null;
+    var s = 40;
+    var c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    var x = c.getContext('2d');
+    var data;
+    try { x.drawImage(img, 0, 0, s, s); data = x.getImageData(0, 0, s, s).data; } catch (e) { return null; }
+    var main = [0, 0, 0], mw = 0, avg = [0, 0, 0], n = 0, bottom = [0, 0, 0], bn = 0;
+    for (var i = 0; i < s * s; i++) {
+      var p = i * 4;
+      if (data[p + 3] < 128) continue;
+      var px = [data[p], data[p + 1], data[p + 2]];
+      var sat = Math.max(px[0], px[1], px[2]) - Math.min(px[0], px[1], px[2]);
+      for (var k = 0; k < 3; k++) avg[k] += px[k];
+      n++;
+      if (Math.min(px[0], px[1], px[2]) < 236) { var w = 6 + sat; for (k = 0; k < 3; k++) main[k] += px[k] * w; mw += w; }
+      if (i >= s * (s - 3)) { for (k = 0; k < 3; k++) bottom[k] += px[k]; bn++; }
+    }
+    if (!n) return null;
+    avg = avg.map(function (v) { return v / n; });
+    return {
+      avg: avg,
+      main: mw ? main.map(function (v) { return Math.round(v / mw); }) : avg.map(Math.round),
+      bottom: bn ? bottom.map(function (v) { return Math.round(v / bn); }) : avg.map(Math.round)
+    };
+  }
+
+  // 写真に合わせた配色。白っぽい商品は濃い背景、色のある商品はその色を薄くした背景
+  function releasePalette(tone, S, hero) {
+    var main = tone ? tone.main : [176, 150, 140];
+    var sat = Math.max.apply(null, main) - Math.min.apply(null, main);
+    var dark;
+    var photoBg, textBg;
+    if (hero && !hero.cutout && tone) {
+      // 写真の下の色をそのまま文字の背景へつなぐ
+      dark = luma(tone.bottom) < 120;
+      textBg = dark ? mixRgb(tone.bottom, [12, 12, 12], 0.45) : mixRgb(tone.bottom, [250, 248, 244], 0.7);
+      photoBg = mixRgb(tone.avg.map(Math.round), [0, 0, 0], 0.2);
+    } else {
+      dark = luma(main) > 200 && sat < 40; // 白・生成りの商品は、濃い背景で形を見せる
+      photoBg = dark ? mixRgb(main, [34, 32, 30], 0.86) : mixRgb(main, [252, 250, 247], 0.8);
+      textBg = dark ? mixRgb(main, [22, 21, 20], 0.92) : mixRgb(main, [252, 250, 247], 0.93);
+    }
+    var ink = dark ? [250, 248, 244] : mixRgb(main, [18, 18, 18], 0.88);
+    var accent = sat < 40 ? null : dark ? mixRgb(main, [255, 255, 255], 0.3) : mixRgb(main, [0, 0, 0], 0.3);
+    return {
+      photoBg: rgb(photoBg), textBg: rgb(textBg), ink: rgb(ink),
+      sub: dark ? 'rgba(250,248,244,0.72)' : rgb(mixRgb(main, [70, 70, 70], 0.8)),
+      accent: accent ? rgb(accent) : S.accent,
+      label: dark ? rgb([250, 248, 244]) : rgb(ink), labelText: rgb(dark ? textBg : [255, 255, 255]),
+      floor: dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)'
+    };
+  }
+
+  // 主役の商品を枠の中に。小さい画像は MAX_UPSCALE 倍までしか大きくしない
+  function placeHero(ctx, img, box, framed) {
+    var s = Math.min(box.w / img.width, box.h / img.height, MAX_UPSCALE);
+    var w = img.width * s, h = img.height * s;
+    var x = box.x + (box.w - w) / 2, y = box.y + box.h - h; // 下にそろえる
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,' + (framed ? 0.3 : 0.2) + ')';
+    ctx.shadowBlur = framed ? 40 : 34;
+    ctx.shadowOffsetY = framed ? 18 : 16;
+    if (framed) {
+      K.roundRect(ctx, x, y, w, h, 12);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+    }
+    ctx.drawImage(img, x, y, w, h);
+    ctx.restore();
+  }
+
+  // 同じ写真をとても小さくしてから引き伸ばす＝ぼかし（どのブラウザでも動く）
+  function softBackdrop(ctx, img, ph) {
+    var c = document.createElement('canvas');
+    c.width = 18; c.height = Math.max(1, Math.round(18 * ph / W));
+    var x = c.getContext('2d');
+    var s = Math.max(c.width / img.width, c.height / img.height);
+    x.drawImage(img, (c.width - img.width * s) / 2, (c.height - img.height * s) / 2, img.width * s, img.height * s);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(c, 0, 0, W, ph);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, W, ph);
+  }
+
   var COVERS = {
     // まずコレ：白〜アイボリー、黒の太いゴシック、マスタードのアクセント。「まずコレ」を一番大きく
     must_buy: function (ctx, d) {
@@ -527,65 +622,94 @@
       bearCorner(ctx, d, '#1E1E1E', 180);
     },
 
-    // 新商品：商品画像が主役の新作特集。上に大きく商品、その下に情報ラベル（NEW・予約受付中・今週発売など、確認できたものだけ）、
-    // 大きなタイトル、ブランド名と発売日。雰囲気はジャンルで変える（ファッション・雑貨／家電・ガジェット／生活雑貨）
+    // 新商品（新作特集）：起点の商品（主役）の写真を大きく使う、ファッション誌・ブランド広告のような表紙。
+    // 文字中心の「本気出して考えてみた」とははっきり分ける。色は商品写真から取り、写真は無理に拡大しない
     new_release: function (ctx, d) {
       var rel = d.release || {};
       var S = RELEASE_MOODS[rel.mood] || RELEASE_MOODS.living;
-      ctx.fillStyle = S.bg;
+      var hero = (d.images || []).filter(Boolean)[0] || null;
+      var tone = imageTone(hero);
+      var P = releasePalette(tone, S, hero);
+      var PH = 880; // 写真の部分（全体の約65％）
+      var full = hero && !hero.cutout && Math.max(W / hero.width, PH / hero.height) <= MAX_UPSCALE;
+
+      ctx.fillStyle = P.textBg;
       ctx.fillRect(0, 0, W, H);
-      ctx.font = f(28, 700, LATIN);
-      ctx.fillStyle = S.sub;
-      ctx.fillText(spaced('NEW ARRIVALS'), M, 104);
-      ctx.textAlign = 'right';
-      ctx.font = f(28, 700, GOTHIC);
-      ctx.fillText(K.ACCOUNT.name + 'の新作チェック', W - M, 104);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = S.sub;
-      ctx.fillRect(M, 128, W - M * 2, 2);
-
-      // 主役の商品画像（後ろにやわらかい円）
-      var imgs = (d.images || []).filter(Boolean);
-      var hero = { x: M, y: 160, w: W - M * 2, h: 600 };
-      ctx.fillStyle = S.glow;
+      ctx.fillStyle = P.photoBg;
+      ctx.fillRect(0, 0, W, PH);
+      ctx.save();
       ctx.beginPath();
-      ctx.ellipse(W / 2, hero.y + hero.h / 2 + 20, 380, 280, 0, 0, Math.PI * 2);
-      ctx.fill();
-      if (imgs[0]) drawProducts(ctx, [imgs[0]], { x: hero.x + 60, y: hero.y, w: hero.w - 120, h: hero.h }, { shadow: 'rgba(0,0,0,0.25)' });
-      // ほかの商品も小さく（2〜3個）
-      imgs.slice(1, 3).forEach(function (img, i) {
-        var s = 170;
-        var x = W - M - s - i * (s + 16);
-        var y = hero.y + hero.h - s + 10;
-        ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
-        K.roundRect(ctx, x, y, s, s, 18);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fill();
-        ctx.restore();
-        K.drawContain(ctx, img, x + 12, y + 12, s - 24, s - 24);
-      });
-
-      // 情報ラベル
-      var x = M;
-      var ly = 790;
-      (rel.labels && rel.labels.length ? rel.labels : ['NEW']).slice(0, 4).forEach(function (t) {
-        x += pillText(ctx, t, x, ly, { font: f(32, 800, GOTHIC), fill: S.label, color: S.labelText, h: 60, r: 6, padX: 22 }) + 12;
-      });
-
-      // タイトル
-      var t = drawTitle(ctx, d.cover.title, d.cover.accent, {
-        x: M, y: 950, size: 104, minSize: 64, maxWidth: W - M * 2 - 120, weight: 800, family: S.family, color: S.ink, accentColor: S.accent, lineHeight: 1.22
-      });
-      // ブランド・発売日
-      var info = [rel.brand, rel.dateText].filter(Boolean).join('　｜　') || d.cover.sub || '';
-      if (info) {
-        var fit = K.fitText(ctx, info, { size: 38, minSize: 28, weight: 700, maxWidth: W - M * 2 - 220, maxLines: 1 });
-        ctx.font = f(fit.size, 700, GOTHIC);
-        ctx.fillStyle = S.sub;
-        ctx.fillText(fit.lines[0], M, Math.min(t.bottom + 90, H - 120));
+      ctx.rect(0, 0, W, PH);
+      ctx.clip();
+      if (hero && full) {
+        // 背景つきの写真：枠いっぱいに（切り抜きは中央）
+        var s = Math.max(W / hero.width, PH / hero.height);
+        ctx.drawImage(hero, (W - hero.width * s) / 2, (PH - hero.height * s) / 2, hero.width * s, hero.height * s);
+      } else if (hero && !hero.cutout) {
+        // 小さめの写真：ぼかした同じ写真を背景にして、写真は拡大しすぎず中央に
+        softBackdrop(ctx, hero, PH);
+        placeHero(ctx, hero, { x: M, y: 190, w: W - M * 2, h: PH - 190 - 120 }, true);
+      } else if (hero) {
+        // 白背景を抜けた商品：商品の色を薄くした背景に、影をつけて置く
+        var floor = ctx.createRadialGradient(W / 2, PH - 130, 20, W / 2, PH - 130, 420);
+        floor.addColorStop(0, P.floor);
+        floor.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = floor;
+        ctx.fillRect(0, 0, W, PH);
+        placeHero(ctx, hero, { x: M, y: 200, w: W - M * 2, h: PH - 200 - 110 }, false);
       }
-      bearCorner(ctx, d, S.sub, 150);
+      // 上の文字が写真に埋もれないよう、写真のときだけ上をうっすら暗く
+      var onPhoto = hero && !hero.cutout;
+      if (onPhoto) {
+        var g = ctx.createLinearGradient(0, 0, 0, 240);
+        g.addColorStop(0, 'rgba(0,0,0,0.42)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, 240);
+      }
+      ctx.restore();
+
+      // 上：NEW ARRIVAL とブランド名（雑誌の見出しのように）
+      var topInk = onPhoto ? '#FFFFFF' : P.ink;
+      ctx.font = f(24, 700, LATIN);
+      ctx.fillStyle = topInk;
+      ctx.fillText(spaced('NEW ARRIVAL'), M, 84);
+      ctx.textAlign = 'right';
+      ctx.font = f(24, 700, GOTHIC);
+      ctx.fillText(K.ACCOUNT.name + 'の新作チェック', W - M, 84);
+      ctx.textAlign = 'left';
+      if (rel.brand) {
+        var bfit = K.fitText(ctx, rel.brand, { size: 46, minSize: 30, weight: 800, maxWidth: W - M * 2, maxLines: 1 });
+        ctx.font = f(bfit.size, 800, /^[\x20-\x7E・]+$/.test(rel.brand) ? LATIN : S.family);
+        ctx.fillStyle = topInk;
+        ctx.fillText(bfit.lines[0], M, 148);
+      }
+
+      // 写真の下端に、確認できた情報のラベル
+      var x = M;
+      (rel.labels && rel.labels.length ? rel.labels : ['NEW']).slice(0, 3).forEach(function (t) {
+        x += pillText(ctx, t, x, PH - 34 - 58, { font: f(30, 800, GOTHIC), fill: P.label, color: P.labelText, h: 58, r: 4, padX: 20 }) + 10;
+      });
+
+      // タイトル（短いキャッチコピー）。右下のくまと重ならない幅
+      var t = drawTitle(ctx, d.cover.title, d.cover.accent, {
+        x: M, y: PH + 128, size: 92, minSize: 60, maxWidth: W - M * 2 - 150, weight: 800, family: S.family, color: P.ink, accentColor: P.accent, lineHeight: 1.2
+      });
+      // 商品名と、発売日・予約の情報
+      var heroItem = (d.items || []).filter(function (it) { return it.hero; })[0] || (d.items || [])[0];
+      var more = (d.items || []).length - 1;
+      var lines = [
+        heroItem && heroItem.shortName ? heroItem.shortName : '',
+        [rel.dateText, more > 0 ? 'ほか' + more + '点も紹介' : ''].filter(Boolean).join('　')
+      ].filter(Boolean);
+      var y = Math.min(t.bottom + 84, H - 40 - lines.length * 46);
+      lines.forEach(function (l, i) {
+        var fit = K.fitText(ctx, l, { size: 32, minSize: 24, weight: i ? 600 : 800, maxWidth: W - M * 2 - 200, maxLines: 1 });
+        ctx.font = f(fit.size, i ? 600 : 800, GOTHIC);
+        ctx.fillStyle = i ? P.sub : P.ink;
+        ctx.fillText(fit.lines[0], M, y + i * 46);
+      });
+      bearCorner(ctx, d, P.sub, 140);
     },
 
     // 買っとけ：カーキ・オリーブ・生成り。実用品カタログのようなチェックリスト。断定は強め、派手にはしない
