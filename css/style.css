@@ -766,3 +766,17 @@ body {
 .furusato-table th { background: var(--soft); }
 .furusato-plan, .furusato-compare { display: grid; gap: 8px; margin-top: 12px; }
 .view-tabs .view-tab { white-space: nowrap; font-size: 13px; padding-left: 4px; padding-right: 4px; }
+/* 畳む（js/fold.js） */
+.foldable { position: relative; }
+.fold-toggle { position: absolute; top: 6px; right: 6px; z-index: 5; min-height: 28px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,0.92); font-family: inherit; font-size: 12px; font-weight: 700; color: var(--muted); }
+.foldable:not(.folded) > .fold-title { display: none; }
+.foldable.folded > :not(.fold-title):not(.fold-toggle) { display: none !important; }
+.foldable.folded { padding-top: 12px; padding-bottom: 12px; min-height: 0; }
+.fold-title { position: relative; z-index: 1; cursor: pointer; margin: 0 64px 0 0; padding-right: 0; font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fold-all-bar { display: flex; justify-content: flex-end; gap: 4px; }
+/* 今後非表示 */
+.hide-btn { color: var(--muted); font-size: 12px; display: block; margin: 4px 0 0 auto; }
+.radar-reset { width: 100%; margin-top: 8px; color: #b00020; border-color: #e7b3bc; }
+/* 「畳む」と見出し・商品名が重ならないように */
+.foldable .card-title, .foldable .cand-name, .foldable .curation-title, .foldable .plan-section-title, .foldable .coord-look-name, .foldable .trend-brand-name, .foldable > .chips:first-child, .foldable > .idea-head, .foldable > .type-chip, .foldable > .list-count { padding-right: 52px; }
+.foldable .foldable .fold-toggle { top: 4px; right: 4px; }

@@ -119,6 +119,12 @@
       save(s);
     },
 
+    // 新作レーダーのリセットのとき：ブランドを確認した日時を消す（次の更新で探し直す）。フォローの設定は残す
+    resetChecked: function (s) {
+      s.checked = {};
+      save(s);
+    },
+
     lastChecked: function (s, name) {
       return s.checked[name] || 0;
     }
