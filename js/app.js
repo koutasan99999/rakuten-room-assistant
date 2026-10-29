@@ -6,6 +6,7 @@
   var RECENT_KEY = 'room-recent-items';
   var LAST_KEY = 'room-last-result';
   var MAX_RECENT = 20;
+  var MAX_POST_ITEMS = 20; // 1投稿にまとめられる商品数（js/carousel-layout.js と同じ）
   var discoverBtn = document.getElementById('discover-btn');
   var searchBtn = document.getElementById('search-btn');
   var genreSelect = document.getElementById('genre-select');
@@ -982,6 +983,7 @@
       verdict: igSumVerdict.value.trim()
     });
     igSumFields.hidden = !igSumOn.checked;
+    showPlanNote();
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
   }
 
@@ -993,6 +995,7 @@
     draft.summary = emptySummary(); // 商品が変わったので2枚目はAIに作ってもらう
     draft.planId = '';
     draft.coverStyle = 'serious_think'; // 投稿管理から作るときは今までの表紙
+    draft.layoutSizes = null;
     draft.coverTitle = '';
     draft.coverAccent = '';
     draft.postId = '';
@@ -1022,6 +1025,7 @@
   function renderComposeItems() {
     igItemsEl.innerHTML = '';
     igCount.textContent = '（' + draft.items.length + '件）';
+    showPlanNote();
     if (!draft.items.length) {
       igItemsEl.appendChild(el('p', 'manage-empty', '商品が選ばれていません。投稿管理の「ROOM投稿済み」か「Instagram投稿待ち」で商品にチェックを入れて「Instagram画像を作る」を押してください。'));
     }
@@ -1051,6 +1055,7 @@
         btn.addEventListener('click', function () {
           if (b[1] === 0) draft.items.splice(i, 1);
           else draft.items.splice(i + b[1], 0, draft.items.splice(i, 1)[0]);
+          draft.layoutSizes = null; // 商品が変わったので、スライドの配置は自動に戻す
           saveDraft();
           renderComposeItems();
         });
@@ -1157,7 +1162,8 @@
       var copy = res.data;
       var cover = coverFor(copy.cover);
       var coverStyleUsed = cover ? cover.style : 'serious_think';
-      var slides = window.IgRender.renderPost({
+      // 配置を変えて描き直せるよう、画像づくりの材料を残しておく
+      lastPost = {
         topic: copy.topic,
         category: draft.category || copy.category,
         subtitle: draft.subtitle || '迷ったので整理しました',
@@ -1170,22 +1176,18 @@
         items: draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
           return { image: r[1][i], shortName: c.shortName || it.name, subline: c.subline, memo: c.memo, price: it.price, role: it.role, brand: it.brand, slug: c.slug };
-        })
-      });
+        }),
+        folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post')
+      };
       var notes = [];
       if (copy.notice) notes.push(copy.notice);
       if (!r[2]) notes.push('くまのアイコン画像（assets/kuma.png）がまだ無いため、仮のクマで作りました。');
       var missing = r[1].filter(function (x) { return !x; }).length;
       if (missing) notes.push(missing + '件の商品画像を読み込めませんでした。');
       if (notes.length) showIgMessage(notes.join(' '), false, copy.detail);
+      igCaption.value = copy.caption || '';
 
-      return Promise.all(slides.map(function (s) { return canvasToBlob(s.canvas); })).then(function (blobs) {
-        lastOutput = {
-          folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post'),
-          files: slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; }),
-          caption: copy.caption || ''
-        };
-        igCaption.value = lastOutput.caption;
+      return showCarousel(lastPost).then(function () {
         // 投稿履歴に、ROOM登録準備で使う商品情報（投稿順）とコレクション名を残す
         var productsFull = draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
@@ -1217,16 +1219,6 @@
             buildAssetsAfterCarousel(id, { style: coverStyleUsed, items: productsFull, images: r[1], bear: r[2] });
           });
         });
-        igPreview.innerHTML = '';
-        lastOutput.files.forEach(function (f) {
-          var fig = el('figure');
-          var img = el('img');
-          img.src = URL.createObjectURL(f.blob);
-          img.alt = f.name;
-          fig.appendChild(img);
-          fig.appendChild(el('figcaption', null, f.name));
-          igPreview.appendChild(fig);
-        });
         igResult.hidden = false;
         igResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -1237,6 +1229,104 @@
       igLoading.hidden = true;
     });
   });
+
+  // ---- カルーセルの描画と「スライド構成」（何枚目に何商品をのせるか。あとから変えられる） ----
+  var lastPost = null;
+  var igLayout = document.getElementById('ig-layout');
+  var igPlanNote = document.getElementById('ig-plan-note');
+
+  function showCarousel(post) {
+    post.layoutSizes = draft.layoutSizes || null;
+    var slides = window.IgRender.renderPost(post);
+    renderLayoutPanel(slides, post);
+    return Promise.all(slides.map(function (s) { return canvasToBlob(s.canvas); })).then(function (blobs) {
+      lastOutput = {
+        folder: post.folder,
+        files: slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; }),
+        caption: igCaption.value
+      };
+      igPreview.innerHTML = '';
+      lastOutput.files.forEach(function (f) {
+        var fig = el('figure');
+        var img = el('img');
+        img.src = URL.createObjectURL(f.blob);
+        img.alt = f.name;
+        fig.appendChild(img);
+        fig.appendChild(el('figcaption', null, f.name));
+        igPreview.appendChild(fig);
+      });
+    });
+  }
+
+  var LAYOUT_LABELS = { 1: '特集（1商品）', 2: '比較（2商品）', 3: '雑誌（3商品）', 4: '一覧（4商品）' };
+
+  // 総商品数・総スライド数・各スライドの商品配置。商品スライドの配置は選び直せる（変えるとすぐ描き直す）
+  function renderLayoutPanel(slides, post) {
+    var plan = slides.plan;
+    igLayout.innerHTML = '';
+    if (!plan) return;
+    igLayout.appendChild(el('p', 'ig-layout-sum', '総商品数 ' + post.items.length + '　／　総スライド数 ' + plan.total + '（Instagramの自動投稿は' + plan.maxSlides + '枚まで）'));
+    if (plan.overLimit) {
+      var warn = el('div', 'message error');
+      warn.appendChild(el('p', null, plan.reason + ' 商品は減らしていません。'));
+      var ul = el('ul');
+      plan.suggestions.forEach(function (t) { ul.appendChild(el('li', null, t)); });
+      warn.appendChild(ul);
+      igLayout.appendChild(warn);
+    }
+    var table = el('div', 'ig-layout-list');
+    var k = 0;
+    plan.slides.forEach(function (sl, n) {
+      var row = el('div', 'ig-layout-row');
+      row.appendChild(el('span', 'ig-layout-no', (n + 1) + '枚目'));
+      if (sl.kind !== 'items') {
+        row.appendChild(el('span', 'ig-layout-kind', { cover: '表紙', summary: 'まとめ', cta: '楽天ROOMへの誘導' }[sl.kind]));
+      } else {
+        var idx = k++;
+        var sel = el('select', 'select');
+        [1, 2, 3, 4].forEach(function (v) {
+          var o = el('option', null, LAYOUT_LABELS[v]);
+          o.value = String(v);
+          sel.appendChild(o);
+        });
+        sel.value = String(sl.size);
+        sel.addEventListener('change', function () {
+          var sizes = plan.sizes.slice();
+          sizes[idx] = Number(sel.value);
+          draft.layoutSizes = sizes;
+          saveDraft();
+          showCarousel(lastPost);
+        });
+        row.appendChild(sel);
+        row.appendChild(el('span', 'ig-layout-items', sl.items.map(function (i) { return 'No.' + (i + 1) + ' ' + (post.items[i].shortName || '').slice(0, 10); }).join(' / ')));
+      }
+      table.appendChild(row);
+    });
+    igLayout.appendChild(table);
+    if (!plan.auto) {
+      var reset = el('button', 'btn btn-secondary', '自動の配置に戻す');
+      reset.type = 'button';
+      reset.addEventListener('click', function () {
+        draft.layoutSizes = null;
+        saveDraft();
+        showCarousel(lastPost);
+      });
+      igLayout.appendChild(reset);
+    }
+  }
+
+  // 商品を選んだ段階で、何枚の投稿になるかを見せる
+  function showPlanNote() {
+    if (!igPlanNote || !window.CarouselLayout) return;
+    var n = draft.items.length;
+    if (!n) { igPlanNote.textContent = ''; return; }
+    var sum = draft.summary || emptySummary();
+    var plan = window.CarouselLayout.plan(n, { summary: !!sum.enabled, sizes: draft.layoutSizes || null });
+    var counts = {};
+    plan.sizes.forEach(function (x) { counts[x] = (counts[x] || 0) + 1; });
+    igPlanNote.textContent = n + '商品 → ' + plan.total + '枚の投稿（' + Object.keys(counts).map(function (x) { return LAYOUT_LABELS[x].replace(/（.*）/, '') + '×' + counts[x]; }).join('・') + '）' +
+      (n > MAX_POST_ITEMS ? '。' + MAX_POST_ITEMS + '商品を超えています（商品は減らしません。並び順を見直すか、2つの投稿に分けてください）' : '');
+  }
 
   function downloadBlob(blob, name) {
     var a = el('a');
@@ -1659,6 +1749,12 @@
     box.checked = !!c.picked;
     box.disabled = !!c.pinned;
     box.addEventListener('change', function () {
+      // 1投稿にまとめられるのは最大20商品
+      if (box.checked && onToggle.count && onToggle.count() >= MAX_POST_ITEMS) {
+        box.checked = false;
+        showToast('1投稿にまとめられるのは' + MAX_POST_ITEMS + '商品までです');
+        return;
+      }
       c.picked = box.checked;
       card.classList.toggle('picked', c.picked);
       onToggle();
@@ -1693,7 +1789,7 @@
     }
     drawAngles();
     head.appendChild(anglesBox);
-    head.appendChild(el('p', 'hint', 'この中から、Instagram投稿に使う5〜6商品を選んでください。'));
+    head.appendChild(el('p', 'hint', 'この中から、Instagram投稿に使う商品を選んでください（1投稿に最大' + MAX_POST_ITEMS + '商品。多いときは1枚に2〜4商品ずつのせて、10枚以内に収めます）。'));
     results.appendChild(head);
 
     var bar = el('div', 'pick-bar');
@@ -1728,12 +1824,14 @@
     results.appendChild(moreBox);
 
     function picked() { return d.candidates.filter(function (c) { return c.picked; }); }
+    update.count = function () { return picked().length; };
     function update() {
       var n = picked().length;
-      count.textContent = '選択中 ' + n + ' / 6';
-      bar.classList.toggle('ok', n >= 5 && n <= 6);
-      bar.classList.toggle('over', n > 6);
+      count.textContent = '選択中 ' + n + ' / ' + MAX_POST_ITEMS;
+      bar.classList.toggle('ok', n >= 4 && n <= MAX_POST_ITEMS);
+      bar.classList.toggle('over', n > MAX_POST_ITEMS);
       toPost.disabled = n === 0;
+      toPost.textContent = n > 6 ? '1投稿にまとめる（' + n + '商品）' : 'この商品で投稿を作る';
       saveLast('explore', d);
     }
     function draw() {
@@ -1779,17 +1877,26 @@
     toPost.addEventListener('click', function () {
       var items = picked();
       if (!items.length) return;
-      if ((items.length < 5 || items.length > 6) &&
-        !window.confirm(items.length + '商品を選んでいます。Instagram投稿は5〜6商品が目安です。このまま作りますか？')) return;
       toPost.disabled = true;
-      toPost.textContent = 'ROOM紹介文を作っています…';
-      postJson('api/intros', {
-        title: d.title,
-        items: items.map(function (c) { return { name: c.name, price: c.price, role: c.role, brand: c.brand, reason: c.reason, caption: c.caption }; })
-      }).then(function (r) {
-        if (r.status !== 200) showToast('紹介文を作れなかったので、あとでROOM登録準備の画面で確認してください');
-        if (r.data && r.data.notice) showToast(r.data.notice);
-        composeFromExplore(d, items, (r.data && r.data.intros) || []);
+      toPost.textContent = 'ROOM紹介文を作っています…（' + items.length + '商品）';
+      // 商品が多いときは、8商品ずつに分けて同時に作る（1回あたりの時間を短くする）
+      var chunks = [];
+      for (var i = 0; i < items.length; i += 8) chunks.push(items.slice(i, i + 8));
+      Promise.all(chunks.map(function (chunk) {
+        return postJson('api/intros', {
+          title: d.title,
+          items: chunk.map(function (c) { return { name: c.name, price: c.price, role: c.role, brand: c.brand, reason: c.reason, caption: c.caption }; })
+        });
+      })).then(function (rs) {
+        var intros = [];
+        var simple = false;
+        rs.forEach(function (r, k) {
+          var list = (r.data && r.data.intros) || [];
+          chunks[k].forEach(function (_, j) { intros.push(list[j] || ''); });
+          if (r.status !== 200 || (r.data && r.data.notice)) simple = true;
+        });
+        if (simple) showToast('一部の紹介文は作れなかった・簡易的に作ったので、ROOM登録準備の画面で確認してください');
+        composeFromExplore(d, items, intros);
       }, function () {
         showToast('通信できませんでした。電波の良い場所でもう一度お試しください。');
       }).then(function () {
@@ -1825,6 +1932,7 @@
       draft.subtitle = '';
       draft.category = '';
     }
+    draft.layoutSizes = null;
     // 表紙：発掘ページの「選び方の型」に対応するシリーズ（企画は今までの表紙）。文字は画像を作るときにAIが作る
     draft.coverStyle = d.coverStyle || 'serious_think';
     draft.coverTitle = '';

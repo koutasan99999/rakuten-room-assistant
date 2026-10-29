@@ -578,12 +578,20 @@
     return clean.concat(rest).slice(0, 3).map(function (it) { return it.image; });
   }
 
+  // post.layoutSizes: 1スライドに何商品のせるか（ユーザーが変えた配置。無ければ自動）。
+  // 商品が少なければ今までどおり1商品1枚、多ければ2〜4商品のスライドを組み合わせて、カルーセルの上限枚数に収める
   function renderPost(post) {
     var style = post.cover && post.cover.style;
     var palette = style && window.IgRender.PALETTES ? window.IgRender.PALETTES[style] : null;
     var hasSummary = !!(post.summary && post.summary.title && post.summary.verdict);
+    var plan = window.CarouselLayout
+      ? window.CarouselLayout.plan(post.items.length, { summary: hasSummary, sizes: post.layoutSizes })
+      : null;
+    var groups = plan
+      ? plan.slides.filter(function (s) { return s.kind === 'items'; }).map(function (s) { return s.items; })
+      : post.items.map(function (it, i) { return [i]; });
     var offset = hasSummary ? 1 : 0;
-    var total = post.items.length + 2 + offset;
+    var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, images: coverImages(post.items), items: post.items }) }];
     if (hasSummary) {
@@ -595,20 +603,36 @@
         })
       });
     }
-    post.items.forEach(function (it, i) {
-      var page = i + 2 + offset;
-      slides.push({
-        fileName: pad(page) + '_item_' + pad(i + 1) + '.png',
-        canvas: render('item', {
-          category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
-          subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear, palette: palette
-        })
-      });
+    groups.forEach(function (idx, g) {
+      var page = g + 2 + offset;
+      var first = idx[0];
+      var last = idx[idx.length - 1];
+      var name = pad(page) + '_item_' + pad(first + 1) + (idx.length > 1 ? '-' + pad(last + 1) : '') + '.png';
+      if (idx.length === 1) {
+        var it = post.items[first];
+        slides.push({
+          fileName: name, items: idx,
+          canvas: render('item', {
+            category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
+            subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear, palette: palette
+          })
+        });
+      } else {
+        // 2〜4商品のスライド（js/ig-multi.js）
+        slides.push({
+          fileName: name, items: idx,
+          canvas: render({ 2: 'duo', 3: 'trio', 4: 'grid4' }[idx.length], {
+            category: post.category, page: page, total: total, bear: post.bear, palette: palette, totalItems: post.items.length,
+            items: idx.map(function (i) { return Object.assign({ no: i + 1 }, post.items[i]); })
+          })
+        });
+      }
     });
     slides.push({
       fileName: pad(total) + '_room_cta.png',
       canvas: render('cta', { page: total, total: total, message: post.ctaMessage || CTA_MESSAGES[0], bear: post.bear, palette: palette })
     });
+    slides.plan = plan;
     return slides;
   }
 
@@ -625,7 +649,8 @@
     // 表紙のシリーズ（js/ig-covers.js）が使う共通の部品
     kit: {
       SIZE: SIZE, M: M, ACCOUNT: ACCOUNT, FONT: FONT, font: font, wrap: wrap, fitText: fitText, roundRect: roundRect,
-      drawBear: drawBear, containRect: containRect, drawContain: drawContain, priceText: priceText
+      drawBear: drawBear, containRect: containRect, drawContain: drawContain, priceText: priceText,
+      label: label, pageNumber: pageNumber, paletteOf: paletteOf, C: C
     },
     SIZE: SIZE,
     TEMPLATES: TEMPLATES,

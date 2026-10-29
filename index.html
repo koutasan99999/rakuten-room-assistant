@@ -295,7 +295,8 @@
     </section>
 
     <h3 class="compose-sub">使う商品 <span id="ig-count" class="tab-count"></span></h3>
-    <p class="hint">▲▼で並び順を変えられます。役割（迷ったらこれ・本命・安い代替 など）は任意です。基本は5〜6商品です。</p>
+    <p class="hint">▲▼で並び順を変えられます（上の商品ほど大きく紹介されます）。役割（迷ったらこれ・本命・安い代替 など）は任意です。1投稿に最大20商品まで。商品が多いときは、1枚に2〜4商品をのせて10枚以内に収めます。</p>
+    <p id="ig-plan-note" class="ig-plan-note"></p>
     <div id="ig-items" class="ig-items"></div>
 
     <button type="button" id="ig-generate" class="btn btn-discover">投稿素材をまとめて作る</button>
@@ -309,6 +310,8 @@
     <section id="ig-result" class="ig-result" hidden>
       <button type="button" id="ig-room" class="btn btn-discover">ROOM登録準備へ</button>
       <p class="hint">Instagramに出す前に、紹介する商品をROOMに入れておくと、見た人がそのままROOMで見つけられます。</p>
+      <h3 class="compose-sub">スライド構成</h3>
+      <div id="ig-layout" class="ig-layout"></div>
       <h3 class="compose-sub">できあがり</h3>
       <div id="ig-preview" class="ig-preview"></div>
       <h3 class="compose-sub">キャプション</h3>
@@ -378,8 +381,10 @@
   <script src="js/history.js"></script>
   <script src="js/radar-store.js"></script>
   <script src="js/zip.js"></script>
+  <script src="js/carousel-layout.js"></script>
   <script src="js/ig-render.js"></script>
   <script src="js/ig-covers.js"></script>
+  <script src="js/ig-multi.js"></script>
   <script src="js/reel-story.js"></script>
   <script src="js/app.js"></script>
 </body>

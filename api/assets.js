@@ -5,7 +5,7 @@ import { buildReelStory } from '../lib/assets.js';
 import { normalizeTopic } from '../lib/instagram.js';
 import { maskSecrets } from '../lib/ai.js';
 
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 20;
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
 
 export default async function handler(req, res, env = process.env) {
