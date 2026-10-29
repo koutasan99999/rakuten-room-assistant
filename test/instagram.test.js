@@ -112,13 +112,17 @@ test('2枚目のまとめは、頼んだときだけAIに作らせて返す', as
     rakuten: () => json(500, {}),
     openai: (body) => aiReply({
       topicSlug: 'x', items: [{ id: 0, shortName: 'a', memo: '迷ったらまずこれでいい枠。' }, { id: 1, shortName: 'b', memo: '迷ったらまずこれでいい枠。' }],
-      ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '迷ったらこの順', lead: 'まず実用品から。', verdict: '迷ったらA。' } } : {})
+      ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '出産祝い、結局むずかしい。', points: ['ちゃんとして見える', '実際に使える', 'もらって困りにくい', '4つ目は使わない'], verdict: '今回はこの3つで選びました。' } } : {})
     })
   });
   const without = JSON.parse((await call(handler, { body: { theme: '出産祝い', items: ITEMS } })).body);
   assert.equal(without.summary, null);
   const withSum = JSON.parse((await call(handler, { body: { theme: '出産祝い', items: ITEMS, needSummary: true } })).body);
-  assert.deepEqual(withSum.summary, { title: '迷ったらこの順', lead: 'まず実用品から。', verdict: '迷ったらA。' });
+  // 3秒で読める量：つかみ1行＋基準3つ（箇条書き）＋締めの一文
+  assert.deepEqual(withSum.summary, {
+    title: '出産祝い、結局むずかしい。', points: ['ちゃんとして見える', '実際に使える', 'もらって困りにくい'],
+    lead: '・ちゃんとして見える\n・実際に使える\n・もらって困りにくい', verdict: '今回はこの3つで選びました。'
+  });
   assert.ok(mock.calls.openai[1].messages[0].content.includes('2枚目'));
   assert.ok(!mock.calls.openai[0].messages[0].content.includes('2枚目'));
 });

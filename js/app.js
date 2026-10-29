@@ -411,6 +411,7 @@
         card.appendChild(el('p', 'history-status', History.STATUS_LABELS[h.status] || h.status));
         card.appendChild(el('p', 'history-title', h.title || h.topic));
         card.appendChild(el('p', 'history-meta', [historyDate(h.createdAt), h.postType, h.genre, h.target, h.priceBand].filter(Boolean).join('｜')));
+        card.appendChild(el('p', 'history-assets', statusLine(h)));
         if (h.brands && h.brands.length) card.appendChild(el('p', 'history-meta', 'ブランド：' + h.brands.join('・')));
         if (h.products && h.products.length) card.appendChild(el('p', 'history-meta', '商品：' + h.products.map(function (x) { return x.name.slice(0, 18); }).join(' / ')));
         if (h.products && h.products.length && h.products[0].url) {
@@ -420,6 +421,9 @@
         }
         var actions = el('div', 'plan-actions');
         if (h.products && h.products.length && h.products[0].url) {
+          var assetsLink = el('a', 'link-btn', h.reelDone && h.storyDone ? 'Reel・Storyを見る' : 'Reel・Storyを作る');
+          assetsLink.href = '#assets:' + h.id;
+          actions.appendChild(assetsLink);
           var roomLink = el('a', 'link-btn', 'ROOM登録準備を開く');
           roomLink.href = '#room:' + h.id;
           actions.appendChild(roomLink);
@@ -490,19 +494,257 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
+    assetsView.hidden = view !== 'assets';
+    if (view === 'assets') renderAssetsView(parts[1] || draft.postId);
     if (view === 'manage' && parts[1] && (MANAGE_TABS.indexOf(parts[1]) !== -1 || parts[1] === 'history')) currentTab = parts[1];
     manageView.hidden = view !== 'manage';
     discoverView.hidden = view !== 'discover';
     composeView.hidden = view !== 'compose';
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
-      t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' ? 'manage' : view));
+      t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
     });
     if (view === 'manage') renderManage();
     if (view === 'compose') renderCompose();
     window.scrollTo(0, 0);
+  }
+
+  // ---- Reel・Story（同じ企画・同じ商品から、役割を変えて展開する） ----
+  var assetsView = document.getElementById('view-assets');
+  var assetsTitle = document.getElementById('assets-title');
+  var assetsStatus = document.getElementById('assets-status');
+  var assetsBody = document.getElementById('assets-body');
+
+  function canvasImg(canvas, alt) {
+    var img = el('img');
+    img.src = canvas.toDataURL('image/png');
+    img.alt = alt || '';
+    return img;
+  }
+
+  // 何枚かのファイルを、iPhoneでは共有シート（写真に保存）、それ以外はダウンロードで保存する
+  function saveFiles(files) {
+    var list = files.map(function (f) { return new File([f.blob], f.name, { type: f.blob.type || 'image/png' }); });
+    if (navigator.canShare && navigator.canShare({ files: list })) {
+      navigator.share({ files: list }).catch(function () {});
+    } else {
+      files.forEach(function (f) { downloadBlob(f.blob, f.name); });
+    }
+  }
+
+  function canvasesToFiles(slides) {
+    return Promise.all(slides.map(function (s) { return canvasToBlob(s.canvas); })).then(function (blobs) {
+      return slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; });
+    });
+  }
+
+  function reelScriptText(reel, items) {
+    var lines = ['タイトル：' + reel.title, '冒頭フック：' + reel.hook, '長さ：約' + reel.seconds + '秒', ''];
+    reel.scenes.forEach(function (s) {
+      var it = s.type === 'item' ? items[s.item] : null;
+      lines.push(s.start + '〜' + s.end + '秒' + (it ? '　商品：' + (it.shortName || it.name) : ''));
+      lines.push('テロップ：「' + s.text + '」');
+      if (s.narration) lines.push('ナレーション：' + s.narration);
+      lines.push('');
+    });
+    lines.push('最後の呼びかけ：' + reel.cta);
+    return lines.join('\n');
+  }
+
+  // o: { style, items: [{ shortName, name, price }], images: [商品画像（itemsと同じ順）], bear }
+  function reelSection(reel, o) {
+    var box = el('section', 'asset-box');
+    box.appendChild(el('h4', 'asset-head', 'Reel（約' + reel.seconds + '秒）'));
+    var dl = el('dl', 'idea-facts');
+    [['タイトル', reel.title], ['冒頭フック', reel.hook], ['最後の呼びかけ', reel.cta]].forEach(function (f) {
+      dl.appendChild(el('dt', null, f[0]));
+      dl.appendChild(el('dd', null, f[1]));
+    });
+    box.appendChild(dl);
+    // タイムライン（秒・テロップ・商品）
+    var table = el('table', 'timeline');
+    var head = el('tr');
+    ['秒', 'テロップ', '商品'].forEach(function (h) { head.appendChild(el('th', null, h)); });
+    table.appendChild(head);
+    reel.scenes.forEach(function (s) {
+      var tr = el('tr');
+      tr.appendChild(el('td', 'tl-sec', s.start + '〜' + s.end));
+      tr.appendChild(el('td', null, s.text));
+      var it = s.type === 'item' ? o.items[s.item] : null;
+      tr.appendChild(el('td', 'tl-item', it ? (it.shortName || it.name).slice(0, 16) : s.type === 'hook' ? 'フック' : '呼びかけ'));
+      table.appendChild(tr);
+    });
+    box.appendChild(table);
+    // シーンの静止画
+    var frames = window.ReelStory.renderReelFrames(reel, o);
+    var strip = el('div', 'asset-strip');
+    frames.forEach(function (fr) { strip.appendChild(canvasImg(fr.canvas, fr.fileName)); });
+    box.appendChild(strip);
+    box.appendChild(el('p', 'label', 'ナレーション文'));
+    var narr = el('textarea', 'textarea');
+    narr.rows = 5;
+    narr.value = reel.narration;
+    box.appendChild(narr);
+    var actions = el('div', 'actions');
+    actions.appendChild(copyButton('ナレーション文をコピー', function () { return narr.value; }));
+    actions.appendChild(copyButton('台本をまとめてコピー', function () { return reelScriptText(reel, o.items); }));
+    var video = el('button', 'btn btn-primary', '動画を書き出す（約' + reel.seconds + '秒かかります）');
+    video.type = 'button';
+    var out = el('div', 'asset-video');
+    video.addEventListener('click', function () {
+      video.disabled = true;
+      window.ReelStory.exportVideo(reel, o, function (p) { video.textContent = '書き出し中… ' + Math.round(p * 100) + '%'; }).then(function (blob) {
+        var ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
+        out.innerHTML = '';
+        var v = el('video');
+        v.src = URL.createObjectURL(blob);
+        v.controls = true;
+        v.playsInline = true;
+        v.muted = true;
+        out.appendChild(v);
+        var save = el('button', 'btn btn-secondary', '動画を保存（' + ext.toUpperCase() + '）');
+        save.type = 'button';
+        save.addEventListener('click', function () { saveFiles([{ name: 'reel.' + ext, blob: blob }]); });
+        out.appendChild(save);
+        if (ext !== 'mp4') out.appendChild(el('p', 'hint', 'このブラウザではWebM形式になりました。iPhoneのSafariで書き出すとMP4になります。'));
+      }, function (e) {
+        out.innerHTML = '';
+        out.appendChild(el('p', 'hint', (e && e.message) || '動画を書き出せませんでした。シーン画像を保存して、編集アプリでつなげてください。'));
+      }).then(function () {
+        video.disabled = false;
+        video.textContent = '動画を書き出す（約' + reel.seconds + '秒かかります）';
+      });
+    });
+    actions.appendChild(video);
+    var stills = el('button', 'btn btn-secondary', 'シーン画像を保存');
+    stills.type = 'button';
+    stills.addEventListener('click', function () { canvasesToFiles(frames).then(saveFiles); });
+    actions.appendChild(stills);
+    box.appendChild(actions);
+    box.appendChild(out);
+    box.appendChild(el('p', 'hint', 'ナレーションは文字だけです。読み上げるか、テロップだけで使ってください。動きはフェード・スライド・軽いズームだけにしています。'));
+    return box;
+  }
+
+  function storySection(story, o) {
+    var box = el('section', 'asset-box');
+    box.appendChild(el('h4', 'asset-head', 'Story（3枚）'));
+    var slides = window.ReelStory.renderStory(story, o);
+    var strip = el('div', 'asset-strip');
+    slides.forEach(function (s) { strip.appendChild(canvasImg(s.canvas, s.fileName)); });
+    box.appendChild(strip);
+    var actions = el('div', 'actions');
+    var save = el('button', 'btn btn-primary', 'Storyを写真に保存（3枚）');
+    save.type = 'button';
+    save.addEventListener('click', function () { canvasesToFiles(slides).then(saveFiles); });
+    actions.appendChild(save);
+    box.appendChild(actions);
+    box.appendChild(el('p', 'hint', '1枚目で興味を引く → 2枚目で選び方を少し見せる → 3枚目で最新投稿へ。上下の端はInstagramのボタンと重なるので、大事な文字は中央に置いています。'));
+    return box;
+  }
+
+  // Reel・Story の文字を作って履歴に保存する。only: 'reel' / 'story' を指定すると、まだ作っていない方だけ保存する
+  function requestAssets(rec, only) {
+    return postJson('api/assets', {
+      theme: rec.topic, title: rec.title, criteria: rec.criteria || [],
+      items: (rec.products || []).map(function (p) { return { name: p.name, shortName: p.shortName, price: p.price, role: p.role }; })
+    }).then(function (r) {
+      if (r.status !== 200) throw new Error(r.data.error || 'Reel・Storyを作れませんでした');
+      var patch = {};
+      if (only !== 'story') { patch.reel = r.data.reel; patch.reelDone = true; }
+      if (only !== 'reel') { patch.story = r.data.story; patch.storyDone = true; }
+      return History.update(rec.id, patch).then(function () { return { patch: patch, notice: r.data.notice }; });
+    });
+  }
+
+  // 投稿の商品画像とくまを読み込んで、Reel・Story を描くための材料をそろえる
+  function assetMaterials(rec) {
+    var products = rec.products || [];
+    return Promise.all([
+      Promise.all(products.map(function (p) { return loadProductImage(p.image); })),
+      window.IgRender.loadImage(BEAR_SRC).catch(function () { return null; })
+    ]).then(function (r) {
+      return { style: rec.series || 'serious_think', items: products, images: r[0], bear: r[1] };
+    });
+  }
+
+  function statusLine(rec) {
+    var mark = function (on) { return on ? '✓' : '未生成'; };
+    return 'カルーセル ' + mark(rec.carouselDone || rec.status === 'generated' || rec.status === 'posted') + '　Reel ' + mark(rec.reelDone) + '　Story ' + mark(rec.storyDone) +
+      '　Instagram ' + (rec.status === 'posted' ? '投稿済み' : '未投稿');
+  }
+
+  // 画像づくりのあと、同じ投稿のReel・Storyを続けて作って表示する
+  function buildAssetsAfterCarousel(postId, mats) {
+    var box = document.getElementById('ig-assets');
+    box.innerHTML = '';
+    var wait = el('div', 'loading');
+    wait.appendChild(el('div', 'spinner'));
+    var t = el('p');
+    t.innerHTML = 'Reel・Storyを作っています…<br><span class="sub">10〜30秒ほどかかります</span>';
+    wait.appendChild(t);
+    box.appendChild(wait);
+    History.get(postId).then(function (rec) {
+      return requestAssets(rec).then(function (res) {
+        box.innerHTML = '';
+        if (res.notice) box.appendChild(el('p', 'hint', res.notice));
+        box.appendChild(reelSection(res.patch.reel, mats));
+        box.appendChild(storySection(res.patch.story, mats));
+      });
+    }).catch(function (e) {
+      box.innerHTML = '';
+      box.appendChild(el('p', 'message error', (e && e.message) || 'Reel・Storyを作れませんでした。'));
+      var link = el('a', 'link-btn', '投稿履歴からもう一度作る');
+      link.href = '#assets:' + postId;
+      box.appendChild(link);
+    });
+  }
+
+  // 投稿履歴から開く画面：作ったものは表示し、まだ作っていないものだけ作れる
+  function renderAssetsView(id) {
+    assetsBody.innerHTML = '';
+    assetsStatus.textContent = '';
+    History.get(id).then(function (rec) {
+      if (!rec) { assetsTitle.textContent = 'この投稿は見つかりませんでした。'; return; }
+      assetsTitle.textContent = rec.title || rec.topic;
+      assetsStatus.textContent = statusLine(rec);
+      if (!(rec.products || []).length || !rec.products[0].url) {
+        assetsBody.appendChild(el('p', 'hint', 'まだ商品が決まっていません。商品を選んで「投稿素材をまとめて作る」を押すと、カルーセル・Reel・Storyをまとめて作れます。'));
+        return;
+      }
+      assetMaterials(rec).then(function (mats) {
+        function draw(r) {
+          assetsBody.innerHTML = '';
+          assetsStatus.textContent = statusLine(r);
+          if (r.reel) assetsBody.appendChild(reelSection(r.reel, mats));
+          if (r.story) assetsBody.appendChild(storySection(r.story, mats));
+          var missing = !r.reel && !r.story ? 'both' : !r.reel ? 'reel' : !r.story ? 'story' : '';
+          if (!missing) return;
+          var btn = el('button', 'btn btn-discover', missing === 'both' ? 'Reel・Storyを作る' : missing === 'reel' ? 'Reelを作る（未生成）' : 'Storyを作る（未生成）');
+          btn.type = 'button';
+          var note = el('p', 'hint', '');
+          btn.addEventListener('click', function () {
+            btn.disabled = true;
+            btn.textContent = '作っています…（10〜30秒）';
+            requestAssets(r, missing === 'both' ? null : missing).then(function (res) {
+              return History.get(id).then(function (latest) {
+                draw(latest);
+                if (res.notice) showToast(res.notice);
+              });
+            }, function (e) {
+              btn.disabled = false;
+              btn.textContent = 'もう一度作る';
+              note.textContent = (e && e.message) || '作れませんでした。もう一度お試しください。';
+            });
+          });
+          assetsBody.appendChild(btn);
+          assetsBody.appendChild(note);
+        }
+        draw(rec);
+      });
+    });
   }
 
   // ---- ROOM登録準備（投稿の確定は、ユーザーがROOMで行う） ----
@@ -863,11 +1105,13 @@
         return;
       }
       var copy = res.data;
+      var cover = coverFor(copy.cover);
+      var coverStyleUsed = cover ? cover.style : 'serious_think';
       var slides = window.IgRender.renderPost({
         topic: copy.topic,
         category: draft.category || copy.category,
         subtitle: draft.subtitle || '迷ったので整理しました',
-        cover: coverFor(copy.cover),
+        cover: cover,
         bear: r[2],
         ctaMessage: draft.cta === 'collection' ? collectionCtaMessage(copy.topic) : window.IgRender.CTA_MESSAGES[draft.cta || 0],
         summary: !sum.enabled ? null : needSummary
@@ -911,8 +1155,15 @@
               status: rec && rec.status === 'posted' ? 'posted' : 'generated',
               topic: copy.topic,
               products: productsFull,
-              collectionName: (rec && rec.collectionName) || History.collectionNameFor(copy.topic)
+              collectionName: (rec && rec.collectionName) || History.collectionNameFor(copy.topic),
+              series: coverStyleUsed,
+              criteria: (copy.summary && copy.summary.points) || [],
+              carouselDone: true,
+              // 商品を選び直したので、前に作ったReel・Storyは作り直す
+              reel: null, story: null, reelDone: false, storyDone: false
             });
+          }).then(function () {
+            buildAssetsAfterCarousel(id, { style: coverStyleUsed, items: productsFull, images: r[1], bear: r[2] });
           });
         });
         igPreview.innerHTML = '';
@@ -1616,6 +1867,7 @@
     });
     card.appendChild(dl);
     if (idea.whyInteresting) card.appendChild(el('p', 'idea-why', idea.whyInteresting));
+    if (idea.shareWith) card.appendChild(el('p', 'idea-share', '送りたくなる相手：' + idea.shareWith));
     if ((idea.slots || []).length) {
       var roles = el('div', 'idea-roles');
       idea.slots.forEach(function (sl) { roles.appendChild(el('span', null, sl.label)); });

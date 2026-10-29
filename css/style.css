@@ -415,6 +415,7 @@ body {
 .idea-facts dt { color: var(--muted); font-weight: 700; }
 .idea-facts dd { margin: 0; }
 .idea-why { margin: 0; font-size: 14px; }
+.idea-share { margin: 0; font-size: 13px; color: #1f6f43; font-weight: 700; }
 .idea-roles { display: flex; flex-wrap: wrap; gap: 6px; }
 .idea-roles span { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); }
 .quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
@@ -533,3 +534,16 @@ body {
 .cand-card.seed-cand { border-color: #1f6f43; box-shadow: 0 0 0 3px rgba(31, 111, 67, 0.15); }
 .pin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 6px 10px; border-radius: 10px; background: var(--soft); font-size: 13px; font-weight: 700; }
 .pin-row.on { background: #e8f3ec; color: #1f6f43; }
+
+/* Reel・Story */
+.asset-box { background: var(--card); border-radius: 14px; padding: 14px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); display: grid; gap: 10px; }
+.asset-head { margin: 0; font-size: 17px; font-weight: 800; }
+.asset-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.asset-strip img { width: 108px; height: 192px; flex-shrink: 0; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; }
+.timeline { width: 100%; border-collapse: collapse; font-size: 13px; }
+.timeline th, .timeline td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.timeline th { color: var(--muted); font-weight: 700; }
+.tl-sec { white-space: nowrap; color: var(--muted); }
+.tl-item { color: var(--muted); }
+.asset-video video { width: 100%; max-width: 270px; border-radius: 12px; display: block; margin: 0 auto 8px; background: #000; }
+.asset-status, .history-assets { margin: 0; font-size: 13px; font-weight: 700; color: #1f6f43; }

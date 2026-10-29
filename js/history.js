@@ -8,6 +8,10 @@
 //   collectionName: ROOMのコレクション名、collectionDone: コレクションに入れたか
 //   roomDone: { 商品id: true }（この投稿の商品のうちROOMに入れたもの）,
 //   status: 'planned'（企画を選んだ）| 'generated'（画像を作った）| 'posted'（Instagram投稿済み）,
+//   series: 表紙のシリーズ（must_buy など）、criteria: 2枚目に書いた選び方の基準
+//   carouselDone / reelDone / storyDone: カルーセル・Reel・Story を作ったか
+//   reel: { title, hook, cta, seconds, scenes, narration }、story: { hook, hookSub, title, points, text, sub }
+//   metrics: 将来の記録用 { reach, saves, shares, profileVisits, roomClicks, sales }（今は空）
 //   createdAt, updatedAt
 // }
 (function () {
@@ -29,7 +33,8 @@
     } catch (e) { return false; }
   }
 
-  var FIELDS = ['title', 'topic', 'subtitle', 'genre', 'postType', 'target', 'priceBand', 'brands', 'products', 'status', 'collectionName', 'collectionDone', 'roomDone'];
+  var FIELDS = ['title', 'topic', 'subtitle', 'genre', 'postType', 'target', 'priceBand', 'brands', 'products', 'status', 'collectionName', 'collectionDone', 'roomDone',
+    'series', 'criteria', 'carouselDone', 'reelDone', 'storyDone', 'reel', 'story', 'metrics'];
 
   // 楽天ROOMのコレクション名の提案（Instagramのテーマとそろえて、ROOM内で迷わないように）
   function collectionNameFor(topic) {
@@ -49,17 +54,23 @@
     add: function (post) {
       var posts = readAll();
       var now = Date.now();
-      var rec = { id: 'p' + now.toString(36) + Math.random().toString(36).slice(2, 6), status: 'planned', brands: [], products: [], createdAt: now, updatedAt: now };
+      var rec = {
+        id: 'p' + now.toString(36) + Math.random().toString(36).slice(2, 6), status: 'planned', brands: [], products: [],
+        carouselDone: false, reelDone: false, storyDone: false,
+        metrics: { reach: null, saves: null, shares: null, profileVisits: null, roomClicks: null, sales: null },
+        createdAt: now, updatedAt: now
+      };
       FIELDS.forEach(function (k) { if (post[k] != null) rec[k] = post[k]; });
       posts.unshift(rec);
       return writeAll(posts) ? Promise.resolve(rec.id) : Promise.reject(new Error('保存できませんでした'));
     },
 
+    // null を渡すと、その項目を空に戻せる（例：商品を選び直したときの reel / story）
     update: function (id, patch) {
       var posts = readAll();
       var rec = posts.filter(function (p) { return p.id === id; })[0];
       if (!rec) return Promise.resolve(false);
-      FIELDS.forEach(function (k) { if (patch[k] != null) rec[k] = patch[k]; });
+      FIELDS.forEach(function (k) { if (patch[k] !== undefined) rec[k] = patch[k]; });
       rec.updatedAt = Date.now();
       return Promise.resolve(writeAll(posts));
     },
