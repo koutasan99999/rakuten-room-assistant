@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-10-30.4">
+  <meta name="app-version" content="2026-10-30.6">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-10-30.4">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-30.6">
 </head>
 <body>
   <header class="header">
@@ -181,6 +181,7 @@
         </div>
         </details>
         <button type="button" class="btn btn-secondary fold-btn fold-all" data-fold="radar-settings">ジャンル・ブランドの設定を畳む</button>
+        <button type="button" id="radar-reset" class="btn btn-secondary radar-reset">新作レーダーをリセット（見つけた商品を消す）</button>
       </details>
 
       <!-- ブランドの新作探し（個別に探しても、自動で探す設定は変えない） -->
@@ -272,6 +273,7 @@
     <div id="message" class="message" role="alert" hidden></div>
 
     <p id="genre" class="genre" hidden></p>
+    <div class="fold-all-bar fold-skip"><button type="button" class="link-btn" id="fold-all-close">すべて畳む</button><button type="button" class="link-btn" id="fold-all-open">すべて開く</button></div>
     <div id="results" class="results"></div>
   </main>
 
@@ -445,21 +447,23 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-10-30.4"></script>
-  <script src="js/history.js?v=2026-10-30.4"></script>
-  <script src="js/search-jobs.js?v=2026-10-30.4"></script>
-  <script src="js/radar-store.js?v=2026-10-30.4"></script>
-  <script src="js/brand-follow.js?v=2026-10-30.4"></script>
-  <script src="js/zip.js?v=2026-10-30.4"></script>
-  <script src="js/carousel-layout.js?v=2026-10-30.4"></script>
-  <script src="js/ig-render.js?v=2026-10-30.4"></script>
-  <script src="js/ig-covers.js?v=2026-10-30.4"></script>
-  <script src="js/ig-coord.js?v=2026-10-30.4"></script>
-  <script src="js/ig-multi.js?v=2026-10-30.4"></script>
-  <script src="js/reel-story.js?v=2026-10-30.4"></script>
-  <script src="js/coord-store.js?v=2026-10-30.4"></script>
-  <script src="js/coord-collage.js?v=2026-10-30.4"></script>
-  <script src="js/image-store.js?v=2026-10-30.4"></script>
-  <script src="js/app.js?v=2026-10-30.4"></script>
+  <script src="js/store.js?v=2026-10-30.6"></script>
+  <script src="js/history.js?v=2026-10-30.6"></script>
+  <script src="js/search-jobs.js?v=2026-10-30.6"></script>
+  <script src="js/hidden-products.js?v=2026-10-30.6"></script>
+  <script src="js/radar-store.js?v=2026-10-30.6"></script>
+  <script src="js/brand-follow.js?v=2026-10-30.6"></script>
+  <script src="js/zip.js?v=2026-10-30.6"></script>
+  <script src="js/carousel-layout.js?v=2026-10-30.6"></script>
+  <script src="js/ig-render.js?v=2026-10-30.6"></script>
+  <script src="js/ig-covers.js?v=2026-10-30.6"></script>
+  <script src="js/ig-coord.js?v=2026-10-30.6"></script>
+  <script src="js/ig-multi.js?v=2026-10-30.6"></script>
+  <script src="js/reel-story.js?v=2026-10-30.6"></script>
+  <script src="js/coord-store.js?v=2026-10-30.6"></script>
+  <script src="js/coord-collage.js?v=2026-10-30.6"></script>
+  <script src="js/image-store.js?v=2026-10-30.6"></script>
+  <script src="js/fold.js?v=2026-10-30.6"></script>
+  <script src="js/app.js?v=2026-10-30.6"></script>
 </body>
 </html>

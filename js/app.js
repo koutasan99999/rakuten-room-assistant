@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.4';
+  var APP_VERSION = '2026-10-30.6';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -174,6 +174,20 @@
   }
 
   // opts.genreId: 発掘モードのジャンル記録用
+  // 「今後非表示」：この商品を、発掘・候補・レーダー・売れ筋・検索結果のどこにも出さない（投稿管理の「非表示」で戻せる）
+  function hideButton(p, where, card, onHidden) {
+    var b = el('button', 'link-btn hide-btn', '今後非表示');
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      window.HiddenProducts.add(p, where);
+      if (card && card.parentNode) card.parentNode.removeChild(card);
+      if (onHidden) onHidden();
+      showToast('今後表示しません（投稿管理の「非表示」で戻せます）');
+    });
+    return b;
+  }
+  function visible(list) { return window.HiddenProducts.filter(list); }
+
   function renderCard(p, opts) {
     opts = opts || {};
     var card = el('article', 'card');
@@ -248,6 +262,7 @@
     }));
     card.appendChild(actions);
     card.appendChild(statusBox(p));
+    card.appendChild(hideButton(p, 'ランダム発掘', card));
     return card;
   }
 
@@ -317,7 +332,7 @@
   var igDone = document.getElementById('ig-done');
   var igCreate = document.getElementById('ig-create');
   var MANAGE_TABS = ['room_candidate', 'room_posted', 'ig_waiting', 'ig_posted'];
-  var TAB_LABELS = { history: '投稿履歴' };
+  var TAB_LABELS = { history: '投稿履歴', hidden: '非表示' };
   var currentTab = 'room_candidate';
   var igSelected = {}; // Instagram用にチェックした商品（id → 商品）
   var PICK_TABS = ['ig_waiting', 'room_posted']; // チェックして選べるタブ
@@ -331,8 +346,8 @@
 
   function renderStatusTabs(counts) {
     statusTabs.innerHTML = '';
-    MANAGE_TABS.concat(['history']).forEach(function (s) {
-      var text = s === 'history' ? TAB_LABELS.history : Store.statusLabel(s) + '（' + (counts[s] || 0) + '）';
+    MANAGE_TABS.concat(['history', 'hidden']).forEach(function (s) {
+      var text = s === 'history' ? TAB_LABELS.history : s === 'hidden' ? '非表示（' + window.HiddenProducts.list().length + '）' : Store.statusLabel(s) + '（' + (counts[s] || 0) + '）';
       var tab = el('button', 'status-tab' + (s === currentTab ? ' active' : ''), text);
       tab.type = 'button';
       tab.setAttribute('role', 'tab');
@@ -470,6 +485,7 @@
     Store.counts().then(renderStatusTabs);
     igBar.hidden = PICK_TABS.indexOf(currentTab) === -1;
     if (currentTab === 'history') { renderHistory(); return; }
+    if (currentTab === 'hidden') { renderHiddenList(); return; }
     Store.list(currentTab).then(function (items) {
       manageList.innerHTML = '';
       // 他のタブへ移った商品は選択から外す
@@ -481,6 +497,47 @@
       manageEmpty.textContent = '「' + Store.statusLabel(currentTab) + '」の商品はまだありません。商品発掘の画面で、各商品の下のボタンから追加できます。';
       updateIgBar();
     });
+  }
+
+  // 「今後非表示」にした商品の一覧：確認して、表示に戻せる
+  function renderHiddenList() {
+    manageList.innerHTML = '';
+    var list = window.HiddenProducts.list();
+    manageEmpty.hidden = list.length > 0;
+    manageEmpty.textContent = '非表示にした商品はありません。発掘・候補・新作レーダーなどの商品の「今後非表示」で、ここに入ります。';
+    if (list.length) manageList.appendChild(el('p', 'hint', '非表示にした商品は、商品発掘・企画の候補・新作レーダー・売れ筋・検索結果に出ません。「表示に戻す」で、また出るようになります。'));
+    list.forEach(function (h) {
+      var card = el('article', 'card manage-card');
+      var top = el('div', 'card-top');
+      if (h.image) { var img = el('img', 'thumb'); img.src = h.image; img.alt = ''; img.onerror = function () { img.remove(); }; top.appendChild(img); }
+      var info = el('div');
+      info.appendChild(el('h2', 'card-title', h.name));
+      info.appendChild(el('p', 'price', [h.price ? formatPrice(h.price) : '', h.shop, h.where && h.where + 'で非表示', new Date(h.at).toLocaleDateString('ja-JP')].filter(Boolean).join('｜')));
+      top.appendChild(info);
+      card.appendChild(top);
+      var acts = el('div', 'actions');
+      var back = el('button', 'btn btn-secondary', '表示に戻す');
+      back.type = 'button';
+      back.addEventListener('click', function () {
+        window.HiddenProducts.remove(h);
+        showToast('表示に戻しました');
+        renderManage();
+      });
+      acts.appendChild(back);
+      if (h.url) { var a = el('a', 'link-btn', '商品ページを見る'); a.href = h.url; a.target = '_blank'; a.rel = 'noopener'; acts.appendChild(a); }
+      card.appendChild(acts);
+      manageList.appendChild(card);
+    });
+    if (list.length > 1) {
+      var all = el('button', 'btn btn-secondary', 'すべて表示に戻す');
+      all.type = 'button';
+      all.addEventListener('click', function () {
+        if (!window.confirm(list.length + '件をすべて表示に戻しますか？')) return;
+        list.forEach(function (h) { window.HiddenProducts.remove(h); });
+        renderManage();
+      });
+      manageList.appendChild(all);
+    }
   }
 
   // 選んだ商品の一覧文（今はコピー用。次の段階でInstagram投稿の自動生成に使う）
@@ -517,7 +574,7 @@
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
     if (view === 'assets') renderAssetsView(parts[1] || draft.postId);
-    if (view === 'manage' && parts[1] && (MANAGE_TABS.indexOf(parts[1]) !== -1 || parts[1] === 'history')) currentTab = parts[1];
+    if (view === 'manage' && parts[1] && (MANAGE_TABS.indexOf(parts[1]) !== -1 || parts[1] === 'history' || parts[1] === 'hidden')) currentTab = parts[1];
     manageView.hidden = view !== 'manage';
     discoverView.hidden = view !== 'discover';
     composeView.hidden = view !== 'compose';
@@ -1539,6 +1596,7 @@
       genreEl.hidden = false;
     }
     if (products.length >= 2) results.appendChild(renderDiscoverHeader(data));
+    products = visible(products);
     products.forEach(function (p) {
       results.appendChild(renderCard(p, { genreId: data.genreId, onSeed: function (prod) { startSeed(prod, data); } }));
     });
@@ -1659,7 +1717,7 @@
 
   // 完全ランダムの発掘（5商品前後、紹介文つき）
   function discover() {
-    var body = { stats: loadStats(), recent: loadRecent() };
+    var body = { stats: loadStats(), recent: loadRecent(), hidden: window.HiddenProducts.list().map(function (h) { return h.name; }) };
     request('api/discover', body, discoverBtn, function (data, products) {
       if (products.length) {
         recordStat(data.genreId, 'shown');
@@ -1833,6 +1891,8 @@
       co.addEventListener('click', function () { startCoord(c); });
       card.appendChild(co);
     }
+    // 起点の商品・採用した商品は非表示にしない（外してから）
+    if (!c.pinned && !c.picked) card.appendChild(hideButton(c, '企画の候補', card));
     return card;
   }
 
@@ -2357,11 +2417,12 @@
       link.rel = 'noopener';
       actions.appendChild(link);
       card.appendChild(actions);
+      card.appendChild(hideButton(it, '企画の検索結果', card));
       return card;
     }
     function drawResults() {
       resultList.innerHTML = '';
-      S.items.forEach(function (it) { resultList.appendChild(resultCard(it)); });
+      visible(S.items).forEach(function (it) { resultList.appendChild(resultCard(it)); });
       searchMore.hidden = !S.axis || !S.items.length;
       var a = S.analysis;
       var parts = a && S.axis !== 'search' ? [a.brand && 'ブランド ' + a.brand, a.partner && 'コラボ相手 ' + a.partner, a.category && '種類 ' + a.category, a.color && '色 ' + a.color].filter(Boolean) : [];
@@ -2533,7 +2594,7 @@
     }
     function draw() {
       list.innerHTML = '';
-      var view = viewCandidates(d.candidates, d.view || 'recommend');
+      var view = viewCandidates(d.candidates.filter(function (c) { return c.pinned || c.picked || !window.HiddenProducts.isHidden(c); }), d.view || 'recommend');
       if (!view.length) list.appendChild(el('p', 'manage-empty', 'この絞り込みに当てはまる候補はありません。'));
       view.forEach(function (c) { list.appendChild(candidateCard(c, update)); });
     }
@@ -2989,7 +3050,7 @@
       var t = S.target && lookById(S.target.lookId);
       var targetItem = t && t.items[S.target.index];
       var addLook = lookById(S.lookId);
-      S.items.forEach(function (it) {
+      visible(S.items).forEach(function (it) {
         var card = el('article', 'cand-card');
         var top = el('div', 'cand-top');
         var img = el('img', 'cand-thumb');
@@ -4192,7 +4253,7 @@
   function radarFiltered(all, settings) {
     var price = rf.price.value ? rf.price.value.split('-').map(Number) : null;
     var list = all.filter(function (it) {
-      if (it.hidden || offGenre(it)) return false;
+      if (it.hidden || offGenre(it) || window.HiddenProducts.isHidden(it)) return false;
       if (rf.fav.checked && !it.favorite) return false;
       if (rf.status.value && !hasStatus(it, rf.status.value)) return false;
       if (rf.period.value && !inPeriod(it, rf.period.value)) return false;
@@ -4337,13 +4398,14 @@
       actions.appendChild(room);
     }
     card.appendChild(actions);
+    card.appendChild(hideButton({ code: it.code, name: it.name, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, price: it.price, shops: it.shops }, '新作レーダー', card, function () { renderRadarDash(); }));
     return card;
   }
 
   // ダッシュボード：保存してある商品の数（押すとその一覧へ）
   function renderRadarDash() {
     return Radar.list().then(function (all) {
-      var list = all.filter(function (it) { return !it.hidden && !offGenre(it); });
+      var list = all.filter(function (it) { return !it.hidden && !offGenre(it) && !window.HiddenProducts.isHidden(it); });
       var cards = [
         ['今日の新着', 'new_today', '', function (it) { return inPeriod(it, 'new_today'); }],
         ['予約受付中', '', 'PRE_ORDER', function (it) { return hasStatus(it, 'PRE_ORDER'); }],
@@ -4836,6 +4898,20 @@
   }
 
   radarScanBtn.addEventListener('click', scanRadar);
+  var radarReset = document.getElementById('radar-reset');
+  if (radarReset) radarReset.addEventListener('click', function () {
+    if (!window.confirm('新作レーダーをリセットしますか？\n見つけた商品（「気になる」に入れた商品も）をすべて消し、次の更新は最初のジャンルから探し直します。見るジャンル・ブランドの設定は残ります。')) return;
+    Radar.clear().then(function () {
+      window.BrandFollow.resetChecked(brandState());
+      radarLast.textContent = '';
+      showRadarLast();
+      renderRadarDash();
+      renderRadarList();
+      radarMessage.textContent = '新作レーダーをリセットしました。「レーダーを更新」で探し直せます。';
+      radarMessage.className = 'message';
+      radarMessage.hidden = false;
+    });
+  });
   radarMoreBtn.addEventListener('click', function () { radarShown += 40; renderRadarList(); });
   document.getElementById('rf-clear').addEventListener('click', function () { clearRadarFilters(); renderRadarList(); });
   Object.keys(rf).forEach(function (k) { rf[k].addEventListener('change', function () { radarShown = 40; renderRadarList(); }); });
@@ -4933,6 +5009,13 @@
   function waitJob(job) { return new Promise(function (resolve) { Jobs.whenDone(job, resolve); }); }
   // 検索ジョブとして呼ぶ。合言葉が必要なら1度だけ聞いて、失敗した部分をやり直す
   function jobCall(type, body, info) {
+    // 「今後非表示」にした商品は、サーバーの検索でも除いてもらう（表示済みの扱い）
+    if (type === 'related' && body && Array.isArray(body.shown)) body = Object.assign({}, body, { shown: body.shown.concat(window.HiddenProducts.refs(60)) });
+    if ((type === 'explore' || type === 'explore_more') && body) {
+      var hx = window.HiddenProducts.refs(60);
+      var ex = body.exclude || { codes: [], names: [] };
+      body = Object.assign({}, body, { exclude: { codes: (ex.codes || []).concat(hx.map(function (h) { return h.code; }).filter(Boolean)), names: (ex.names || []).concat(hx.map(function (h) { return h.name; })) } });
+    }
     return Jobs.start(type, { body: body }, info).then(function (job) {
       return waitJob(job).then(function (j) {
         var r = jobResponse(j);
@@ -5195,6 +5278,7 @@
       acts.appendChild(a);
     }
     card.appendChild(acts);
+    card.appendChild(hideButton(product, opts.release ? '新作・話題' : '売れ筋', card));
     return card;
   }
 
@@ -5276,7 +5360,7 @@
       if (d.notice) list.appendChild(el('p', 'hint', d.notice));
       if (Date.now() - new Date(d.fetchedAt).getTime() > 24 * 3600 * 1000) list.appendChild(el('p', 'hint', '1日以上前に取得したランキングです。最新にするには「売れ筋を取得」を押してください。'));
       if (!d.items.length) list.appendChild(el('p', 'manage-empty', 'このジャンルの商品がありませんでした。'));
-      d.items.forEach(function (it) { list.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
+      visible(d.items).forEach(function (it) { list.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
     }
     go.addEventListener('click', function () { fetchRanking(go, note, draw); });
     draw();
@@ -5401,7 +5485,7 @@
       list.innerHTML = '';
       Radar.list().then(function (all) {
         var since = Date.now() - Number(TR.newPeriod) * 24 * 3600 * 1000;
-        var items = all.filter(function (it) { return !it.hidden && !offGenre(it) && it.createdAt >= since; }).sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).slice(0, 30);
+        var items = all.filter(function (it) { return !it.hidden && !offGenre(it) && !window.HiddenProducts.isHidden(it) && it.createdAt >= since; }).sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).slice(0, 30);
         list.appendChild(sourceLine('出典：新作レーダー（楽天市場の商品名・説明）｜' + items.length + '件'));
         if (!items.length) {
           list.appendChild(el('p', 'manage-empty', 'この期間に見つけた新作はありません。「新作・予約を探す」でレーダーを更新してください。'));
@@ -5498,7 +5582,7 @@
     showMore.addEventListener('click', function () {
       more.innerHTML = '';
       more.appendChild(sourceLine('楽天市場ランキング（' + d.genreLabel + '）に入っていた商品'));
-      b.items.forEach(function (it) { more.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
+      visible(b.items).forEach(function (it) { more.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
     });
     var find = el('button', 'btn btn-secondary', 'このブランドの商品を探す');
     find.type = 'button';
@@ -5511,7 +5595,7 @@
         more.innerHTML = '';
         if (r.status !== 200) { more.appendChild(el('p', 'hint', r.data.error || '探せませんでした')); return; }
         more.appendChild(sourceLine('楽天市場の商品検索「' + b.name + '」｜' + (r.data.items || []).length + '件'));
-        (r.data.items || []).forEach(function (it) { more.appendChild(trendProductCard(it, {})); });
+        visible(r.data.items || []).forEach(function (it) { more.appendChild(trendProductCard(it, {})); });
       });
     });
     var plan = el('button', 'btn btn-primary', 'このブランドで企画を作る');
@@ -5651,7 +5735,7 @@
       list.innerHTML = '';
       moreBtn.hidden = !FS.items.length || (FS.page || 1) >= (FS.pageCount || 1);
       if (FS.fetchedAt) list.appendChild(sourceLine('出典：楽天ふるさと納税（楽天市場の商品検索API）｜取得 ' + dt(FS.fetchedAt)));
-      FS.items.forEach(function (x) {
+      visible(FS.items).forEach(function (x) {
         var card = el('article', 'cand-card furusato-card');
         var top = el('div', 'cand-top');
         var img = el('img', 'cand-thumb'); img.src = x.image || ''; img.alt = ''; img.loading = 'lazy'; img.onerror = function () { img.style.visibility = 'hidden'; };
@@ -5676,6 +5760,7 @@
         acts.appendChild(a);
         card.appendChild(acts);
         card.appendChild(el('p', 'hint', '楽天ROOM・アフィリエイトの対象か：未確認'));
+        card.appendChild(hideButton(x, 'ふるさと納税', card));
         list.appendChild(card);
       });
     }
@@ -5856,7 +5941,7 @@
       jobCall('related', { axis: 'search', keyword: q, exclude: [], shown: [] }, { label: 'コーデの起点：' + q, genre: 'ファッション' }).then(function (r) {
         btn.disabled = false;
         if (r.status !== 200) { note.textContent = r.data.error || '探せませんでした'; return; }
-        var items = r.data.items || [];
+        var items = visible(r.data.items || []);
         note.textContent = items.length ? items.length + '件見つかりました。起点にする商品の「この商品でコーデを作る」を押してください。' : '見つかりませんでした。言葉を変えてみてください。';
         items.forEach(function (it) {
           var card = el('article', 'cand-card');
@@ -5884,5 +5969,13 @@
     form.addEventListener('submit', function (e) { e.preventDefault(); kw.blur(); run(); });
   }
   renderCoordEntry();
+
+  // 結果のまとまりを、まとめて畳む／開く
+  var foldClose = document.getElementById('fold-all-close');
+  var foldOpen = document.getElementById('fold-all-open');
+  if (foldClose && window.Fold) {
+    foldClose.addEventListener('click', function () { window.Fold.all(document.getElementById('view-discover'), true); });
+    foldOpen.addEventListener('click', function () { window.Fold.all(document.getElementById('view-discover'), false); });
+  }
 
 })();

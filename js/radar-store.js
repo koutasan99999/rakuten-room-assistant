@@ -120,6 +120,15 @@
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
     },
 
+    // リセット：見つけた商品をすべて消し、巡回の順番・最後に更新した日時も最初に戻す（見るジャンル・ブランドの設定は残す）
+    clear: function () {
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      var st = RadarStore.settings();
+      st.cursor = 0; st.round = 0; st.lastScanAt = 0;
+      RadarStore.saveSettings(st);
+      return Promise.resolve(true);
+    },
+
     exportAll: function () {
       return Promise.resolve({ version: 1, items: readAll(), settings: RadarStore.settings() });
     }

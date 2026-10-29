@@ -26,6 +26,10 @@ export default async function handler(req, res, env = process.env) {
     .filter((x) => typeof x === 'string' && x.trim()).slice(0, MAX_RECENT)
     .map((x) => x.replace(/[【\[].*?[】\]]/g, '').replace(/[\s　]+/g, ' ').trim().slice(0, 30));
   const recentKeys = new Set(recent.map(nameKey));
+  // 「今後非表示」にした商品（iPhone側で記録）。同じ商品は候補から外す（似た商品までは避けない）
+  for (const h of (Array.isArray(body.hidden) ? body.hidden : []).filter((x) => typeof x === 'string').slice(0, 200)) {
+    recentKeys.add(nameKey(h.replace(/[【\[].*?[】\]]/g, '').replace(/[\s　]+/g, ' ').trim().slice(0, 30)));
+  }
   // 発掘条件：ジャンル（画面の選択肢）と自由入力。両方とも空なら今まで通りの完全ランダム発掘
   const filterGenre = resolveFilterGenre(body.genre);
   const free = sanitizeFreeText(body.free);
