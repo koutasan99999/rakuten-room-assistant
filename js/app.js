@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.5';
+  var APP_VERSION = '2026-10-29.6';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -3071,6 +3071,174 @@
       kw.focus();
     }
 
+    // AI着用イメージの欄（コーデ1つ分）
+    var tryOnMeta = null;
+    var tryOnBusy = false;
+    function tryOnSection(look) {
+      var box = el('details', 'coord-tryon');
+      box.open = !!(view.images || []).some(function (x) { return x.lookId === look.id; });
+      box.appendChild(el('summary', null, 'AI着用イメージ（完成コーデの予想）'));
+      box.appendChild(el('p', 'hint', '選んだ実在の商品の写真を参考に、AIが全身の着用イメージを作ります。ロゴ・柄・細部・色味は実物と違うことがあります。実際の商品写真ではありません。'));
+      var T = look.tryon = look.tryon || { background: 'studio', pose: 'front', quality: 'low', variant: 1 };
+      var grid = el('div', 'coord-cond-grid');
+      function pick(label, key, options) {
+        var f = el('label', 'field');
+        f.appendChild(el('span', 'field-label', label));
+        var s = el('select', 'select');
+        options.forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; s.appendChild(x); });
+        s.value = T[key];
+        s.addEventListener('change', function () { T[key] = s.value; T.variant = 1; persist(); drawCost(); });
+        f.appendChild(s);
+        grid.appendChild(f);
+      }
+      pick('背景', 'background', [['studio', 'スタジオ（無地）'], ['street', '街並み'], ['cafe', 'カフェの前'], ['park', '公園'], ['indoor', '室内']]);
+      pick('ポーズ', 'pose', [['front', '正面で立つ'], ['walk', '歩く'], ['angle', '少し斜め'], ['lean', '壁にもたれる']]);
+      pick('画質', 'quality', [['low', '標準（安い）'], ['medium', 'きれい（少し高い）']]);
+      box.appendChild(grid);
+      var cost = el('p', 'coord-cost');
+      box.appendChild(cost);
+      var limitRow = el('label', 'field coord-limit');
+      limitRow.appendChild(el('span', 'field-label', '1か月に作れる枚数の上限'));
+      var limitIn = el('input', 'input');
+      limitIn.type = 'number';
+      limitIn.inputMode = 'numeric';
+      limitIn.value = window.ImageStore.usage().limit;
+      limitIn.addEventListener('change', function () { window.ImageStore.setLimit(limitIn.value); drawCost(); });
+      limitRow.appendChild(limitIn);
+      box.appendChild(limitRow);
+      var gen = el('button', 'btn btn-primary', '完成コーデを生成');
+      gen.type = 'button';
+      box.appendChild(gen);
+      var again = el('button', 'btn btn-secondary', '同じコーデで別パターンを作る');
+      again.type = 'button';
+      box.appendChild(again);
+      var note = el('p', 'hint', '');
+      box.appendChild(note);
+      var gallery = el('div', 'coord-tryon-gallery');
+      box.appendChild(gallery);
+
+      function parts() {
+        var items = [{ name: h.name, kind: coordSlotOf(h.name).kind, brand: h.brand, image: h.image, hero: true }].concat(
+          look.items.filter(function (x) { return x.product; }).map(function (x) { return { name: x.product.name, kind: x.kind, brand: x.product.brand, image: x.product.image }; }));
+        return {
+          items: items, gender: c.gender || view.gender || '', background: T.background, pose: T.pose, quality: T.quality, variant: T.variant,
+          style: look.style || '', age: c.age || ''
+        };
+      }
+      function keyFor(p) { return window.ImageStore.keyOf([p.items.map(function (x) { return x.image; }), p.gender, p.background, p.pose, p.quality, p.variant]); }
+      function yen() { return tryOnMeta ? tryOnMeta.cost[T.quality] : null; }
+      function drawCost() {
+        var u = window.ImageStore.usage();
+        var key = keyFor(parts());
+        var made = (view.images || []).some(function (x) { return x.key === key; });
+        cost.textContent = (made ? 'この条件の画像は作成済みです（保存したものを表示します。料金はかかりません）。' : '1枚あたりの目安：約' + (yen() == null ? '…' : yen()) + '円（為替や参考画像の数で前後します）。') +
+          '　今月：' + u.count + '／' + u.limit + '枚（約' + u.yen + '円）';
+        gen.textContent = made ? '作成済みの画像を表示' : '完成コーデを生成';
+        gen.disabled = again.disabled = tryOnBusy;
+      }
+      if (!tryOnMeta) {
+        fetch('api/coord-image').then(function (r) { return r.json(); }).then(function (d) { tryOnMeta = d; drawCost(); }, function () {});
+      }
+      drawCost();
+
+      // 生成した画像の右上に「AIによる着用イメージ」を入れる（実物の写真と間違えないように）
+      function labelImage(dataUrl) {
+        return window.IgRender.loadImage(dataUrl).then(function (img) {
+          var cv = document.createElement('canvas');
+          cv.width = img.width; cv.height = img.height;
+          var x = cv.getContext('2d');
+          x.drawImage(img, 0, 0);
+          var fs = Math.round(img.width * 0.034);
+          x.font = '700 ' + fs + 'px ' + window.IgRender.kit.FONT;
+          var text = 'AIによる着用イメージ';
+          var w = x.measureText(text).width + fs * 1.2;
+          x.fillStyle = 'rgba(0,0,0,0.62)';
+          window.IgRender.kit.roundRect(x, img.width - w - fs * 0.6, fs * 0.6, w, fs * 1.8, fs * 0.4);
+          x.fill();
+          x.fillStyle = '#FFFFFF';
+          x.fillText(text, img.width - w - fs * 0.6 + fs * 0.6, fs * 0.6 + fs * 1.25);
+          return cv.toDataURL('image/jpeg', 0.9);
+        }, function () { return dataUrl; });
+      }
+      function drawGallery() {
+        gallery.innerHTML = '';
+        (view.images || []).filter(function (x) { return x.lookId === look.id; }).forEach(function (meta) {
+          var fig = el('figure', 'coord-tryon-fig');
+          var im = el('img', 'coord-collage-img');
+          im.alt = 'AIによる着用イメージ';
+          fig.appendChild(im);
+          window.ImageStore.get(meta.key).then(function (src) {
+            if (src) im.src = src; else fig.appendChild(el('p', 'hint', 'この画像はこのiPhoneに残っていません（別の端末で作ったか、ブラウザのデータが消えました）。'));
+          });
+          var cap = el('figcaption', 'hint', 'AIによる着用イメージ｜' + ({ studio: 'スタジオ', street: '街並み', cafe: 'カフェ', park: '公園', indoor: '室内' }[meta.background] || '') + '・' + ({ front: '正面', walk: '歩く', angle: '斜め', lean: 'もたれる' }[meta.pose] || '') + '・パターン' + meta.variant + '　ロゴや細部は実物と違うことがあります');
+          fig.appendChild(cap);
+          var del = el('button', 'link-btn', 'この画像を削除');
+          del.type = 'button';
+          del.addEventListener('click', function () {
+            if (!window.confirm('この着用イメージを削除しますか？（もう一度作ると料金がかかります）')) return;
+            view.images = view.images.filter(function (x) { return x.key !== meta.key; });
+            window.ImageStore.remove(meta.key);
+            persist();
+            drawGallery();
+            drawCost();
+          });
+          fig.appendChild(del);
+          gallery.appendChild(fig);
+        });
+      }
+      drawGallery();
+
+      function generate() {
+        var p = parts();
+        var key = keyFor(p);
+        if ((view.images || []).some(function (x) { return x.key === key; })) {
+          window.ImageStore.get(key).then(function (src) {
+            if (src) { note.textContent = '作成済みの画像を表示しています（料金はかかっていません）。'; drawGallery(); return; }
+            view.images = view.images.filter(function (x) { return x.key !== key; });
+            generate(); // 端末に残っていなければ作り直す
+          });
+          return;
+        }
+        if (p.items.length < 2) { note.textContent = '起点のほかに、商品を1つ以上入れてください。'; return; }
+        var u = window.ImageStore.usage();
+        if (u.count >= u.limit) { note.textContent = '今月の上限（' + u.limit + '枚）に達しました。上限を変えるか、来月までお待ちください。'; return; }
+        if (!window.confirm('AIで着用イメージを1枚作ります。料金の目安は約' + (yen() == null ? '数' : yen()) + '円です（今月 ' + u.count + '／' + u.limit + '枚）。作りますか？')) return;
+        tryOnBusy = true;
+        gen.textContent = '生成しています…（20〜50秒）';
+        drawCost();
+        gen.textContent = '生成しています…（20〜50秒）';
+        note.textContent = '';
+        postJson('api/coord-image', p).then(function (r) {
+          if (r.status !== 200) throw new Error((r.data && r.data.error) || '画像を作れませんでした');
+          window.ImageStore.record(r.data.costYen, r.data.model);
+          return labelImage(r.data.image).then(function (labeled) {
+            return window.ImageStore.put(key, labeled).then(function () {
+              view.images = (view.images || []).concat([{ key: key, lookId: look.id, background: p.background, pose: p.pose, quality: p.quality, variant: p.variant, model: r.data.model, costYen: r.data.costYen, createdAt: Date.now() }]);
+              persist();
+              note.textContent = '作りました（' + r.data.model + '・約' + r.data.costYen + '円）。';
+              drawGallery();
+            });
+          });
+        }).catch(function (e) {
+          // 失敗したときは、実物商品コラージュを出す（料金はかかっていない）
+          note.textContent = (e && e.message ? e.message : '通信できませんでした') + '。かわりに実物商品コラージュを表示します。';
+          var col = box.parentNode && box.parentNode.querySelector('.coord-look-collage-btn');
+          if (col) col.click();
+        }).then(function () {
+          tryOnBusy = false;
+          drawCost();
+        });
+      }
+      gen.addEventListener('click', generate);
+      again.addEventListener('click', function () {
+        T.variant = 1 + Math.max(T.variant, Math.max.apply(null, [0].concat((view.images || []).filter(function (x) { return x.lookId === look.id; }).map(function (x) { return x.variant; }))));
+        persist();
+        drawCost();
+        generate();
+      });
+      return box;
+    }
+
     // ---- 3パターンのコーデ（編集できる） ----
     var collageCache = {};
     function drawLooks() {
@@ -3191,7 +3359,7 @@
         card.appendChild(sum);
 
         // 実物商品コラージュ（画像生成AIは使わず、選んだ商品の写真を並べる）
-        var colBtn = el('button', 'btn btn-secondary', '実物商品コラージュを見る');
+        var colBtn = el('button', 'btn btn-secondary coord-look-collage-btn', '実物商品コラージュを見る');
         colBtn.type = 'button';
         var colBox = el('div', 'coord-collage');
         var sig = function () { return [h.url].concat(look.items.map(function (x) { return x.product ? x.product.url : ''; })).join('|') + look.name; };
@@ -3217,6 +3385,8 @@
         });
         card.appendChild(colBtn);
         card.appendChild(colBox);
+        // ---- AI着用イメージ：押したときだけ生成（料金がかかる）。同じ条件の画像は保存したものを使う ----
+        card.appendChild(tryOnSection(look));
         body.appendChild(card);
       });
       var blank = el('button', 'btn btn-secondary', '空のコーデを追加（自分で組む）');

@@ -41,6 +41,9 @@
     },
     "api/coord.js": {
       "maxDuration": 60
+    },
+    "api/coord-image.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
