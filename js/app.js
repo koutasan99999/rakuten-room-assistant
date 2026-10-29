@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.6';
+  var APP_VERSION = '2026-10-30.7';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -234,7 +234,6 @@
       seedBtn.type = 'button';
       seedBtn.addEventListener('click', function () { opts.onSeed(p); });
       actions.appendChild(seedBtn);
-      if (isFashion(p.name)) actions.appendChild(coordButton(function () { return p; }));
     }
     // ROOMの投稿画面を直接開く（ROOMアプリが入っていればアプリで開くことがある）。
     // 押した瞬間に紹介文もコピーしておくので、投稿画面で貼り付けるだけで済む
@@ -313,6 +312,19 @@
       buttons[b.id] = btn;
       grid.appendChild(btn);
     });
+
+    // この商品を軸にコーディネートを考える（発掘などでたまたま見つけた商品からでも）
+    var co = el('button', 'btn btn-coord status-coord', 'コーディネートを考える');
+    co.type = 'button';
+    co.addEventListener('click', function () {
+      var product = { name: p.name, code: p.code || '', price: p.price, url: p.url, image: p.image, shop: p.shop || '', brand: p.brand || '', caption: p.caption || '' };
+      // 投稿管理などから押したときは、商品発掘の画面に移ってから始める
+      if (location.hash && location.hash !== '#discover') {
+        location.hash = '#discover';
+        setTimeout(function () { startCoord(product); }, 80);
+      } else startCoord(product);
+    });
+    box.appendChild(co);
 
     show('none');
     Store.getStatus(p).then(show);
@@ -1885,8 +1897,8 @@
     link.rel = 'noopener';
     actions.appendChild(link);
     card.appendChild(actions);
-    if (isFashion(c.name)) {
-      var co = el('button', 'link-btn cand-coord', 'この商品でコーデを作る');
+    {
+      var co = el('button', 'link-btn cand-coord', 'コーディネートを考える');
       co.type = 'button';
       co.addEventListener('click', function () { startCoord(c); });
       card.appendChild(co);
@@ -3737,7 +3749,7 @@
   }
 
   function coordButton(getProduct) {
-    var b = el('button', 'btn btn-coord', 'この商品でコーデを作る');
+    var b = el('button', 'btn btn-coord', 'コーディネートを考える');
     b.type = 'button';
     b.addEventListener('click', function () { startCoord(getProduct()); });
     return b;
@@ -4373,7 +4385,7 @@
       startRelease(it);
     });
     actions.appendChild(plan);
-    if (isFashion(it.name, it.category)) {
+    {
       actions.appendChild(coordButton(function () {
         // 新作レーダーの商品は、確認できた情報（予約受付中・発売日など）も持っていく（新商品を使ったコーデの表紙に使う）
         var info = releaseInfo(it);
@@ -5271,7 +5283,7 @@
     plan.type = 'button';
     plan.addEventListener('click', function () { if (opts.release) startRelease(opts.release); else startSeed(product, null); });
     acts.appendChild(plan);
-    if (isFashion(it.name)) acts.appendChild(coordButton(function () { return product; }));
+    acts.appendChild(coordButton(function () { return product; }));
     if (product.url) {
       var a = el('a', 'btn btn-secondary', '商品ページを見る');
       a.href = product.url; a.target = '_blank'; a.rel = 'noopener';
@@ -5924,7 +5936,7 @@
     ['メンズ スニーカー', 'レディース スニーカー', 'ショルダーバッグ', 'ダウンジャケット', 'ニット', 'ワイドパンツ', 'ローファー', 'キャップ'].forEach(function (w) {
       var b = el('button', 'radar-chip', w);
       b.type = 'button';
-      b.addEventListener('click', function () { kw.value = w; run(); });
+      b.addEventListener('click', function () { kw.value = w; run(false); });
       quick.appendChild(b);
     });
     coordEntry.appendChild(quick);
@@ -5932,17 +5944,27 @@
     coordEntry.appendChild(note);
     var list = el('div', 'cand-list');
     coordEntry.appendChild(list);
-    function run() {
-      var q = kw.value.trim();
+    var moreBtn = el('button', 'btn btn-secondary', 'さらに表示');
+    moreBtn.type = 'button';
+    moreBtn.hidden = true;
+    coordEntry.appendChild(moreBtn);
+    var state = { keyword: '', cursor: null, shown: [] };
+    // 1回に30件まで。「さらに表示」で、表示済みの商品を除いて続きから
+    function run(more) {
+      var q = more ? state.keyword : kw.value.trim();
       if (q.replace(/\s/g, '').length < 2) { note.textContent = '2文字以上入れてください'; return; }
-      btn.disabled = true;
+      if (!more) { state = { keyword: q, cursor: null, shown: [] }; list.innerHTML = ''; }
+      btn.disabled = moreBtn.disabled = true;
       note.textContent = '楽天市場で探しています…（別のアプリを開いても大丈夫です）';
-      list.innerHTML = '';
-      jobCall('related', { axis: 'search', keyword: q, exclude: [], shown: [] }, { label: 'コーデの起点：' + q, genre: 'ファッション' }).then(function (r) {
-        btn.disabled = false;
+      jobCall('related', { axis: 'search', keyword: q, exclude: [], shown: state.shown.slice(-280), cursor: more ? state.cursor : null, want: 30 }, { label: 'コーデの起点：' + q + (more ? '・続き' : ''), genre: 'ファッション' }).then(function (r) {
+        btn.disabled = moreBtn.disabled = false;
         if (r.status !== 200) { note.textContent = r.data.error || '探せませんでした'; return; }
         var items = visible(r.data.items || []);
-        note.textContent = items.length ? items.length + '件見つかりました。起点にする商品の「この商品でコーデを作る」を押してください。' : '見つかりませんでした。言葉を変えてみてください。';
+        state.cursor = r.data.cursor || null;
+        state.shown = state.shown.concat((r.data.items || []).map(function (x) { return { code: x.code, name: String(x.name).slice(0, 80), url: x.url }; }));
+        moreBtn.hidden = !items.length;
+        var total = list.querySelectorAll('.cand-card').length + items.length;
+        note.textContent = items.length ? total + '件表示しています。起点にする商品の「コーディネートを考える」を押してください。' : (more ? 'これ以上見つかりませんでした。言葉を変えてみてください。' : '見つかりませんでした。言葉を変えてみてください。');
         items.forEach(function (it) {
           var card = el('article', 'cand-card');
           var top = el('div', 'cand-top');
@@ -5966,7 +5988,8 @@
         });
       });
     }
-    form.addEventListener('submit', function (e) { e.preventDefault(); kw.blur(); run(); });
+    form.addEventListener('submit', function (e) { e.preventDefault(); kw.blur(); run(false); });
+    moreBtn.addEventListener('click', function () { run(true); });
   }
   renderCoordEntry();
 
