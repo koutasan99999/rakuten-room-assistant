@@ -1,7 +1,7 @@
 // 「Instagram画像を作る」で、画像に載せる文字（短い商品名・補足1行・くまの一言メモ）を返すAPI。
 import { send, checkAccess, readBody } from '../lib/http.js';
-import { buildPostCopy, MAX_POST_ITEMS, fallbackCaptionBody, assembleCaption } from '../lib/instagram.js';
-import { buildHashtags } from '../lib/hashtags.js';
+import { buildPostCopy, MAX_POST_ITEMS, fallbackCaptionBody, assembleCaption, stripFurusatoClaims } from '../lib/instagram.js';
+import { buildHashtags, buildFurusatoHashtags } from '../lib/hashtags.js';
 import { isCoverStyle } from '../lib/covers.js';
 import { maskSecrets } from '../lib/ai.js';
 
@@ -26,16 +26,19 @@ export default async function handler(req, res, env = process.env) {
     category: String(body.category || '').slice(0, 20),
     coverStyle: isCoverStyle(body.coverStyle) || body.coverStyle === 'auto' ? body.coverStyle : 'serious_think',
     priceBand: String(body.priceBand || '').slice(0, 30),
-    items, needSummary: body.needSummary === true, needCaption: body.needCaption === true, collection, env, deadline: startedAt + 25000
+    items, needSummary: body.needSummary === true, needCaption: body.needCaption === true, collection, furusato: body.furusato === true, env, deadline: startedAt + 25000
   });
   const caption = body.needCaption === true
     ? assembleCaption({
       body: copy.caption || fallbackCaptionBody(copy.topic, copy.items.map((x, i) => ({ ...x, role: items[i].role }))),
       collection,
-      hashtags: buildHashtags({ topic: copy.topic, category: String(body.category || ''), genre: String(body.genre || '').slice(0, 30), postType: String(body.postType || '').slice(0, 30), aiTags: copy.hashtags })
+      furusato: body.furusato === true,
+      pr: body.pr === true,
+      hashtags: body.furusato === true ? buildFurusatoHashtags({ topic: copy.topic, aiTags: copy.hashtags }) : buildHashtags({ topic: copy.topic, category: String(body.category || ''), genre: String(body.genre || '').slice(0, 30), postType: String(body.postType || '').slice(0, 30), aiTags: copy.hashtags })
     })
     : undefined;
   const notice = copy.fallback ? 'AIでの文字作成に失敗したため、簡易的な商品名・メモで作りました。' : '';
+  if (body.furusato === true) copy.items = copy.items.map((x) => ({ ...x, memo: stripFurusatoClaims(x.memo || ''), subline: stripFurusatoClaims(x.subline || '') }));
   return send(res, 200, {
     topic: copy.topic, category: copy.category, topicSlug: copy.topicSlug, summary: copy.summary, items: copy.items, cover: copy.cover, notice,
     caption,

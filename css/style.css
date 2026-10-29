@@ -735,3 +735,33 @@ body {
 .job-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 14px; }
 .job-card dt { color: var(--muted); font-weight: 700; }
 .job-card dd { margin: 0; }
+/* トレンド発掘 */
+.mode-tabs { flex-wrap: wrap; }
+.trend-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.trend-tab { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-family: inherit; font-weight: 800; font-size: 14px; color: var(--text); }
+.trend-tab.active { background: var(--text); color: #fff; border-color: var(--text); }
+.trend-panel { display: grid; gap: 10px; }
+.trend-source { margin: 0; font-size: 12px; color: var(--muted); background: var(--soft); border-radius: 8px; padding: 6px 10px; }
+.trend-words { display: grid; gap: 8px; }
+.trend-word { display: grid; gap: 4px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.trend-word small { color: var(--muted); }
+.trend-word-acts .btn { min-height: 38px; font-size: 14px; }
+.trend-sub { margin: 8px 0 0; }
+.trend-csv summary, .trend-brand-ai .link-btn { cursor: pointer; }
+.trend-brand-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+.trend-brands { display: grid; gap: 10px; }
+.trend-brand { display: grid; gap: 6px; }
+.trend-brand-name { margin: 0; font-size: 18px; }
+.trend-brand dl, .furusato-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 13px; }
+.trend-brand dt, .furusato-card dt { color: var(--muted); font-weight: 700; }
+.trend-brand dd, .furusato-card dd { margin: 0; }
+.trend-ai { margin: 0; font-size: 13px; background: #f4f0ff; border-radius: 8px; padding: 6px 10px; }
+/* ふるさと納税 */
+.furusato-rules p { margin: 2px 0; font-size: 13px; }
+.furusato-cats { margin: 10px 0; }
+.furusato-cond { margin-bottom: 6px; }
+.furusato-table-wrap { overflow-x: auto; }
+.furusato-table { border-collapse: collapse; font-size: 12px; min-width: 640px; }
+.furusato-table th, .furusato-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+.furusato-table th { background: var(--soft); }
+.furusato-plan, .furusato-compare { display: grid; gap: 8px; margin-top: 12px; }

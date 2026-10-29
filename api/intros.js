@@ -2,6 +2,7 @@
 import { send, checkAccess, readBody } from '../lib/http.js';
 import { generateIntros } from '../lib/explore.js';
 import { maskSecrets } from '../lib/ai.js';
+import { FURUSATO_PROMPT, stripFurusatoClaims } from '../lib/instagram.js';
 
 const MAX_ITEMS = 20;
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -15,7 +16,9 @@ export default async function handler(req, res, env = process.env) {
     name: str(x.name, 200), price: Number(x.price) || 0, role: str(x.role, 20), brand: str(x.brand, 30), reason: str(x.reason, 200), caption: str(x.caption, 300)
   }));
   if (!items.length) return send(res, 400, { error: '商品が選ばれていません' });
-  const r = await generateIntros({ title: str(body.title, 60), items, env, deadline: startedAt + 50000 });
+  const furusato = body.furusato === true;
+  const r = await generateIntros({ title: str(body.title, 60), items, env, deadline: startedAt + 50000, extraRules: furusato ? FURUSATO_PROMPT : '' });
+  if (furusato) r.intros = r.intros.map(stripFurusatoClaims);
   return send(res, 200, {
     intros: r.intros,
     notice: r.fallback ? 'AIでの紹介文作成に失敗したため、簡易的な紹介文にしました。' : '',

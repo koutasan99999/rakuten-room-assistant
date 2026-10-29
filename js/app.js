@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.1';
+  var APP_VERSION = '2026-10-30.2';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -512,7 +512,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -523,6 +523,8 @@
     composeView.hidden = view !== 'compose';
     var jv = document.getElementById('view-jobs');
     if (jv) jv.hidden = view !== 'jobs';
+    var fv = document.getElementById('view-furusato');
+    if (fv) fv.hidden = view !== 'furusato';
     if (view === 'jobs' && typeof renderJobs === 'function') renderJobs();
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
       t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
@@ -794,6 +796,8 @@
       var doneMap = rec.roomDone || {};
       var doneCount = products.filter(function (p) { return doneMap[p.id]; }).length;
       document.getElementById('room-title').textContent = rec.title || rec.topic;
+      var fw = document.getElementById('room-furusato-note');
+      if (fw) fw.hidden = rec.postType !== 'ふるさと納税';
       document.getElementById('room-bar').textContent = progressBar(doneCount, products.length);
       document.getElementById('room-count').textContent = doneCount + ' / ' + products.length;
       document.getElementById('room-complete').hidden = !(products.length && doneCount === products.length);
@@ -1018,6 +1022,7 @@
     draft.release = null;
     draft.heroProduct = null;
     draft.coord = null;
+    draft.furusato = null;
     draft.layoutSizes = null;
     draft.coverTitle = '';
     draft.coverAccent = '';
@@ -1192,6 +1197,8 @@
       postType: draft.postType || '',
       coverStyle: draft.coverStyle || 'serious_think',
       priceBand: draft.priceBand || '',
+      furusato: !!draft.furusato,
+      pr: !!(draft.furusato && draft.furusato.pr),
       items: draft.items.map(function (it) { return { name: it.name, price: it.price, role: it.role, reason: it.reason, intro: it.intro, memo: it.memo }; })
     });
     var images = Promise.all(draft.items.map(function (it) { return loadProductImage(it.image); }));
@@ -1213,7 +1220,8 @@
         subtitle: draft.subtitle || '迷ったので整理しました',
         cover: cover,
         bear: r[2],
-        ctaMessage: draft.cta === 'collection' ? collectionCtaMessage(copy.topic) : window.IgRender.CTA_MESSAGES[draft.cta || 0],
+        // ふるさと納税：楽天ROOMの対象か未確認なので、ROOMへの誘導ではなく寄付ページでの確認をすすめる
+        ctaMessage: draft.furusato ? '気になった返礼品は\n各自治体の寄付ページで\n内容を確認してください' : draft.cta === 'collection' ? collectionCtaMessage(copy.topic) : window.IgRender.CTA_MESSAGES[draft.cta || 0],
         summary: !sum.enabled ? null : needSummary
           ? (copy.summary ? Object.assign({ typeName: sum.typeName || 'まず結論' }, copy.summary) : null)
           : { typeName: sum.typeName || 'まず結論', title: sum.title, lead: sum.lead, verdict: sum.verdict },
@@ -1247,8 +1255,8 @@
           };
         });
         var ensurePost = draft.postId ? Promise.resolve(draft.postId) : History.add({
-          title: draft.coord ? draft.coord.title : copy.topic + 'について本気出して考えてみた', topic: copy.topic, subtitle: draft.subtitle, genre: draft.category,
-          postType: draft.coord ? 'コーデ' : undefined
+          title: draft.coord ? draft.coord.title : draft.furusato ? draft.theme : copy.topic + 'について本気出して考えてみた', topic: copy.topic, subtitle: draft.subtitle, genre: draft.category,
+          postType: draft.coord ? 'コーデ' : draft.furusato ? 'ふるさと納税' : undefined
         });
         ensurePost.then(function (id) {
           draft.postId = id;
@@ -2641,6 +2649,7 @@
     loadDraft();
     var edit = initEdit(d);
     draft.coord = null;
+    draft.furusato = null;
     draft.items = items.map(function (c, i) {
       return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.postRole || (c.role === '自分で追加' || c.role === '公式サイト' ? '' : c.role) || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
     });
@@ -3590,6 +3599,7 @@
   // コーデから投稿づくりへ：商品・テーマ・表紙・差し込むコーデのスライドを下書きにする
   function composeFromCoord(view, products, looks) {
     loadDraft();
+    draft.furusato = null;
     var h = view.heroProduct;
     draft.items = products.map(function (p, i) {
       return {
@@ -3677,7 +3687,7 @@
   var modeTabs = document.querySelectorAll('.mode-tab');
   function showMode(mode) {
     Array.prototype.forEach.call(modeTabs, function (t) { t.classList.toggle('active', t.getAttribute('data-mode') === mode); });
-    ['idea', 'cond', 'random', 'radar'].forEach(function (m) { document.getElementById('mode-' + m).hidden = m !== mode; });
+    ['idea', 'cond', 'random', 'radar', 'trend'].forEach(function (m) { var x = document.getElementById('mode-' + m); if (x) x.hidden = m !== mode; });
     try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
   }
   Array.prototype.forEach.call(modeTabs, function (t) {
@@ -5123,5 +5133,687 @@
   Jobs.resume();
   drawJobsBadge();
   setInterval(function () { if (location.hash.indexOf('#jobs') === 0 && !document.hidden) renderJobs(); }, 5000);
+
+  // ---- トレンド発掘：「売れ筋」「検索急上昇」「新作・話題」を混ぜずに見せる。「知らないブランド発見」もここ ----
+  // 売れ筋＝楽天市場ランキング（販売の順位）、検索急上昇＝Googleトレンドの急上昇ワード（検索が急に増えた言葉）、
+  // 新作・話題＝新作レーダーで集めた商品（商品名・説明に書かれた発売・予約の情報）。どれも「検索数ランキング」ではない
+  Jobs.register('ranking', { tasks: singleTask('api/trends'), count: function (r) { return (r.items || []).length; } });
+  Jobs.register('trends', { tasks: singleTask('api/trends'), count: function (r) { return (r.items || []).length; } });
+  Jobs.register('furusato', { tasks: singleTask('api/furusato'), count: function (r) { return (r.items || []).length; } });
+  JOB_TYPE_JA.ranking = '売れ筋（楽天ランキング）';
+  JOB_TYPE_JA.trends = '検索急上昇（Googleトレンド）';
+  JOB_TYPE_JA.furusato = 'ふるさと納税の返礼品';
+
+  var TR_KEY = 'room-trend-state';
+  var trendEl = document.getElementById('trend-body');
+  var trendGenres = [];
+  var TR = (function () { try { return JSON.parse(localStorage.getItem(TR_KEY)) || {}; } catch (e) { return {}; } })();
+  TR.tab = TR.tab || 'ranking';
+  TR.genre = TR.genre || 'mens';
+  TR.period = TR.period || 'daily';
+  TR.ranking = TR.ranking || {};   // ジャンルごとの最後の売れ筋（取得日時つき）
+  TR.newPeriod = TR.newPeriod || '7';
+  function saveTR() { try { localStorage.setItem(TR_KEY, JSON.stringify(TR)); } catch (e) { TR.ranking = {}; } }
+  var TREND_CSV_KEY = 'room-trend-csv';
+
+  function sourceLine(text) { return el('p', 'trend-source', text); }
+  function dt(t) { return t ? timeText(new Date(t).getTime()) : ''; }
+
+  function trendProductCard(it, opts) {
+    opts = opts || {};
+    var card = el('article', 'cand-card trend-card');
+    var top = el('div', 'cand-top');
+    var img = el('img', 'cand-thumb');
+    img.src = it.image || it.imageUrl || '';
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = function () { img.style.visibility = 'hidden'; };
+    top.appendChild(img);
+    var info = el('div', 'cand-info');
+    var chips = el('div', 'chips');
+    if (opts.rank) chips.appendChild(el('span', 'role', opts.rank));
+    (opts.tags || []).forEach(function (t) { chips.appendChild(el('span', 'tag', t)); });
+    info.appendChild(chips);
+    info.appendChild(el('h3', 'cand-name', String(it.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60) || it.name));
+    var meta = el('p', 'cand-meta');
+    meta.appendChild(el('strong', 'cand-price', formatPrice(it.price)));
+    if (it.shop || (it.shops && it.shops[0])) meta.appendChild(el('span', 'cand-shop', it.shop || it.shops[0].name));
+    if (it.reviewCount) meta.appendChild(el('span', null, '★' + it.reviewAverage + '（' + it.reviewCount + '件）'));
+    info.appendChild(meta);
+    top.appendChild(info);
+    card.appendChild(top);
+    var acts = el('div', 'actions');
+    var product = { name: it.name, code: it.code || '', price: it.price, url: it.url || it.rakutenUrl || it.sourceUrl, image: it.image || it.imageUrl, shop: it.shop || ((it.shops || [])[0] || {}).name || '', brand: it.brand || '', caption: it.caption || '' };
+    var plan = el('button', 'btn btn-primary', 'この商品から企画を考える');
+    plan.type = 'button';
+    plan.addEventListener('click', function () { if (opts.release) startRelease(opts.release); else startSeed(product, null); });
+    acts.appendChild(plan);
+    if (isFashion(it.name)) acts.appendChild(coordButton(function () { return product; }));
+    if (product.url) {
+      var a = el('a', 'btn btn-secondary', '商品ページを見る');
+      a.href = product.url; a.target = '_blank'; a.rel = 'noopener';
+      acts.appendChild(a);
+    }
+    card.appendChild(acts);
+    return card;
+  }
+
+  // キーワードやブランドから、今までの企画づくり（候補15〜20件 → 企画の編集・手動検索・ROOM紹介文）へ
+  function planFromWord(word, how, why) {
+    History.add({ title: word + 'について本気出して考えてみた', topic: word, postType: how === 'brand' ? 'ブランド' : 'トレンド' }).then(setCurrentPostId, function () {});
+    location.hash = '#discover';
+    exploreProducts({ idea: { edited: true, title: word + 'について本気出して考えてみた', curationType: how === 'brand' ? 'brand' : 'trend', searchGenres: [word], whyInteresting: why || '', free: '' } });
+  }
+
+  function renderTrend() {
+    if (!trendEl) return;
+    trendEl.innerHTML = '';
+    var tabs = el('div', 'trend-tabs');
+    [['ranking', '売れ筋'], ['search', '検索急上昇'], ['new', '新作・話題'], ['brands', '知らないブランド発見']].forEach(function (t) {
+      var b = el('button', 'trend-tab' + (TR.tab === t[0] ? ' active' : ''), t[1]);
+      b.type = 'button';
+      b.addEventListener('click', function () { TR.tab = t[0]; saveTR(); renderTrend(); });
+      tabs.appendChild(b);
+    });
+    trendEl.appendChild(tabs);
+    var body = el('div', 'trend-panel');
+    trendEl.appendChild(body);
+    if (TR.tab === 'ranking') drawRanking(body);
+    else if (TR.tab === 'search') drawSearchTrends(body);
+    else if (TR.tab === 'new') drawNewItems(body);
+    else drawBrands(body);
+  }
+
+  function genrePicker(body, onChange) {
+    var f = el('label', 'field');
+    f.appendChild(el('span', 'field-label', 'ジャンル'));
+    var s = el('select', 'select');
+    trendGenres.forEach(function (g) { var o = el('option', null, g.label); o.value = g.id; s.appendChild(o); });
+    s.value = TR.genre;
+    s.addEventListener('change', function () { TR.genre = s.value; saveTR(); onChange(); });
+    f.appendChild(s);
+    body.appendChild(f);
+  }
+
+  function fetchRanking(btn, note, done) {
+    btn.disabled = true;
+    note.textContent = '楽天ランキングを取得しています…（別のアプリを開いても大丈夫です）';
+    var g = trendGenres.filter(function (x) { return x.id === TR.genre; })[0] || { label: TR.genre };
+    jobCall('ranking', { kind: 'ranking', genre: TR.genre, period: TR.period }, { label: '売れ筋：' + g.label, genre: g.label }).then(function (r) {
+      btn.disabled = false;
+      if (r.status !== 200) { note.textContent = r.data.error || '取得できませんでした'; return; }
+      TR.ranking[TR.genre] = r.data;
+      saveTR();
+      done();
+    });
+  }
+
+  function drawRanking(body) {
+    body.appendChild(el('p', 'hint', '楽天市場ランキングAPIの「売れている順位」です。検索数のランキングではありません。'));
+    genrePicker(body, renderTrend);
+    var pf = el('label', 'field');
+    pf.appendChild(el('span', 'field-label', '期間'));
+    var ps = el('select', 'select');
+    [['daily', '楽天の通常のランキング'], ['realtime', 'リアルタイム（取れないときは通常）']].forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; ps.appendChild(x); });
+    ps.value = TR.period;
+    ps.addEventListener('change', function () { TR.period = ps.value; saveTR(); });
+    pf.appendChild(ps);
+    body.appendChild(pf);
+    var go = el('button', 'btn btn-primary', '売れ筋を取得');
+    go.type = 'button';
+    body.appendChild(go);
+    var note = el('p', 'hint', '');
+    body.appendChild(note);
+    var list = el('div', 'cand-list');
+    body.appendChild(list);
+    function draw() {
+      var d = TR.ranking[TR.genre];
+      list.innerHTML = '';
+      if (!d) { note.textContent = 'まだ取得していません。'; return; }
+      note.textContent = '';
+      list.appendChild(sourceLine('出典：楽天市場ランキング' + (d.sourceTitles && d.sourceTitles[0] ? '（' + d.sourceTitles.join('・') + '）' : '') + '｜' + (d.period === 'realtime' ? 'リアルタイム' : '楽天の通常のランキング') + '｜取得 ' + dt(d.fetchedAt)));
+      if (d.note) list.appendChild(el('p', 'hint', d.note));
+      if (d.notice) list.appendChild(el('p', 'hint', d.notice));
+      if (Date.now() - new Date(d.fetchedAt).getTime() > 24 * 3600 * 1000) list.appendChild(el('p', 'hint', '1日以上前に取得したランキングです。最新にするには「売れ筋を取得」を押してください。'));
+      if (!d.items.length) list.appendChild(el('p', 'manage-empty', 'このジャンルの商品がありませんでした。'));
+      d.items.forEach(function (it) { list.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
+    }
+    go.addEventListener('click', function () { fetchRanking(go, note, draw); });
+    draw();
+  }
+
+  function readTrendCsv() { try { return JSON.parse(localStorage.getItem(TREND_CSV_KEY)) || null; } catch (e) { return null; } }
+  // GoogleトレンドからダウンロードしたCSV（急上昇ワード・関連キーワードなど）から、言葉と数値を取り出す
+  function parseTrendCsv(text) {
+    var rows = [];
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var cells = [];
+      var cur = '', q = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+        else if (ch === ',' && !q) { cells.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      cells.push(cur);
+      var term = (cells[0] || '').trim();
+      var value = (cells[1] || '').trim();
+      if (!term || /^(カテゴリ|Category|TOP|RISING|上昇|人気|トップ|Trends|トレンド|キーワード|Query|検索キーワード)\b/i.test(term) || term.length > 60) return;
+      if (!value || !/[\d+%,万千]|急上昇|Breakout/i.test(value)) return;
+      rows.push({ term: term, value: value });
+    });
+    return rows.slice(0, 50);
+  }
+
+  function drawSearchTrends(body) {
+    body.appendChild(el('p', 'hint', 'Googleで検索が急に増えている言葉です（Googleトレンドの「急上昇ワード」・日本）。売れている順位ではありません。Googleはジャンルを付けていないので、ここでもジャンル分けはしていません。ニュース・スポーツの言葉も混ざります。'));
+    var go = el('button', 'btn btn-primary', '急上昇ワードを読み込む');
+    go.type = 'button';
+    body.appendChild(go);
+    var note = el('p', 'hint', '');
+    body.appendChild(note);
+    var list = el('div', 'trend-words');
+    body.appendChild(list);
+    function wordRow(term, metaText, news) {
+      var row = el('div', 'trend-word');
+      row.appendChild(el('b', null, term));
+      if (metaText) row.appendChild(el('small', null, metaText));
+      (news || []).slice(0, 2).forEach(function (n) {
+        var a = el('a', 'link-btn', (n.source ? n.source + '：' : '') + n.title);
+        a.href = n.url; a.target = '_blank'; a.rel = 'noopener';
+        row.appendChild(a);
+      });
+      var acts = el('div', 'trend-word-acts');
+      var p = el('button', 'btn btn-secondary', 'この言葉で企画を作る');
+      p.type = 'button';
+      p.addEventListener('click', function () { planFromWord(term, 'trend', 'Googleトレンドの急上昇ワード（' + metaText + '）'); });
+      acts.appendChild(p);
+      row.appendChild(acts);
+      return row;
+    }
+    function draw() {
+      list.innerHTML = '';
+      var d = TR.search;
+      if (d) {
+        list.appendChild(sourceLine('出典：' + d.source + '｜取得 ' + dt(d.fetchedAt)));
+        d.items.forEach(function (x) { list.appendChild(wordRow(x.term, [x.traffic && '検索 ' + x.traffic, x.pubDate && dt(x.pubDate)].filter(Boolean).join('・'), x.news)); });
+      } else note.textContent = 'まだ読み込んでいません。';
+      var csv = readTrendCsv();
+      if (csv && csv.rows.length) {
+        list.appendChild(el('h4', 'trend-sub', '取り込んだCSV'));
+        list.appendChild(sourceLine('出典：Googleトレンド（CSVを取り込み）｜' + (csv.label || '') + '｜取り込み ' + dt(csv.importedAt)));
+        csv.rows.forEach(function (x) { list.appendChild(wordRow(x.term, x.value, [])); });
+      }
+    }
+    go.addEventListener('click', function () {
+      go.disabled = true;
+      note.textContent = '読み込んでいます…';
+      jobCall('trends', { kind: 'search' }, { label: '検索急上昇（Googleトレンド）' }).then(function (r) {
+        go.disabled = false;
+        if (r.status !== 200) { note.textContent = (r.data.error || '読み込めませんでした') + '（下のCSVの取り込みも使えます）'; return; }
+        note.textContent = '';
+        TR.search = r.data;
+        saveTR();
+        draw();
+      });
+    });
+    var imp = el('details', 'trend-csv');
+    imp.appendChild(el('summary', null, 'GoogleトレンドのCSVを取り込む'));
+    imp.appendChild(el('p', 'hint', 'Googleトレンド（trends.google.co.jp）で、急上昇ワードや「関連キーワード」をCSVでダウンロードして選んでください。ジャンル・期間はGoogleトレンドの画面で選んだものになります（下の欄にメモしておけます）。'));
+    var lab = el('input', 'input');
+    lab.type = 'text';
+    lab.maxLength = 40;
+    lab.placeholder = 'メモ（例：ショッピング・過去7日間）';
+    imp.appendChild(lab);
+    var file = el('input');
+    file.type = 'file';
+    file.accept = '.csv,text/csv';
+    imp.appendChild(file);
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var rows = parseTrendCsv(reader.result);
+        if (!rows.length) { showToast('CSVから言葉を読み取れませんでした'); return; }
+        try { localStorage.setItem(TREND_CSV_KEY, JSON.stringify({ rows: rows, label: lab.value.trim(), importedAt: Date.now() })); } catch (e) {}
+        showToast(rows.length + '件の言葉を取り込みました');
+        draw();
+      };
+      reader.readAsText(f);
+    });
+    body.appendChild(imp);
+    draw();
+  }
+
+  function drawNewItems(body) {
+    body.appendChild(el('p', 'hint', '新作レーダーで集めた商品です。発売日・予約などは、楽天の商品名・説明に書かれていた情報です（売れた数・検索数ではありません）。'));
+    var pf = el('label', 'field');
+    pf.appendChild(el('span', 'field-label', '期間（見つけた日）'));
+    var ps = el('select', 'select');
+    [['1', '直近24時間'], ['7', '7日'], ['30', '30日']].forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; ps.appendChild(x); });
+    ps.value = TR.newPeriod;
+    pf.appendChild(ps);
+    body.appendChild(pf);
+    var list = el('div', 'cand-list');
+    body.appendChild(list);
+    function draw() {
+      list.innerHTML = '';
+      Radar.list().then(function (all) {
+        var since = Date.now() - Number(TR.newPeriod) * 24 * 3600 * 1000;
+        var items = all.filter(function (it) { return !it.hidden && !offGenre(it) && it.createdAt >= since; }).sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).slice(0, 30);
+        list.appendChild(sourceLine('出典：新作レーダー（楽天市場の商品名・説明）｜' + items.length + '件'));
+        if (!items.length) {
+          list.appendChild(el('p', 'manage-empty', 'この期間に見つけた新作はありません。「新作・予約を探す」でレーダーを更新してください。'));
+          return;
+        }
+        items.forEach(function (it) {
+          list.appendChild(trendProductCard({ name: it.name, price: it.price, image: it.imageUrl, url: it.rakutenUrl || it.sourceUrl, shops: it.shops, brand: it.brand, code: it.code },
+            { tags: it.status.map(function (s) { return RADAR_STATUS_JA[s]; }).filter(Boolean).slice(0, 3), release: it }));
+        });
+      });
+    }
+    ps.addEventListener('change', function () { TR.newPeriod = ps.value; saveTR(); draw(); });
+    draw();
+  }
+
+  function drawBrands(body) {
+    body.appendChild(el('p', 'hint', '楽天の売れ筋ランキングに入っている商品から、ブランドを集めました。価格帯・代表的な商品・順位はランキングのデータそのものです。ブランド名に「推定」とあるものは、商品名から読み取ったものです。'));
+    genrePicker(body, renderTrend);
+    var opts = el('div', 'trend-brand-opts');
+    var hide = el('label', 'pick');
+    var hb = el('input');
+    hb.type = 'checkbox';
+    hb.checked = TR.hideKnown !== false;
+    hide.appendChild(hb);
+    hide.appendChild(document.createTextNode(' よく知られたブランドを外す'));
+    opts.appendChild(hide);
+    var band = el('select', 'select');
+    [['', 'すべての価格帯'], ['0-5000', '5千円まで'], ['5000-10000', '5千〜1万円'], ['10000-30000', '1万〜3万円'], ['30000-', '3万円以上']].forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; band.appendChild(x); });
+    band.value = TR.band || '';
+    opts.appendChild(band);
+    body.appendChild(opts);
+    var go = el('button', 'btn btn-primary', 'このジャンルの売れ筋からブランドを探す');
+    go.type = 'button';
+    body.appendChild(go);
+    var note = el('p', 'hint', '');
+    body.appendChild(note);
+    var list = el('div', 'trend-brands');
+    body.appendChild(list);
+    function draw() {
+      list.innerHTML = '';
+      var d = TR.ranking[TR.genre];
+      if (!d) { note.textContent = 'まだこのジャンルの売れ筋を取得していません。'; return; }
+      note.textContent = '';
+      var p = (TR.band || '').split('-');
+      var lo = Number(p[0]) || 0, hi = Number(p[1]) || Infinity;
+      var brands = (d.brands || []).filter(function (b) { return !(hb.checked && b.known); }).filter(function (b) { return !TR.band || (b.minPrice != null && b.minPrice >= lo && b.minPrice < hi); });
+      list.appendChild(sourceLine('出典：楽天市場ランキング（' + d.genreLabel + '）｜取得 ' + dt(d.fetchedAt) + '｜' + brands.length + 'ブランド'));
+      if (!brands.length) list.appendChild(el('p', 'manage-empty', '条件に合うブランドがありませんでした。「よく知られたブランドを外す」を外すか、別のジャンルで試してください。'));
+      Radar.list().then(function (radarItems) {
+        brands.forEach(function (b) { list.appendChild(brandCard(b, d, radarItems)); });
+      });
+    }
+    hb.addEventListener('change', function () { TR.hideKnown = hb.checked; saveTR(); draw(); });
+    band.addEventListener('change', function () { TR.band = band.value; saveTR(); draw(); });
+    go.addEventListener('click', function () { fetchRanking(go, note, draw); });
+    draw();
+  }
+
+  function brandCard(b, d, radarItems) {
+    var card = el('article', 'card trend-brand');
+    var head = el('div', 'chips');
+    head.appendChild(el('h3', 'trend-brand-name', b.name));
+    if (b.guessed) head.appendChild(el('span', 'tag', '推定'));
+    card.appendChild(head);
+    var facts = el('dl', 'radar-facts');
+    var since = Date.now() - 60 * 24 * 3600 * 1000;
+    var fresh = radarItems.filter(function (it) { return it.brand && it.brand.toLowerCase() === b.name.toLowerCase() && it.createdAt >= since; });
+    [
+      ['得意ジャンル', [b.genre].concat(b.kinds).filter(Boolean).join('・')],
+      ['価格帯', b.minPrice != null ? formatPrice(b.minPrice) + (b.maxPrice !== b.minPrice ? '〜' + formatPrice(b.maxPrice) : '') + '（ランキングの商品）' : ''],
+      ['代表的な商品', b.items[0] ? String(b.items[0].name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 40) : ''],
+      ['最近の新作', fresh.length ? fresh.slice(0, 2).map(function (x) { return String(x.name).slice(0, 30); }).join('／') : '新作レーダーではまだ見つけていません'],
+      ['注目の根拠', '楽天市場ランキング（' + d.genreLabel + '）に' + b.count + '商品・最高' + b.bestRank + '位（取得 ' + dt(d.fetchedAt) + '）']
+    ].forEach(function (x) { if (x[1]) { facts.appendChild(el('dt', null, x[0])); facts.appendChild(el('dd', null, x[1])); } });
+    card.appendChild(facts);
+    // 概要：AIの説明（押したときだけ。未確認の情報を含むことがあると明記）
+    var noteBox = el('div', 'trend-brand-ai');
+    var askBtn = el('button', 'link-btn', 'AIに概要を聞く（AIの説明・未確認）');
+    askBtn.type = 'button';
+    askBtn.addEventListener('click', function () {
+      askBtn.disabled = true;
+      postJson('api/brand-note', { brand: b.name, items: b.items.map(function (x) { return x.name; }) }).then(function (r) {
+        noteBox.innerHTML = '';
+        if (r.status !== 200) { noteBox.appendChild(el('p', 'hint', r.data.error || '取得できませんでした')); askBtn.disabled = false; return; }
+        noteBox.appendChild(el('p', 'trend-ai', r.data.known ? 'AIの説明（未確認）：' + r.data.summary + (r.data.taste ? '（テイスト：' + r.data.taste + '）' : '') : 'AIはこのブランドを知りませんでした（推測で説明は作りません）。'));
+      });
+    });
+    noteBox.appendChild(askBtn);
+    card.appendChild(noteBox);
+    var more = el('div', 'cand-list trend-brand-items');
+    var acts = el('div', 'actions');
+    var showMore = el('button', 'btn btn-secondary', 'ブランドをもっと見る');
+    showMore.type = 'button';
+    showMore.addEventListener('click', function () {
+      more.innerHTML = '';
+      more.appendChild(sourceLine('楽天市場ランキング（' + d.genreLabel + '）に入っていた商品'));
+      b.items.forEach(function (it) { more.appendChild(trendProductCard(it, { rank: it.rank + '位' })); });
+    });
+    var find = el('button', 'btn btn-secondary', 'このブランドの商品を探す');
+    find.type = 'button';
+    find.addEventListener('click', function () {
+      find.disabled = true;
+      more.innerHTML = '';
+      more.appendChild(el('p', 'hint', '楽天市場で探しています…'));
+      jobCall('related', { axis: 'search', keyword: b.name, exclude: [], shown: [] }, { label: 'ブランド：' + b.name, genre: d.genreLabel }).then(function (r) {
+        find.disabled = false;
+        more.innerHTML = '';
+        if (r.status !== 200) { more.appendChild(el('p', 'hint', r.data.error || '探せませんでした')); return; }
+        more.appendChild(sourceLine('楽天市場の商品検索「' + b.name + '」｜' + (r.data.items || []).length + '件'));
+        (r.data.items || []).forEach(function (it) { more.appendChild(trendProductCard(it, {})); });
+      });
+    });
+    var plan = el('button', 'btn btn-primary', 'このブランドで企画を作る');
+    plan.type = 'button';
+    plan.addEventListener('click', function () { planFromWord(b.name, 'brand', '楽天市場ランキング（' + d.genreLabel + '）に' + b.count + '商品'); });
+    acts.appendChild(showMore);
+    acts.appendChild(find);
+    acts.appendChild(plan);
+    card.appendChild(acts);
+    card.appendChild(more);
+    return card;
+  }
+
+  fetch('api/trends').then(function (r) { return r.json(); }).then(function (d) { trendGenres = d.genres || []; renderTrend(); }, function () {});
+
+  // ---- ふるさと納税コーナー（通常の商品発掘とは別の画面） ----
+  // 数値は楽天の商品データにあるものだけ（内容量・配送時期は書いてあれば読み取る。読めなければ「記載なし」）。
+  // ポイント還元・節税額は扱わない。楽天ROOM・アフィリエイトの対象かは未確認として扱う
+  var FS_KEY = 'room-furusato';
+  var FURUSATO_CATS = [['meat', '肉'], ['seafood', '海鮮'], ['rice', '米'], ['fruit', '果物'], ['sake', 'お酒'], ['daily', '日用品'], ['appliance', '家電'], ['travel', '旅行・宿泊'], ['subscription', '定期便'], ['other', 'その他']];
+  var FURUSATO_PLANS = ['1万円台で選ぶふるさと納税5選', '一人暮らしにおすすめの返礼品', '冷凍庫を圧迫しにくい返礼品', 'お米の返礼品を比較してみた', '年末までにチェックしたい返礼品', '日用品のふるさと納税おすすめ'];
+  var furusatoEl = document.getElementById('furusato-body');
+  var FS = (function () { try { return JSON.parse(localStorage.getItem(FS_KEY)) || {}; } catch (e) { return {}; } })();
+  FS.cond = FS.cond || { category: 'rice', keyword: '', municipality: '', minPrice: '', maxPrice: '', minQuantity: '', delivery: '', teiki: 'any', minReview: '', sort: 'standard' };
+  FS.items = FS.items || [];
+  FS.compare = FS.compare || [];
+  FS.picked = FS.picked || [];
+  FS.title = FS.title || FURUSATO_PLANS[0];
+  FS.pr = !!FS.pr;
+  function saveFS() { try { localStorage.setItem(FS_KEY, JSON.stringify(FS)); } catch (e) { FS.items = FS.items.slice(0, 30); try { localStorage.setItem(FS_KEY, JSON.stringify(FS)); } catch (e2) {} } }
+  function fsKey(x) { return x.code || x.url; }
+  function fsFind(k) { return FS.items.filter(function (x) { return fsKey(x) === k; })[0]; }
+  function unitText(v) { if (!v) return ''; return v.unit === 'g' && v.value >= 1000 ? Math.round(v.value / 100) / 10 + 'kg' : v.unit === 'ml' && v.value >= 1000 ? Math.round(v.value / 100) / 10 + 'L' : v.value + v.unit; }
+
+  function renderFurusato() {
+    if (!furusatoEl) return;
+    furusatoEl.innerHTML = '';
+    var c = FS.cond;
+    var info = el('div', 'message furusato-rules');
+    info.appendChild(el('p', null, '・2025年10月から、楽天ふるさと納税の寄付は原則としてポイント付与の対象外です。この画面ではポイント還元を案内しません。'));
+    info.appendChild(el('p', null, '・控除の上限額は、所得や家族構成などで人それぞれ違います。節税額は表示しません。'));
+    info.appendChild(el('p', null, '・返礼品が楽天ROOM・楽天アフィリエイトの対象かどうかは、まだ確認できていません。収益になる前提では扱いません。'));
+    furusatoEl.appendChild(info);
+
+    var chips = el('div', 'radar-chips furusato-cats');
+    FURUSATO_CATS.forEach(function (x) {
+      var b = el('button', 'radar-chip' + (c.category === x[0] ? ' on' : ''), x[1]);
+      b.type = 'button';
+      b.addEventListener('click', function () { c.category = x[0]; saveFS(); renderFurusato(); });
+      chips.appendChild(b);
+    });
+    furusatoEl.appendChild(chips);
+
+    var grid = el('div', 'coord-cond-grid furusato-cond');
+    function inp(label, key, ph, type) {
+      var f = el('label', 'field');
+      f.appendChild(el('span', 'field-label', label));
+      var i = el('input', 'input');
+      i.type = type || 'text';
+      if (type === 'number') i.inputMode = 'numeric';
+      i.placeholder = ph;
+      i.value = c[key] || '';
+      i.addEventListener('input', function () { c[key] = i.value.trim(); saveFS(); });
+      f.appendChild(i);
+      grid.appendChild(f);
+    }
+    function sel(label, key, options) {
+      var f = el('label', 'field');
+      f.appendChild(el('span', 'field-label', label));
+      var s = el('select', 'select');
+      options.forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; s.appendChild(x); });
+      s.value = c[key] || '';
+      s.addEventListener('change', function () { c[key] = s.value; saveFS(); });
+      f.appendChild(s);
+      grid.appendChild(f);
+    }
+    inp('寄付額（下限・円）', 'minPrice', '例：10000', 'number');
+    inp('寄付額（上限・円）', 'maxPrice', '例：19999', 'number');
+    inp('自治体', 'municipality', '例：北海道、魚沼市');
+    inp('キーワード', 'keyword', '例：コシヒカリ、小分け');
+    inp('内容量（これ以上）', 'minQuantity', '例：5kg、1L、24個');
+    sel('配送時期', 'delivery', [['', '指定なし'], ['stated', '配送時期の記載があるもの']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function (m) { return [String(m), m + '月の記載があるもの']; })));
+    sel('定期便', 'teiki', [['any', '含む'], ['exclude', '定期便を除く'], ['only', '定期便だけ']]);
+    sel('レビュー評価', 'minReview', [['', '指定なし'], ['3.5', '★3.5以上'], ['4', '★4以上'], ['4.5', '★4.5以上']]);
+    sel('並び順', 'sort', [['standard', '楽天の標準'], ['review', '人気（レビュー件数の多い順）'], ['price_asc', '寄付額の安い順'], ['price_desc', '寄付額の高い順']]);
+    furusatoEl.appendChild(grid);
+    furusatoEl.appendChild(el('p', 'hint', '「人気」は楽天の販売ランキングではなく、レビュー件数の多い順です。内容量・配送時期は、商品名・説明に書いてあるものだけで絞り込みます。'));
+    var go = el('button', 'btn btn-discover', '返礼品を探す');
+    go.type = 'button';
+    furusatoEl.appendChild(go);
+    var note = el('p', 'hint', '');
+    furusatoEl.appendChild(note);
+    var list = el('div', 'cand-list');
+    furusatoEl.appendChild(list);
+    var moreBtn = el('button', 'btn btn-secondary', '次のページを読み込む');
+    moreBtn.type = 'button';
+    furusatoEl.appendChild(moreBtn);
+
+    function search(page) {
+      go.disabled = moreBtn.disabled = true;
+      note.textContent = '楽天ふるさと納税で探しています…（別のアプリを開いても大丈夫です）';
+      var cat = (FURUSATO_CATS.filter(function (x) { return x[0] === c.category; })[0] || ['', ''])[1];
+      jobCall('furusato', Object.assign({}, c, { page: page }), { label: 'ふるさと納税：' + [cat, c.municipality, c.keyword].filter(Boolean).join('・'), genre: cat }).then(function (r) {
+        go.disabled = moreBtn.disabled = false;
+        if (r.status !== 200) { note.textContent = r.data.error || '探せませんでした'; return; }
+        var got = r.data.items || [];
+        FS.items = page > 1 ? FS.items.concat(got.filter(function (x) { return !fsFind(fsKey(x)); })) : got;
+        FS.page = page;
+        FS.pageCount = r.data.pageCount || 1;
+        FS.fetchedAt = r.data.fetchedAt;
+        saveFS();
+        note.textContent = got.length + '件見つかりました' + (r.data.filteredOut ? '（条件に合わない' + r.data.filteredOut + '件を除きました）' : '');
+        drawList();
+      });
+    }
+    go.addEventListener('click', function () { search(1); });
+    moreBtn.addEventListener('click', function () { search((FS.page || 1) + 1); });
+
+    function check(label, arr, x, max) {
+      var l = el('label', 'pick');
+      var b = el('input');
+      b.type = 'checkbox';
+      b.checked = arr.indexOf(fsKey(x)) !== -1;
+      b.addEventListener('change', function () {
+        var i = arr.indexOf(fsKey(x));
+        if (b.checked && i === -1) { if (arr.length >= max) { b.checked = false; showToast(max + '件までです'); return; } arr.push(fsKey(x)); }
+        if (!b.checked && i !== -1) arr.splice(i, 1);
+        saveFS();
+        drawCompare();
+        drawPlan();
+      });
+      l.appendChild(b);
+      l.appendChild(document.createTextNode(' ' + label));
+      return l;
+    }
+    function drawList() {
+      list.innerHTML = '';
+      moreBtn.hidden = !FS.items.length || (FS.page || 1) >= (FS.pageCount || 1);
+      if (FS.fetchedAt) list.appendChild(sourceLine('出典：楽天ふるさと納税（楽天市場の商品検索API）｜取得 ' + dt(FS.fetchedAt)));
+      FS.items.forEach(function (x) {
+        var card = el('article', 'cand-card furusato-card');
+        var top = el('div', 'cand-top');
+        var img = el('img', 'cand-thumb'); img.src = x.image || ''; img.alt = ''; img.loading = 'lazy'; img.onerror = function () { img.style.visibility = 'hidden'; };
+        top.appendChild(img);
+        var info = el('div', 'cand-info');
+        var chips2 = el('div', 'chips');
+        chips2.appendChild(el('span', 'tag', x.municipality || '自治体の記載なし'));
+        if (x.teiki) chips2.appendChild(el('span', 'role', '定期便' + (x.teiki.times ? x.teiki.times + '回' : '')));
+        info.appendChild(chips2);
+        info.appendChild(el('h3', 'cand-name', String(x.name).replace(/【ふるさと納税】/g, '').slice(0, 70)));
+        var dl = el('dl', 'radar-facts');
+        [['寄付額', formatPrice(x.price)], ['内容量', x.quantityText || '記載なし（商品ページで確認）'], ['1万円あたり', x.per10k ? unitText(x.per10k) : '—'], ['配送時期', x.delivery || '記載なし'],
+          ['レビュー', x.reviewCount ? '★' + x.reviewAverage + '（' + x.reviewCount + '件）' : 'なし']].forEach(function (f) { dl.appendChild(el('dt', null, f[0])); dl.appendChild(el('dd', null, f[1])); });
+        info.appendChild(dl);
+        top.appendChild(info);
+        card.appendChild(top);
+        var acts = el('div', 'actions');
+        acts.appendChild(check('比べる', FS.compare, x, 6));
+        acts.appendChild(check('投稿に使う', FS.picked, x, MAX_POST_ITEMS));
+        var a = el('a', 'btn btn-secondary', '寄付ページを見る');
+        a.href = x.url; a.target = '_blank'; a.rel = 'noopener';
+        acts.appendChild(a);
+        card.appendChild(acts);
+        card.appendChild(el('p', 'hint', '楽天ROOM・アフィリエイトの対象か：未確認'));
+        list.appendChild(card);
+      });
+    }
+
+    // 比べる：量は読み取れたものだけ。品質・部位・産地は量では比べられないことを明記
+    var cmp = el('section', 'card furusato-compare');
+    furusatoEl.appendChild(cmp);
+    function drawCompare() {
+      cmp.innerHTML = '';
+      var rows = FS.compare.map(fsFind).filter(Boolean);
+      cmp.hidden = !rows.length;
+      if (!rows.length) return;
+      cmp.appendChild(el('h3', 'plan-section-title', '返礼品をくらべる（' + rows.length + '件）'));
+      cmp.appendChild(el('p', 'hint', '内容量と「寄付額1万円あたり」は、商品名・説明に書いてある量から計算しています。書いていないものは空欄です。品質・部位・産地・加工の違いがあるため、量の多さだけで良し悪しは決められません。'));
+      var units = rows.map(function (x) { return x.per10k && x.per10k.unit; }).filter(Boolean);
+      if (units.length > 1 && units.some(function (u) { return u !== units[0]; })) cmp.appendChild(el('p', 'hint', '単位が違う返礼品（重さと個数など）は、1万円あたりの量を比べられません。'));
+      var wrap = el('div', 'furusato-table-wrap');
+      var t = el('table', 'furusato-table');
+      var head = el('tr');
+      ['返礼品', '自治体', '寄付額', '内容量', '1万円あたり', '配送時期', 'レビュー', 'ページ'].forEach(function (h) { head.appendChild(el('th', null, h)); });
+      t.appendChild(head);
+      rows.forEach(function (x) {
+        var tr = el('tr');
+        [String(x.name).replace(/【ふるさと納税】/g, '').slice(0, 30), x.municipality, formatPrice(x.price), x.quantityText || '記載なし', x.per10k ? unitText(x.per10k) : '—', x.delivery || '記載なし', x.reviewCount ? '★' + x.reviewAverage + '（' + x.reviewCount + '）' : 'なし'].forEach(function (v) { tr.appendChild(el('td', null, v)); });
+        var td = el('td');
+        var a = el('a', 'link-btn', '開く'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener';
+        td.appendChild(a);
+        tr.appendChild(td);
+        t.appendChild(tr);
+      });
+      wrap.appendChild(t);
+      cmp.appendChild(wrap);
+    }
+
+    // 投稿の企画：タイトルは自由に直せる。選んだ返礼品でInstagram投稿へ
+    var plan = el('section', 'card furusato-plan');
+    furusatoEl.appendChild(plan);
+    function drawPlan() {
+      plan.innerHTML = '';
+      plan.appendChild(el('h3', 'plan-section-title', 'ふるさと納税の投稿企画'));
+      var tf = el('label', 'field');
+      tf.appendChild(el('span', 'field-label', '企画のひな形'));
+      var ts = el('select', 'select');
+      FURUSATO_PLANS.forEach(function (p) { var o = el('option', null, p); o.value = p; ts.appendChild(o); });
+      ts.value = FURUSATO_PLANS.indexOf(FS.title) !== -1 ? FS.title : FURUSATO_PLANS[0];
+      tf.appendChild(ts);
+      plan.appendChild(tf);
+      var nf = el('label', 'field');
+      nf.appendChild(el('span', 'field-label', 'タイトル（自由に直せます）'));
+      var ni = el('input', 'input plan-title-input');
+      ni.type = 'text';
+      ni.maxLength = 40;
+      ni.value = FS.title;
+      ni.addEventListener('input', function () { FS.title = ni.value.trim(); saveFS(); });
+      ts.addEventListener('change', function () { FS.title = ts.value; ni.value = ts.value; saveFS(); });
+      nf.appendChild(ni);
+      plan.appendChild(nf);
+      addClear(ni);
+      var picked = FS.picked.map(fsFind).filter(Boolean);
+      plan.appendChild(el('p', 'hint', '投稿に使う返礼品：' + picked.length + '件（上の一覧の「投稿に使う」で選びます。並び順・追加・削除は、次の投稿づくりの画面でもできます）'));
+      picked.forEach(function (x, i) {
+        var row = el('div', 'coord-item');
+        var img = el('img', 'coord-thumb'); img.src = x.image || ''; img.alt = ''; row.appendChild(img);
+        var mid = el('div', 'coord-item-mid');
+        mid.appendChild(el('p', 'coord-name', (i + 1) + '. ' + String(x.name).replace(/【ふるさと納税】/g, '').slice(0, 40)));
+        mid.appendChild(el('p', 'coord-meta', formatPrice(x.price) + '　' + (x.municipality || '')));
+        row.appendChild(mid);
+        var tools = el('div', 'coord-tools');
+        [['▲', -1], ['▼', 1], ['外す', 0]].forEach(function (m) {
+          var b = el('button', 'coord-tool', m[0]);
+          b.type = 'button';
+          b.disabled = (m[1] < 0 && i === 0) || (m[1] > 0 && i === picked.length - 1);
+          b.addEventListener('click', function () {
+            var k = FS.picked.splice(i, 1)[0];
+            if (m[1]) FS.picked.splice(i + m[1], 0, k);
+            saveFS(); drawPlan(); drawList();
+          });
+          tools.appendChild(b);
+        });
+        row.appendChild(tools);
+        plan.appendChild(row);
+      });
+      var prl = el('label', 'pick');
+      var prb = el('input');
+      prb.type = 'checkbox';
+      prb.checked = FS.pr;
+      prb.addEventListener('change', function () { FS.pr = prb.checked; saveFS(); });
+      prl.appendChild(prb);
+      prl.appendChild(document.createTextNode(' 広告（アフィリエイトリンク）を含む投稿にする（キャプションに「#PR」と表記）'));
+      plan.appendChild(prl);
+      var toPost = el('button', 'btn btn-primary', 'この返礼品でInstagram投稿を作る');
+      toPost.type = 'button';
+      toPost.disabled = !picked.length;
+      toPost.addEventListener('click', function () {
+        toPost.disabled = true;
+        toPost.textContent = 'ROOM紹介文を作っています…';
+        var chunks = [];
+        for (var k = 0; k < picked.length; k += 8) chunks.push(picked.slice(k, k + 8));
+        Promise.all(chunks.map(function (ch) {
+          return postJson('api/intros', { title: FS.title, furusato: true, items: ch.map(function (x) { return { name: x.name, price: x.price, role: x.municipality, reason: 'ふるさと納税の返礼品（' + (x.municipality || '') + '）', caption: x.caption }; }) });
+        })).then(function (rs) {
+          var intros = [];
+          rs.forEach(function (r, k2) { chunks[k2].forEach(function (x, j) { intros.push(((r.data && r.data.intros) || [])[j] || ''); }); });
+          composeFromFurusato(FS.title, picked, intros, FS.pr);
+        }, function () { showToast('通信できませんでした。電波の良い場所でもう一度お試しください。'); }).then(function () {
+          toPost.disabled = false;
+          toPost.textContent = 'この返礼品でInstagram投稿を作る';
+        });
+      });
+      plan.appendChild(toPost);
+    }
+    drawList();
+    drawCompare();
+    drawPlan();
+  }
+
+  function composeFromFurusato(title, items, intros, pr) {
+    loadDraft();
+    draft.items = items.map(function (x, i) {
+      return { id: x.code || x.url, code: x.code, name: x.name, price: x.price, image: x.image, url: x.url, brand: '', reason: 'ふるさと納税の返礼品', intro: intros[i] || '', role: x.municipality || '', memo: '' };
+    });
+    draft.coord = null; draft.release = null; draft.heroProduct = null; draft.planId = ''; draft.postId = '';
+    draft.genre = 'ふるさと納税';
+    draft.postType = 'ふるさと納税';
+    draft.theme = String(title || 'ふるさと納税').replace(/(について)?本気出して考えてみた$/, '').slice(0, 30);
+    draft.subtitle = '';
+    draft.category = 'ふるさと納税';
+    draft.layoutSizes = null;
+    draft.coverStyle = 'use_case';
+    draft.coverTitle = splitCoverTitle(title);
+    draft.coverAccent = '';
+    draft.priceBand = '';
+    draft.summary = { enabled: false, typeName: '', title: '', lead: '', verdict: '' };
+    draft.furusato = { pr: !!pr };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+    location.hash = '#compose';
+  }
+
+  if (furusatoEl) renderFurusato();
 
 })();

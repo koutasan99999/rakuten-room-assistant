@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-10-30.1">
+  <meta name="app-version" content="2026-10-30.2">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-10-30.1">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-30.2">
 </head>
 <body>
   <header class="header">
@@ -18,6 +18,7 @@
     <nav class="view-tabs" aria-label="画面の切り替え">
       <a href="#discover" class="view-tab" data-view="discover">商品発掘</a>
       <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+      <a href="#furusato" class="view-tab" data-view="furusato">ふるさと納税</a>
       <a href="#jobs" class="view-tab" data-view="jobs">検索ジョブ <span id="jobs-count" class="tab-count"></span></a>
     </nav>
   </header>
@@ -29,6 +30,7 @@
       <button type="button" class="mode-tab" data-mode="cond">条件を指定して探す</button>
       <button type="button" class="mode-tab" data-mode="random">完全ランダム</button>
       <button type="button" class="mode-tab" data-mode="radar">新作・予約を探す</button>
+      <button type="button" class="mode-tab" data-mode="trend">トレンド発掘</button>
     </nav>
 
     <!-- 編集中の企画（下書き）。ページを移っても、あとから開き直せる -->
@@ -126,6 +128,11 @@
     </section>
 
     <!-- 新作・予約・再販レーダー：今出たもの・これから出るものを眺める -->
+    <!-- トレンド発掘：売れ筋（楽天ランキング）・検索急上昇（Googleトレンド）・新作・話題（新作レーダー）を混ぜずに見せる -->
+    <section class="mode-panel" id="mode-trend" hidden>
+      <div id="trend-body"></div>
+    </section>
+
     <section class="mode-panel" id="mode-radar" hidden>
       <button type="button" id="radar-scan" class="btn btn-discover">レーダーを更新</button>
       <p id="radar-last" class="editor-note">新作・予約・発売予定・再販・限定・コラボ・新色の商品を、選んだジャンルとフォロー中のブランドから集めます（30〜50秒）。見つけた商品はこのiPhoneに貯まっていきます。</p>
@@ -260,6 +267,12 @@
 
     <p id="genre" class="genre" hidden></p>
     <div id="results" class="results"></div>
+  </main>
+
+  <!-- ふるさと納税コーナー（通常の商品発掘とは別） -->
+  <main class="container" id="view-furusato" hidden>
+    <h2 class="curation-title">ふるさと納税</h2>
+    <div id="furusato-body"></div>
   </main>
 
   <!-- 検索ジョブ：検索の記録と進み具合。別のアプリを開いても、戻ると続きから進む -->
@@ -397,6 +410,7 @@
     <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
     <h2 class="compose-title">ROOM登録準備</h2>
     <p id="room-title" class="room-title"></p>
+    <p id="room-furusato-note" class="message" hidden>ふるさと納税の返礼品です。楽天ROOM・楽天アフィリエイトの対象かどうかは確認できていません。ROOMに載せる前に、楽天の最新の規約・ヘルプで確認してください。紹介文にポイント還元・節税額は書かないでください。</p>
     <div class="room-progress">
       <p class="room-progress-label">ROOM登録 <span id="room-bar" class="room-bar"></span> <span id="room-count"></span></p>
       <p id="room-complete" class="room-complete" hidden>ROOM登録完了</p>
@@ -425,21 +439,21 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-10-30.1"></script>
-  <script src="js/history.js?v=2026-10-30.1"></script>
-  <script src="js/search-jobs.js?v=2026-10-30.1"></script>
-  <script src="js/radar-store.js?v=2026-10-30.1"></script>
-  <script src="js/brand-follow.js?v=2026-10-30.1"></script>
-  <script src="js/zip.js?v=2026-10-30.1"></script>
-  <script src="js/carousel-layout.js?v=2026-10-30.1"></script>
-  <script src="js/ig-render.js?v=2026-10-30.1"></script>
-  <script src="js/ig-covers.js?v=2026-10-30.1"></script>
-  <script src="js/ig-coord.js?v=2026-10-30.1"></script>
-  <script src="js/ig-multi.js?v=2026-10-30.1"></script>
-  <script src="js/reel-story.js?v=2026-10-30.1"></script>
-  <script src="js/coord-store.js?v=2026-10-30.1"></script>
-  <script src="js/coord-collage.js?v=2026-10-30.1"></script>
-  <script src="js/image-store.js?v=2026-10-30.1"></script>
-  <script src="js/app.js?v=2026-10-30.1"></script>
+  <script src="js/store.js?v=2026-10-30.2"></script>
+  <script src="js/history.js?v=2026-10-30.2"></script>
+  <script src="js/search-jobs.js?v=2026-10-30.2"></script>
+  <script src="js/radar-store.js?v=2026-10-30.2"></script>
+  <script src="js/brand-follow.js?v=2026-10-30.2"></script>
+  <script src="js/zip.js?v=2026-10-30.2"></script>
+  <script src="js/carousel-layout.js?v=2026-10-30.2"></script>
+  <script src="js/ig-render.js?v=2026-10-30.2"></script>
+  <script src="js/ig-covers.js?v=2026-10-30.2"></script>
+  <script src="js/ig-coord.js?v=2026-10-30.2"></script>
+  <script src="js/ig-multi.js?v=2026-10-30.2"></script>
+  <script src="js/reel-story.js?v=2026-10-30.2"></script>
+  <script src="js/coord-store.js?v=2026-10-30.2"></script>
+  <script src="js/coord-collage.js?v=2026-10-30.2"></script>
+  <script src="js/image-store.js?v=2026-10-30.2"></script>
+  <script src="js/app.js?v=2026-10-30.2"></script>
 </body>
 </html>

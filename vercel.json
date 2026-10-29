@@ -44,6 +44,15 @@
     },
     "api/coord-image.js": {
       "maxDuration": 60
+    },
+    "api/trends.js": {
+      "maxDuration": 30
+    },
+    "api/furusato.js": {
+      "maxDuration": 30
+    },
+    "api/brand-note.js": {
+      "maxDuration": 30
     }
   },
   "headers": [

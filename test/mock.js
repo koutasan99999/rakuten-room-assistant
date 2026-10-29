@@ -19,12 +19,14 @@ export const GOOD_INTRO = 'シンプルな見た目で部屋のどこに置い�
   '収納を見直したい方は商品ページで詳しいサイズを確認してみてください。';
 
 // images: 画像生成API（/v1/images/…）の偽物、thumbnail: 楽天の商品写真の偽物（どちらも省略可）
-export function installFetchMock({ rakuten, openai, images, thumbnail }) {
+// trends: Googleトレンド（RSS）の偽物
+export function installFetchMock({ rakuten, openai, images, thumbnail, trends }) {
   const calls = { rakuten: [], openai: [], images: [] };
   const original = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
     if (u.includes('thumbnail.image.rakuten.co.jp') && thumbnail) return thumbnail(new URL(u));
+    if (u.includes('trends.google.com') && trends) return trends(new URL(u));
     if (u.includes('api.openai.com/v1/images/')) {
       calls.images.push({ url: u, body: opts.body });
       return images ? images(opts.body, calls.images.length) : json(200, { data: [{ b64_json: TINY_PNG }] });
