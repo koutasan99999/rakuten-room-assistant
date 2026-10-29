@@ -45,6 +45,8 @@ export default async function handler(req, res, env = process.env) {
       axis: cursor ? cursor.axis : axis, reference, keyword, cursor,
       exclude: readList(body.exclude, 40), shown: readList(body.shown, 300),
       minPrice, maxPrice, sort: SORTS.includes(body.sort) ? body.sort || undefined : undefined,
+      // want: 1回に返す件数（コーデの起点を選ぶときなどは多めに。最大30）
+      want: Math.max(5, Math.min(30, Number(body.want) || 10)),
       env, referer: requestReferer(req, env), until: startedAt + 40000
     });
     const a = r.analysis;
