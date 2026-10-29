@@ -710,3 +710,10 @@ body {
 .coord-collage-img { width: 100%; border-radius: 12px; display: block; margin-top: 8px; }
 .coord-search .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
 .coord-search .actions .link-btn { grid-column: 1 / -1; }
+.coord-tryon { border-top: 1px solid var(--line); padding-top: 8px; }
+.coord-tryon > summary { cursor: pointer; font-weight: 800; color: var(--red); padding: 4px 0; }
+.coord-tryon[open] { display: grid; gap: 8px; }
+.coord-cost { margin: 0; font-size: 13px; color: var(--text); background: var(--soft); border-radius: 8px; padding: 8px 10px; }
+.coord-tryon-gallery { display: grid; gap: 10px; }
+.coord-tryon-fig { margin: 0; }
+.coord-tryon-fig figcaption { margin: 4px 0 0; }

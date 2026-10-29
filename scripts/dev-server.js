@@ -19,6 +19,7 @@ import searchHandler from '../api/search.js';
 import planTitlesHandler from '../api/plan-titles.js';
 import productUrlHandler from '../api/product-url.js';
 import coordHandler from '../api/coord.js';
+import coordImageHandler from '../api/coord-image.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -27,7 +28,10 @@ let env = process.env;
 if (process.env.MOCK) {
   const sampleImage = await fs.readFile(path.join(root, 'test/fixtures/sample-product.png'));
   const { installFetchMock, makeItems, json, aiReply, GOOD_INTRO } = await import('../test/mock.js');
+  const kuma = await fs.readFile(path.join(root, 'assets/kuma.png')).catch(() => null);
   installFetchMock({
+    // 画像生成の偽物：少し待ってから、くまの画像を「生成した画像」として返す
+    images: async () => { await new Promise((r) => setTimeout(r, 1500)); return json(200, { data: [{ b64_json: kuma ? kuma.toString('base64') : '' }] }); },
     // 価格帯の指定があれば、その範囲の価格で偽の商品を返す
     rakuten: (url) => {
       // 商品画像の中継（api/image）用に、余白つきの見本画像を返す
@@ -152,6 +156,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/plan-titles') return planTitlesHandler(req, res, env);
   if (url.pathname === '/api/product-url') return productUrlHandler(req, res, env);
   if (url.pathname === '/api/coord') return coordHandler(req, res, env);
+  if (url.pathname === '/api/coord-image') return coordImageHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

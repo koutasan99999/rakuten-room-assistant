@@ -4,7 +4,7 @@
 import { send, checkAccess } from '../lib/http.js';
 import { checkPublicUrl } from '../lib/official.js';
 
-const ALLOWED_HOST = /(^|\.)(rakuten\.co\.jp|r10s\.jp|rakuten\.ne\.jp)$/;
+export const ALLOWED_HOST = /(^|\.)(rakuten\.co\.jp|r10s\.jp|rakuten\.ne\.jp)$/;
 const MAX_BYTES = 6 * 1024 * 1024;
 
 // 楽天のサムネイルは ?_ex=幅x高さ で大きさを指定できるので、Instagram用に大きめを取る
