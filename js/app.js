@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-29.6';
+  var APP_VERSION = '2026-10-29.7';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1014,6 +1014,7 @@
     draft.coverStyle = 'serious_think'; // 投稿管理から作るときは今までの表紙
     draft.release = null;
     draft.heroProduct = null;
+    draft.coord = null;
     draft.layoutSizes = null;
     draft.coverTitle = '';
     draft.coverAccent = '';
@@ -1220,6 +1221,11 @@
         folder: 'generated_posts/' + today() + '_' + (copy.topicSlug || 'post'),
         release: draft.release && (cover || {}).style === 'new_release' ? draft.release : null
       };
+      // コーデの投稿：完成コーデのスライドを差し込む（js/ig-coord.js）
+      if (draft.coord) {
+        lastPost.summary = null;
+        if (draft.coord.format !== 'release') lastPost.cover = null;
+      }
       var notes = [];
       if (copy.notice) notes.push(copy.notice);
       if (!r[2]) notes.push('くまのアイコン画像（assets/kuma.png）がまだ無いため、仮のクマで作りました。');
@@ -1228,7 +1234,7 @@
       if (notes.length) showIgMessage(notes.join(' '), false, copy.detail);
       igCaption.value = copy.caption || '';
 
-      return showCarousel(lastPost).then(function () {
+      return (draft.coord ? coordSlidesData(draft.coord, draft.items, r[1]).then(function (co) { lastPost.coord = co; }) : Promise.resolve()).then(function () { return showCarousel(lastPost); }).then(function () {
         // 投稿履歴に、ROOM登録準備で使う商品情報（投稿順）とコレクション名を残す
         var productsFull = draft.items.map(function (it, i) {
           var c = copy.items[i] || {};
@@ -1238,10 +1244,16 @@
           };
         });
         var ensurePost = draft.postId ? Promise.resolve(draft.postId) : History.add({
-          title: copy.topic + 'について本気出して考えてみた', topic: copy.topic, subtitle: draft.subtitle, genre: draft.category
+          title: draft.coord ? draft.coord.title : copy.topic + 'について本気出して考えてみた', topic: copy.topic, subtitle: draft.subtitle, genre: draft.category,
+          postType: draft.coord ? 'コーデ' : undefined
         });
         ensurePost.then(function (id) {
           draft.postId = id;
+          // コーデの記録にも投稿の記録を結びつける（ROOM登録の状況をコーデの画面から見られるように）
+          if (draft.coord && window.CoordStore) {
+            var cv = window.CoordStore.get(draft.coord.coordId);
+            if (cv && cv.postId !== id) { cv.postId = id; window.CoordStore.save(cv); }
+          }
           try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
           return History.get(id).then(function (rec) {
             return History.update(id, {
@@ -1321,7 +1333,7 @@
       var row = el('div', 'ig-layout-row');
       row.appendChild(el('span', 'ig-layout-no', (n + 1) + '枚目'));
       if (sl.kind !== 'items') {
-        row.appendChild(el('span', 'ig-layout-kind', { cover: '表紙', summary: 'まとめ', cta: '楽天ROOMへの誘導' }[sl.kind]));
+        row.appendChild(el('span', 'ig-layout-kind', { cover: '表紙', summary: 'まとめ', cta: '楽天ROOMへの誘導', coord: 'コーデ紹介' }[sl.kind]));
       } else {
         var idx = k++;
         var sel = el('select', 'select');
@@ -1339,7 +1351,7 @@
           showCarousel(lastPost);
         });
         row.appendChild(sel);
-        row.appendChild(el('span', 'ig-layout-items', sl.items.map(function (i) { return 'No.' + (i + 1) + ' ' + (post.items[i].shortName || '').slice(0, 10); }).join(' / ')));
+        row.appendChild(el('span', 'ig-layout-items', sl.items.map(function (i) { var j = i + (plan.itemOffset || 0); return 'No.' + (j + 1) + ' ' + ((post.items[j] || {}).shortName || '').slice(0, 10); }).join(' / ')));
       }
       table.appendChild(row);
     });
@@ -1412,6 +1424,10 @@
       showToast(draft.items.length + '商品を「Instagram投稿済み」にしました');
       if (draft.planId) setPlanDone(draft.planId, true);
       if (draft.postId) History.update(draft.postId, { status: 'posted' });
+      if (draft.coord && window.CoordStore) {
+        var cv = window.CoordStore.get(draft.coord.coordId);
+        if (cv) { cv.igStatus = 'posted'; window.CoordStore.save(cv); renderCoordSaved(); }
+      }
     });
   });
   window.addEventListener('hashchange', showView);
@@ -1495,7 +1511,11 @@
     else if (last.mode === 'discover' && (last.data.products || []).length) renderDiscover(last.data);
     else if (last.mode === 'seed' && last.data.product && (last.data.ideas || []).length) renderSeed(last.data, false);
     else if (last.mode === 'release' && last.data.item && (last.data.ideas || []).length) renderRelease(last.data, false);
-    else if (last.mode === 'coord' && last.data.heroProduct) renderCoord(last.data);
+    else if (last.mode === 'coord' && last.data.heroProduct) {
+      // 投稿づくりの画面で記録が進んでいれば（Instagram・ROOMの状況）、保存したコーデの方を使う
+      var saved = window.CoordStore && window.CoordStore.get(last.data.id);
+      renderCoord(saved && (saved.updatedAt || 0) >= (last.data.updatedAt || 0) ? saved : last.data);
+    }
   }
 
   // 発掘結果をInstagramの投稿文に使える1つの文章にする
@@ -2633,6 +2653,7 @@
   function composeFromExplore(d, items, intros) {
     loadDraft();
     var edit = initEdit(d);
+    draft.coord = null;
     draft.items = items.map(function (c, i) {
       return { id: c.code || c.url, code: c.code, name: c.name, price: c.price, image: c.image, url: c.url, reason: c.reason || '', intro: intros[i] || '', role: c.postRole || (c.role === '自分で追加' || c.role === '公式サイト' ? '' : c.role) || c.angle || '', memo: c.memo || '', brand: c.brand || '' };
     });
@@ -2697,7 +2718,8 @@
       id: 'co' + Date.now().toString(36),
       heroProduct: {
         name: product.name, code: product.code || '', price: product.price || 0, url: product.url || '', image: product.image || '',
-        shop: product.shop || '', brand: product.brand || '', categoryLabel: product.categoryLabel || '', caption: String(product.caption || '').slice(0, 200)
+        shop: product.shop || '', brand: product.brand || '', categoryLabel: product.categoryLabel || '', caption: String(product.caption || '').slice(0, 200),
+        labels: product.labels || [], dateText: product.dateText || ''
       },
       conditions: { gender: '', style: 'おまかせ', season: 'おまかせ', budget: 'none', age: '', scene: '', likeBrands: '', avoidBrands: '', colors: '' },
       looks: [], notice: '', createdAt: Date.now()
@@ -2813,6 +2835,7 @@
     // 編集の保存：画面の続き（再読み込み用）と、保存したコーデの両方に入れる（3パターンを作ったあとは自動で保存）
     function persist() {
       view.updatedAt = Date.now();
+      if (typeof drawPostBox === 'function' && postBox) drawPostBox();
       saveLast('coord', view);
       if (view.looks.length || view.title) { window.CoordStore.save(view); renderCoordSaved(); }
     }
@@ -3444,6 +3467,206 @@
     results.appendChild(sbox);
     drawTarget();
     drawResults();
+    // ---- Instagram投稿・楽天ROOM・商品リンク一覧 ----
+    var postBox = el('section', 'card coord-post');
+    postBox.appendChild(el('h3', 'plan-section-title', 'Instagram投稿・ROOM登録・商品リンク'));
+    var fmtField = el('label', 'field');
+    fmtField.appendChild(el('span', 'field-label', '投稿の形'));
+    var fmtSel = el('select', 'select');
+    [['single', '1コーデ紹介（完成コーデ → アイテム → 誘導）'], ['compare', '3コーデ比較（並べた表紙 → 各コーデ → アイテム一覧 → 誘導）'], ['release', '新商品を使ったコーデ（新商品 → 完成コーデ → 組み合わせた商品 → 誘導）']].forEach(function (o) {
+      var x = el('option', null, o[1]); x.value = o[0]; fmtSel.appendChild(x);
+    });
+    view.post = view.post || { format: 'single', lookId: '' };
+    fmtSel.value = view.post.format;
+    fmtField.appendChild(fmtSel);
+    postBox.appendChild(fmtField);
+    var lookField = el('label', 'field');
+    lookField.appendChild(el('span', 'field-label', '使うコーデ'));
+    var lookSel = el('select', 'select');
+    lookField.appendChild(lookSel);
+    postBox.appendChild(lookField);
+    var postNote = el('p', 'hint', '');
+    postBox.appendChild(postNote);
+    var toIg = el('button', 'btn btn-primary', 'この内容でInstagram投稿を作る');
+    toIg.type = 'button';
+    postBox.appendChild(toIg);
+    var status = el('p', 'coord-status', '');
+    postBox.appendChild(status);
+    var roomLink = el('a', 'btn btn-secondary', 'ROOM登録準備を開く（紹介文・ハッシュタグ・登録済みチェック）');
+    postBox.appendChild(roomLink);
+    var links = el('details', 'coord-links');
+    links.appendChild(el('summary', null, '商品リンク一覧'));
+    links.appendChild(el('p', 'hint', 'Instagramの通常の投稿画像からは、リンクに移動できません。プロフィールのリンク（楽天ROOMなど）やストーリーズのリンクスタンプから案内してください。'));
+    var copyLinks = el('button', 'btn btn-secondary', '商品名とURLの一覧をコピー');
+    copyLinks.type = 'button';
+    var saveLinks = el('button', 'btn btn-secondary', 'リンク一覧ページ（HTML）を保存');
+    saveLinks.type = 'button';
+    links.appendChild(copyLinks);
+    links.appendChild(saveLinks);
+    postBox.appendChild(links);
+
+    function postLooks() {
+      if (view.post.format === 'compare') return view.looks.slice(0, 3);
+      return [lookById(view.post.lookId) || view.looks[0]].filter(Boolean);
+    }
+    // 投稿に使う商品：起点のアイテムを先頭に、選んだコーデのアイテム（同じ商品は1つに。最大20）
+    function postProducts() {
+      var out = [h];
+      postLooks().forEach(function (l) {
+        l.items.forEach(function (it) {
+          if (it.product && !out.some(function (p) { return sameItem(p, it.product); })) out.push(Object.assign({ kind: it.kind }, it.product));
+        });
+      });
+      return out.slice(0, MAX_POST_ITEMS);
+    }
+    function drawPostBox() {
+      // 投稿づくりの画面で進んだ記録（投稿の記録・Instagram投稿済み）を取り込む
+      var fresh = window.CoordStore.get(view.id);
+      if (fresh) { view.postId = fresh.postId || view.postId; view.igStatus = fresh.igStatus || view.igStatus; }
+      lookSel.innerHTML = '';
+      view.looks.forEach(function (l, i) {
+        var o = el('option', null, 'コーデ' + String.fromCharCode(65 + i) + '：' + (l.name || '').slice(0, 20));
+        o.value = l.id;
+        lookSel.appendChild(o);
+      });
+      lookSel.value = (lookById(view.post.lookId) || {}).id || '';
+      lookField.hidden = view.post.format === 'compare';
+      postBox.hidden = !view.looks.length;
+      var ps = postProducts();
+      var ai = postLooks().filter(function (l) { return (view.images || []).some(function (x) { return x.lookId === l.id; }); }).length;
+      postNote.textContent = ps.length + '商品を使います。' + (view.post.format === 'compare' && view.looks.length < 3 ? 'コーデが3つないので、ある分だけ並べます。' : '') +
+        '完成コーデの画像は、AI着用イメージがあればそれを、なければ実物商品コラージュを使います（' + ai + '/' + postLooks().length + 'コーデにAI画像あり）。';
+      status.textContent = 'Instagram：' + (view.igStatus === 'posted' ? '投稿済み' : view.postId ? '画像を作成済み・未投稿' : '未作成');
+      roomLink.hidden = !view.postId;
+      roomLink.href = view.postId ? '#room:' + view.postId : '#';
+      if (view.postId) {
+        History.get(view.postId).then(function (rec) {
+          if (!rec) return;
+          var n = (rec.products || []).filter(function (p) { return (rec.roomDone || {})[p.id]; }).length;
+          view.roomStatus = { done: n, total: (rec.products || []).length };
+          status.textContent += '｜ROOM登録 ' + n + '/' + (rec.products || []).length;
+        });
+      }
+    }
+    fmtSel.addEventListener('change', function () { view.post.format = fmtSel.value; persist(); drawPostBox(); });
+    lookSel.addEventListener('change', function () { view.post.lookId = lookSel.value; persist(); drawPostBox(); });
+
+    function linkList() {
+      return postProducts().filter(function (p) { return p.url; });
+    }
+    copyLinks.addEventListener('click', function () {
+      var text = coordTitleOf(view) + '\n\n' + linkList().map(function (p, i) { return (i + 1) + '. ' + String(p.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 50) + '（' + formatPrice(p.price) + '）\n' + p.url; }).join('\n\n');
+      legacyCopy(text).then(function () { showToast('商品リンクの一覧をコピーしました'); }, function () {});
+    });
+    saveLinks.addEventListener('click', function () {
+      var esc = function (s) { return String(s || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+      var rows = linkList().map(function (p) {
+        return '<a class="i" href="' + esc(p.url) + '" target="_blank" rel="noopener"><img src="' + esc(p.image) + '" alt=""><span><b>' + esc(String(p.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 60)) + '</b><small>' + esc(formatPrice(p.price)) + (p.shop ? '・' + esc(p.shop) : '') + '</small></span></a>';
+      }).join('\n');
+      var html = '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(coordTitleOf(view)) + '</title>' +
+        '<style>body{font-family:-apple-system,sans-serif;margin:0;padding:16px;background:#f4f1ec;color:#1a1a1a}h1{font-size:20px}.i{display:flex;gap:12px;align-items:center;background:#fff;border-radius:12px;padding:10px;margin:10px 0;color:inherit;text-decoration:none}.i img{width:72px;height:72px;object-fit:contain}.i span{display:grid;gap:4px}.i small{color:#6b6460}p{font-size:12px;color:#6b6460}</style></head><body>' +
+        '<h1>' + esc(coordTitleOf(view)) + '</h1>' + rows + '<p>価格・在庫は変わることがあります。購入前に商品ページで確認してください。' + ' ' + esc(window.IgRender.kit.ACCOUNT.handle) + '</p></body></html>';
+      downloadBlob(new Blob([html], { type: 'text/html' }), 'coord-links.html');
+    });
+
+    // Instagram投稿を作る：紹介文が無い商品の分だけAIで作り、投稿づくりの画面へ（画像は投稿づくりの画面で作る）
+    toIg.addEventListener('click', function () {
+      var ps = postProducts();
+      if (ps.length < 2) { showToast('起点のほかに商品を1つ以上入れてください'); return; }
+      view.intros = view.intros || {};
+      var need = ps.filter(function (p) { return !view.intros[p.url || p.name]; });
+      toIg.disabled = true;
+      toIg.textContent = need.length ? 'ROOM紹介文を作っています…（' + need.length + '商品）' : '投稿の準備をしています…';
+      var chunks = [];
+      for (var i = 0; i < need.length; i += 8) chunks.push(need.slice(i, i + 8));
+      Promise.all(chunks.map(function (chunk) {
+        return postJson('api/intros', {
+          title: coordTitleOf(view),
+          items: chunk.map(function (p) { return { name: p.name, price: p.price, role: p === h ? '主役のアイテム' : p.kind, brand: p.brand, reason: 'コーデ「' + coordTitleOf(view) + '」で使うアイテム', caption: p.caption }; })
+        });
+      })).then(function (rs) {
+        rs.forEach(function (r, k) {
+          var got = (r.data && r.data.intros) || [];
+          chunks[k].forEach(function (p, j) { if (got[j]) view.intros[p.url || p.name] = got[j]; });
+        });
+        persist();
+        composeFromCoord(view, ps, postLooks());
+      }, function () {
+        showToast('通信できませんでした。電波の良い場所でもう一度お試しください。');
+      }).then(function () {
+        toIg.disabled = false;
+        toIg.textContent = 'この内容でInstagram投稿を作る';
+      });
+    });
+    results.appendChild(postBox);
+    drawPostBox();
+    // 投稿づくり・ROOM登録の画面から戻ってきたときに、状況を新しくする
+    window.addEventListener('hashchange', function onBack() {
+      if (!postBox.isConnected) { window.removeEventListener('hashchange', onBack); return; }
+      if (!location.hash || location.hash === '#discover') drawPostBox();
+    });
+
+  }
+
+  // コーデから投稿づくりへ：商品・テーマ・表紙・差し込むコーデのスライドを下書きにする
+  function composeFromCoord(view, products, looks) {
+    loadDraft();
+    var h = view.heroProduct;
+    draft.items = products.map(function (p, i) {
+      return {
+        id: p.code || p.url, code: p.code, name: p.name, price: p.price, image: p.image, url: p.url, brand: p.brand || '',
+        reason: i ? 'コーデで使うアイテム' : 'このコーデの主役のアイテム', intro: (view.intros || {})[p.url || p.name] || '',
+        role: i ? p.kind || '' : '主役', memo: '', hero: i === 0
+      };
+    });
+    draft.heroProduct = { code: h.code, url: h.url, name: h.name, brand: h.brand, price: h.price, image: h.image };
+    draft.postId = view.postId || '';
+    draft.planId = '';
+    draft.genre = 'ファッション';
+    draft.postType = 'コーデ';
+    draft.theme = coordTitleOf(view).slice(0, 30);
+    draft.subtitle = '';
+    draft.category = 'コーデ';
+    draft.layoutSizes = null;
+    draft.coverAccent = '';
+    draft.summary = { enabled: false, typeName: '', title: '', lead: '', verdict: '' };
+    draft.priceBand = '';
+    var fmt = view.post.format;
+    // 新商品を使ったコーデ：1枚目は新商品の表紙（主役の写真を大きく）。ラベルは確認できた情報があるときだけ
+    draft.coverStyle = fmt === 'release' ? 'new_release' : 'serious_think';
+    draft.release = fmt === 'release' ? { labels: h.labels || [], brand: h.brand || '', dateText: h.dateText || '', mood: 'fashion', hero: { code: h.code, url: h.url, name: h.name, brand: h.brand } } : null;
+    draft.coverTitle = fmt === 'release' ? splitCoverTitle(coordTitleOf(view)) : '';
+    draft.coord = {
+      coordId: view.id, format: fmt, title: coordTitleOf(view),
+      looks: looks.map(function (l) {
+        var img = (view.images || []).filter(function (x) { return x.lookId === l.id; }).slice(-1)[0];
+        return {
+          id: l.id, name: l.name, style: l.style, imageKey: img ? img.key : '',
+          urls: [h.url].concat(l.items.filter(function (x) { return x.product; }).map(function (x) { return x.product.url; })),
+          count: l.items.filter(function (x) { return x.product; }).length + 1, total: coordTotal(view, l)
+        };
+      })
+    };
+    draft.cta = 0;
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch (e) {}
+    Promise.all(draft.items.map(function (p) { return Store.setStatus(p, 'ig_waiting'); })).then(updateManageCount, function () {});
+    location.hash = '#compose';
+  }
+
+  // 投稿の画像を作る直前に、各コーデの完成画像を用意する（AI着用イメージがあればそれ、なければ実物商品コラージュ）
+  function coordSlidesData(co, items, images) {
+    return Promise.all(co.looks.map(function (l) {
+      var pick = l.urls.map(function (u) { return items.findIndex(function (it) { return it.url === u; }); }).filter(function (i) { return i !== -1; });
+      var collage = function () {
+        return window.CoordCollage.render(pick.map(function (i, k) { return { image: images[i], label: k ? items[i].role : '起点', price: items[i].price, hero: k === 0 }; }), { title: l.name, total: l.total });
+      };
+      var base = { name: l.name, style: l.style, count: l.count, total: l.total };
+      if (!l.imageKey) return Object.assign(base, { image: collage(), ai: false });
+      return window.ImageStore.get(l.imageKey).then(function (src) {
+        if (!src) return Object.assign(base, { image: collage(), ai: false });
+        return window.IgRender.loadImage(src).then(function (img) { return Object.assign(base, { image: img, ai: true }); }, function () { return Object.assign(base, { image: collage(), ai: false }); });
+      });
+    })).then(function (looks) { return { format: co.format, title: co.title, looks: looks }; });
   }
 
   renderCoordSaved();
@@ -4087,7 +4310,9 @@
     actions.appendChild(plan);
     if (isFashion(it.name, it.category)) {
       actions.appendChild(coordButton(function () {
-        return { name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '', brand: it.brand, categoryLabel: it.categoryLabel };
+        // 新作レーダーの商品は、確認できた情報（予約受付中・発売日など）も持っていく（新商品を使ったコーデの表紙に使う）
+        var info = releaseInfo(it);
+        return { name: it.name, code: it.code, price: it.price, url: it.rakutenUrl || it.sourceUrl, image: it.imageUrl, shop: (it.shops[0] || {}).name || '', brand: it.brand, categoryLabel: it.categoryLabel, labels: info.labels, dateText: info.dateText };
       }));
     }
     var link = el('a', 'btn btn-secondary', '商品ページを見る');

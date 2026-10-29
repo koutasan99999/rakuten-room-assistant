@@ -717,3 +717,7 @@ body {
 .coord-tryon-gallery { display: grid; gap: 10px; }
 .coord-tryon-fig { margin: 0; }
 .coord-tryon-fig figcaption { margin: 4px 0 0; }
+.coord-post { display: grid; gap: 10px; }
+.coord-status { margin: 0; font-size: 14px; font-weight: 700; }
+.coord-links summary { cursor: pointer; font-weight: 700; color: var(--red); padding: 4px 0; }
+.coord-links[open] { display: grid; gap: 8px; }

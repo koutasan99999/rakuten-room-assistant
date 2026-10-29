@@ -588,16 +588,19 @@
   // post.layoutSizes: 1スライドに何商品のせるか（ユーザーが変えた配置。無ければ自動）。
   // 商品が少なければ今までどおり1商品1枚、多ければ2〜4商品のスライドを組み合わせて、カルーセルの上限枚数に収める
   function renderPost(post) {
+    // コーデの投稿（js/ig-coord.js）：完成コーデの画像や3コーデ比較を差し込む
+    if (post.coord && window.IgRender.renderCoordPost && !post.coordInner) return window.IgRender.renderCoordPost(post);
     var style = post.cover && post.cover.style;
     var palette = style && window.IgRender.PALETTES ? window.IgRender.PALETTES[style] : null;
     var hasSummary = !!(post.summary && post.summary.title && post.summary.verdict);
     var plan = window.CarouselLayout
-      ? window.CarouselLayout.plan(post.items.length, { summary: hasSummary, sizes: post.layoutSizes })
+      ? window.CarouselLayout.plan(post.items.length, { summary: hasSummary, sizes: post.layoutSizes, maxSlides: post.maxSlides })
       : null;
     var groups = plan
       ? plan.slides.filter(function (s) { return s.kind === 'items'; }).map(function (s) { return s.items; })
       : post.items.map(function (it, i) { return [i]; });
-    var offset = hasSummary ? 1 : 0;
+    // extraSlides: 表紙のあとに差し込むスライドの数（コーデの投稿で使う）。ページ番号をその分ずらす
+    var offset = (hasSummary ? 1 : 0) + (post.extraSlides || 0);
     var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
     var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? heroImages(post.items) : coverImages(post.items), items: post.items }) }];

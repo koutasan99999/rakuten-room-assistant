@@ -687,7 +687,7 @@
 
       // 写真の下端に、確認できた情報のラベル
       var x = M;
-      (rel.labels && rel.labels.length ? rel.labels : ['NEW']).slice(0, 3).forEach(function (t) {
+      (rel.labels ? rel.labels : ['NEW']).slice(0, 3).forEach(function (t) {
         x += pillText(ctx, t, x, PH - 34 - 58, { font: f(30, 800, GOTHIC), fill: P.label, color: P.labelText, h: 58, r: 4, padX: 20 }) + 10;
       });
 
