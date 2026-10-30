@@ -800,3 +800,6 @@ body {
 .buyer-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .buyer-actions .buyer-post { grid-column: 1 / -1; }
 .buyer-noimg { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); background: var(--soft); }
+.buyer-audit { margin: 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; background: #eef6f0; color: #1f6f43; }
+.buyer-audit.conditional { background: #fff6e5; color: #7a5a00; }
+.buyer-audit.hold { background: #fde2e2; color: #b00020; }

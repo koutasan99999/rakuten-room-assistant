@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.8';
+  var APP_VERSION = '2026-10-30.9';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -6054,7 +6054,8 @@
     var dl = el('dl', 'radar-facts');
     var parts = p.scoreParts ? '（意外性' + p.scoreParts.surprise + '・不便の解決' + p.scoreParts.solve + '・日常で使う' + p.scoreParts.everyday + '）' : '';
     [
-      ['発掘スコア', p.score ? p.score.total + '点' + (p.score.ai != null ? '：AIの評価' + p.score.ai + '＋データ' + p.score.data + parts : '') : ''],
+      ['発掘スコア', p.score ? p.score.total + '点' + (p.score.ai != null ? '：AIの評価' + p.score.ai + '＋データ' + p.score.data + parts : '：' + (p.score.note || 'AIの評価だけ') + parts) : ''],
+      ['特徴（出典に書いてあること）', (p.facts || []).join('／')],
       ['理由', p.reason],
       ['解決する不便', (p.plan && p.plan.pain) || p.problem],
       ['知名度の目安', p.awareness && p.awareness.text],
@@ -6063,6 +6064,8 @@
     ].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     card.appendChild(dl);
     if (p.buyerComment) card.appendChild(el('p', 'buyer-comment', 'バイヤー：' + p.buyerComment));
+    // 監査責任者の判定（Web調査便）
+    if (p.audit) card.appendChild(el('p', 'buyer-audit ' + p.audit.status, '監査：' + p.audit.note));
 
     // 公式情報・根拠のURL（取れたものだけ。無ければ「未取得」）
     var links = el('div', 'buyer-links');
@@ -6102,6 +6105,7 @@
         pl.appendChild(ol);
       }
       if (p.plan.intro) { pl.appendChild(el('p', 'field-label', '紹介文')); pl.appendChild(el('p', 'buyer-intro', p.plan.intro)); }
+      if (p.plan.caution) pl.appendChild(el('p', 'hint', '投稿するときの注意：' + p.plan.caution));
       card.appendChild(pl);
     } else card.appendChild(el('p', 'hint', '企画案はありません（AIで作れませんでした）。「投稿にする」で、企画の画面から作れます。'));
 
@@ -6116,8 +6120,9 @@
       });
       acts.appendChild(b);
     });
-    var post = el('button', 'btn btn-primary buyer-post', '投稿にする');
+    var post = el('button', 'btn btn-primary buyer-post', p.audit && p.audit.status === 'hold' ? '監査で見送り中（投稿にできません）' : '投稿にする');
     post.type = 'button';
+    post.disabled = !!(p.audit && p.audit.status === 'hold');
     post.addEventListener('click', function () {
       if (verdict !== 'post') window.BuyerStore.rate(p, 'post');
       var title = chosenTitle || String(p.name).slice(0, 30);
@@ -6196,6 +6201,15 @@
       list.appendChild(sourceLine('Web調査便｜' + (buyerResearch.generatedAt ? dt(buyerResearch.generatedAt) : '') + '｜' + (buyerResearch.by || 'Claude Code のバイヤーと企画担当')));
       if (buyerResearch.notes) list.appendChild(el('p', 'hint', buyerResearch.notes));
       list.appendChild(el('p', 'hint', 'Claude Code に「バイヤー発掘便をWebで調べて」と頼むと更新されます（自動では更新されません）。楽天にない商品は、購入先と楽天ROOMに載せられるかを分けて表示しています。'));
+      // 評価（知ってる・興味なし・欲しい）は、このiPhoneの中にしかない。Web調査便にも反映させるため、書き出して Claude Code に渡す
+      var ex = el('button', 'btn btn-secondary', '評価を書き出す（Web調査便に反映させる用）');
+      ex.type = 'button';
+      ex.addEventListener('click', function () {
+        var f = window.BuyerStore.feedback([]);
+        var text = JSON.stringify({ exportedAt: new Date().toISOString(), wanted: f.wanted, known: f.known, skipped: f.skipped, posted: f.posted, likedKinds: f.likedKinds, tiredKinds: f.tiredKinds }, null, 1);
+        legacyCopy(text).then(function () { showToast('評価をコピーしました。Claude Code に貼り付けて「バイヤー発掘便をWebで調べて」と頼んでください'); }, function () {});
+      });
+      list.appendChild(ex);
       if (!(buyerResearch.picks || []).length) list.appendChild(el('p', 'manage-empty', 'まだWeb調査便はありません。'));
       (buyerResearch.picks || []).forEach(function (p) { list.appendChild(buyerCard(p)); });
     } else {
