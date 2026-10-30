@@ -4,6 +4,7 @@
 
 import assets from '../server/assets.js';
 import brandNote from '../server/brand-note.js';
+import buyer from '../server/buyer.js';
 import coord from '../server/coord.js';
 import coordImage from '../server/coord-image.js';
 import discover from '../server/discover.js';
@@ -26,6 +27,7 @@ import trends from '../server/trends.js';
 export const ROUTES = {
   'assets': assets,
   'brand-note': brandNote,
+  'buyer': buyer,
   'coord': coord,
   'coord-image': coordImage,
   'discover': discover,
