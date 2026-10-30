@@ -2,7 +2,7 @@
 
 進め方：調査・議論・企画立案はAI社員が自分たちで進め、社長の承認が必要なこと（費用・外部への投稿や連絡・ブランドの大きな変更・既存機能の削除）だけを最後にまとめて出す（docs/ai-team/company.md）。
 
-「眼科医くま」の Instagram・楽天ROOM 運用のための、Claude Code のサブエージェント5人と、まとめ役の CEO補佐（メインの Claude）の構成。
+「眼科医くま」の Instagram・楽天ROOM 運用のための、Claude Code のサブエージェント6人と、まとめ役の CEO補佐（メインの Claude）の構成。
 新しい有料API・外部DB・定期実行サービスは使わない。Claude Code の中だけで動く。
 
 ## メンバー（.claude/agents/）
@@ -12,6 +12,7 @@
 | competitor-researcher.md | 競合調査担当 | 読む・検索・Web検索・Web取得 | 実在の競合・公式情報を出典つきで調べる |
 | planning-lead.md | 企画責任者 | 読む・検索・Web検索 | 調査をもとに差別化した企画と、1週間の企画カレンダー |
 | audit-lead.md | 監査責任者 | 読む・検索・Web検索・Web取得 | 根拠・規約・費用・負荷・期待値を検証し、反対意見を出す |
+| analytics-lead.md | 分析担当（6人目） | 読む・検索（Web・コマンドなし） | Instagramの観察メモ（docs/ai-team/instagram/snapshots/）だけで、届いている・いないを分析する |
 | product-buyer.md | 商品バイヤー（5人目） | 読む・検索・Web検索・Web取得 | ランキング上位の定番ではない「こんな商品があったのか！」を発掘し、企画担当に渡す（docs/ai-team/buyer.md） |
 
 - 全員の共通の前提：`docs/ai-team/company.md`
