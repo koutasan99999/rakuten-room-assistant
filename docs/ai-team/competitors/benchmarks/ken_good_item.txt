@@ -1,0 +1,65 @@
+【ベンチマーク記録 ken｜便利グッズとガジェット紹介（@ken_good_item）】
+URL：https://www.instagram.com/ken_good_item/
+登録日：2026-10-30（社長の指定）
+
+【2026-10-30 第1回調査（競合調査担当・商品バイヤー）】
+調べ方：Web検索の結果の要約だけ。instagram.com はログインが必要なため開いていない。youtube.com・tiktok.com・threads.com・db.bitstar.tokyo は、このセッションのネットワーク設定で開けなかった。
+
+1. アカウントの基本
+   (1) Threads に同じID @ken_good_item があり、表示名は「ken｜便利グッズとガジェット紹介」。フォロワー7,581人（時点未確認）。
+   (2) 同じ表示名の TikTok @ken_home：フォロワー8.48万人・いいね220万件（時点未確認）。Instagramと同じ人かは未確定（表示名が同じという状況証拠だけ）。
+   (3) 同じ名前の YouTube（@ken-tm7pi）がある。そこに載っているInstagramのリンクは別のID（qolkoujouiinkai）で、関係は未確認。
+   (4) Instagramのフォロワー：第三者の統計サイト BitStar に同じ表示名で65,255人（2026年2月28日更新）。@ken_good_item のページかは未確認。
+   (5) Instagramの自己紹介・リンク・ハイライト：未確認。
+2. どんな商品を選んでいるか：Instagramの投稿で確認できた商品は0件。TikTok @ken_home の動画タイトルで確認できたのは、HDMIワイヤレス送信機、PLAUD NOTE、OWNDAYS CONNECT、エイリアンチェア（4件とも#pr）、セリアのライター、ダイソーの水風船、オキシ漬け、ニトリのクッション。
+3. 珍しい商品と定番商品の割合：TikTokの8件では、比較的珍しいガジェット4件（すべてPR案件）、100均・量販店の定番4件。件数が少なく、全体の割合とは言えない。
+4. タイトルの特徴（TikTokのタイトルから。型だけ）：悩みから入る「○○問題」、価格の意外性「これが100円」、驚き、問いかけ、後悔型。一文目は短い感想や驚きで、そのあとに価格・型番・機能を具体的に書く（仮説）。
+5. 単品とまとめ：確認できたものはすべて単品紹介。まとめ（ランキング）は1件あるらしいが未確認。
+6. リールとカルーセル：Instagramでは未確認。TikTok・YouTubeは動画。
+7. 欲しくなる理由（仮説）：価格がすぐ分かる、誰でも持つ小さな悩みから入る、100均は試しやすい、使う場面が見える実演（本人の体験）、PR案件のキャンペーンで「今買う理由」がある。
+8. 購入ページへの誘導：Instagramでは未確認。YouTubeに紹介商品のリンクがあるとの要約（リンク先は未確認）。楽天ROOM・リンク集は見つからなかった。
+9. 再現できる要素：一文目に価格・買える場所、「○○問題」の悩み起点、どこで買えるかの意外性、表示名に紹介ジャンル、型番・規格を具体的に（公表値の範囲で）。再現できない：実演・体験の感想・後悔型、タイアップ、メガネ類の紹介（医師の推薦と受け取られるおそれ）。
+
+10. 紹介商品（競合発見枠の候補）と、バイヤーの判定（6件とも不合格）
+   共通：元の投稿はすべて TikTok @ken_home。Instagramの投稿URLは未確認。
+   (1) センナックス HDMIワイヤレス送信機（慶洋エンジニアリング）
+       元の投稿：https://www.tiktok.com/@ken_home/video/7473046144499617031
+       型番・メーカー公式URL・楽天の商品URL：未確認
+       判定：意外性3・独自性2・実用性4・魅力3＝12。不合格（エレコムなどにも同じ種類があり、珍しさが弱い）
+   (2) PLAUD NOTE（Plaud）
+       元の投稿：https://www.tiktok.com/@ken_home/video/7390321434322586887
+       メーカー公式：https://jp.plaud.ai/collections/product
+       楽天：公式ストアのトップ https://www.rakuten.co.jp/plaud/ （商品ページのURLは未確認）
+       参考価格：税込27,500円（公式ストアの表示として検索結果に出たもの。時点不明）
+       判定：2・3・4・3＝12。不合格（2024年からメディアでの紹介が多く、家電量販店でも販売）
+   (3) OWNDAYS CONNECT（OC2001E-5A／OC2002E-5A）
+       元の投稿：https://www.tiktok.com/@ken_home/video/7597649525162970376
+       メーカー公式URL：未確認（検索結果の要約にだけ出た）。楽天の商品URL：見つからなかった
+       参考価格：税込16,000円（phileweb・dime の記事）
+       判定：3・3・4・4＝14。不合格。さらに、メガネを眼科医くまの名前で紹介すると医師の推薦と受け取られるおそれが強く、点数に関係なく見送る
+   (4) エイリアンチェア（EastForce）
+       元の投稿：https://www.tiktok.com/@ken_home/video/7487903711881301303
+       メーカー公式URL・楽天の商品URL：未確認
+       参考価格：Pro2.0 ブラック 税込36,999円（techno-edge のプレスリリース、2026年10月）
+       判定：2・2・4・3＝11。不合格（ランキング上位の定番。Pro2.0は順当な改良版）
+   (5) セリアのライター
+       元の投稿：https://www.tiktok.com/@ken_home/video/7467096678126882066
+       商品を特定できず、判定できない（不合格扱い）
+   (6) ダイソーの水風船
+       元の投稿：https://www.tiktok.com/@ken_home/video/7377703942773361938
+       商品名未確認。判定（このタイプとして）：2・2・3・3＝10。不合格（似た商品が多く、季節外れ）
+   次に探さない物：ワイヤレスHDMI、AIボイスレコーダー、オーディオグラス（メガネはブランドの点で今後も避ける）、ゲーミング・オフィスチェア、100均の定番小物
+
+11. 確認できなかった情報：@ken_good_item の今のフォロワー数・自己紹介・リンク・ハイライト、Instagramの投稿URL・表紙・形式・再生数・いいね・コメント・保存（すべて）、TikTok・YouTubeとの同一人物かどうか、コメント自動返信の有無、紹介記事・インタビュー（見つからなかった）。
+
+【出典】
+1. https://www.threads.com/@ken_good_item
+2. https://www.tiktok.com/@ken_home
+3. https://tikbuddy.com/tiktok/ken_home
+4. https://db.bitstar.tokyo/instagram/188033
+5. https://www.youtube.com/@ken-tm7pi
+6. https://jp.plaud.ai/collections/product
+7. https://www.ksdenki.com/shop/g/g6977512610697/
+8. https://www.phileweb.com/sp/news/d-av/202601/21/64350.html
+9. https://www.techno-edge.net/release/prtimes2/20261002/24827.html
+10. https://www.elecom.co.jp/products/DH-WLTXHM1BK.html
