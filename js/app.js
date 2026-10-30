@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.7';
+  var APP_VERSION = '2026-10-30.8';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -581,7 +581,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -594,6 +594,8 @@
     if (jv) jv.hidden = view !== 'jobs';
     var fv = document.getElementById('view-furusato');
     if (fv) fv.hidden = view !== 'furusato';
+    var bv = document.getElementById('view-buyer');
+    if (bv) bv.hidden = view !== 'buyer';
     if (view === 'jobs' && typeof renderJobs === 'function') renderJobs();
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
       t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
@@ -6000,5 +6002,208 @@
     foldClose.addEventListener('click', function () { window.Fold.all(document.getElementById('view-discover'), true); });
     foldOpen.addEventListener('click', function () { window.Fold.all(document.getElementById('view-discover'), false); });
   }
+
+  // ---- バイヤー発掘便：「こんな商品があるなんて知らなかった！」を探す（js/buyer-store.js・server/buyer.js） ----
+  // 2つの便がある：
+  //   アプリの便：「発掘開始」で、アプリのサーバー（楽天の検索・ランキング＋AI）がバイヤーと企画担当の2役で探す
+  //   Web調査便：Claude Code のサブエージェント（product-buyer → planning-lead）が Web で調べた結果（data/buyer-picks.json）。社長が頼んだときに更新
+  Jobs.register('buyer', { tasks: singleTask('api/buyer'), count: function (r) { return (r.picks || []).length; } });
+  JOB_TYPE_JA.buyer = 'バイヤー発掘便';
+  var buyerEl = document.getElementById('buyer-body');
+  var BUYER_TAB_KEY = 'room-buyer-tab';
+  var buyerTab = (function () { try { return localStorage.getItem(BUYER_TAB_KEY) || 'latest'; } catch (e) { return 'latest'; } })();
+  var buyerResearch = null; // data/buyer-picks.json
+
+  function buyerIntroduced() {
+    // 紹介済み：投稿管理に入っている商品と、投稿履歴の商品
+    return Store.list().then(function (items) {
+      var names = items.map(function (x) { return x.name; });
+      return History.list().then(function (hs) {
+        hs.forEach(function (h) { (h.products || []).forEach(function (p) { if (p.name) names.push(p.name); }); });
+        return names;
+      }, function () { return names; });
+    }, function () { return []; });
+  }
+
+  function buyerCard(p, opts) {
+    opts = opts || {};
+    var card = el('article', 'card buyer-card');
+    var verdict = window.BuyerStore.rating(p);
+    var top = el('div', 'cand-top');
+    if (p.image) {
+      var img = el('img', 'cand-thumb');
+      img.src = p.image; img.alt = ''; img.loading = 'lazy';
+      img.onerror = function () { img.style.visibility = 'hidden'; };
+      top.appendChild(img);
+    } else top.appendChild(el('div', 'cand-thumb buyer-noimg', '画像なし'));
+    var info = el('div', 'cand-info');
+    var chips = el('div', 'chips');
+    if (p.score) chips.appendChild(el('span', 'role buyer-score', '発掘スコア ' + p.score.total));
+    if (p.kind) chips.appendChild(el('span', 'tag', p.kind));
+    if (verdict) chips.appendChild(el('span', 'idea-edited', window.BuyerStore.VERDICTS[verdict]));
+    info.appendChild(chips);
+    info.appendChild(el('h3', 'cand-name', String(p.name).replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 70) || p.name));
+    var meta = el('p', 'cand-meta');
+    meta.appendChild(el('strong', 'cand-price', p.price ? formatPrice(p.price) : (p.priceNote || '価格は未取得')));
+    if (p.brand) meta.appendChild(el('span', 'cand-shop', p.brand));
+    meta.appendChild(el('span', 'cand-shop', (p.purchase && p.purchase.where) || ''));
+    info.appendChild(meta);
+    top.appendChild(info);
+    card.appendChild(top);
+
+    var dl = el('dl', 'radar-facts');
+    var parts = p.scoreParts ? '（意外性' + p.scoreParts.surprise + '・不便の解決' + p.scoreParts.solve + '・日常で使う' + p.scoreParts.everyday + '）' : '';
+    [
+      ['発掘スコア', p.score ? p.score.total + '点' + (p.score.ai != null ? '：AIの評価' + p.score.ai + '＋データ' + p.score.data + parts : '') : ''],
+      ['理由', p.reason],
+      ['解決する不便', (p.plan && p.plan.pain) || p.problem],
+      ['知名度の目安', p.awareness && p.awareness.text],
+      ['購入先', p.purchase && p.purchase.status],
+      ['楽天ROOM', p.room && p.room.text]
+    ].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
+    card.appendChild(dl);
+    if (p.buyerComment) card.appendChild(el('p', 'buyer-comment', 'バイヤー：' + p.buyerComment));
+
+    // 公式情報・根拠のURL（取れたものだけ。無ければ「未取得」）
+    var links = el('div', 'buyer-links');
+    var urls = [];
+    if (p.official && p.official.url) urls.push([p.official.label || '公式情報', p.official.url]);
+    (p.sources || []).forEach(function (s) { if (s && s.url) urls.push([s.title || s.url, s.url]); });
+    if (p.url && !urls.some(function (u) { return u[1] === p.url; })) urls.push([p.source === 'rakuten' ? '楽天の商品ページ' : '商品ページ', p.url]);
+    urls.forEach(function (u) { var a = el('a', 'link-btn', u[0]); a.href = u[1]; a.target = '_blank'; a.rel = 'noopener'; links.appendChild(a); });
+    if (p.officialNote) links.appendChild(el('p', 'hint', p.officialNote));
+    card.appendChild(links);
+
+    // 企画担当の投稿案（タイトルは選べる・直せる）
+    var chosenTitle = (p.plan && p.plan.titles && p.plan.titles[0]) || '';
+    if (p.plan) {
+      var pl = el('details', 'buyer-plan');
+      pl.appendChild(el('summary', null, '企画担当の投稿案'));
+      if (p.plan.titles && p.plan.titles.length) {
+        pl.appendChild(el('p', 'field-label', 'タイトル案（選んで、直せます）'));
+        var tIn = el('input', 'input');
+        tIn.type = 'text'; tIn.maxLength = 40; tIn.value = chosenTitle;
+        tIn.addEventListener('input', function () { chosenTitle = tIn.value.trim(); });
+        p.plan.titles.forEach(function (t) {
+          var b = el('button', 'plan-suggest-chip', t);
+          b.type = 'button';
+          b.addEventListener('click', function () { chosenTitle = t; tIn.value = t; });
+          pl.appendChild(b);
+        });
+        pl.appendChild(tIn);
+      }
+      var pd = el('dl', 'radar-facts');
+      [['刺さる人', p.plan.target], ['解決する不便', p.plan.pain]].forEach(function (x) { if (x[1]) { pd.appendChild(el('dt', null, x[0])); pd.appendChild(el('dd', null, x[1])); } });
+      pl.appendChild(pd);
+      if ((p.plan.slides || []).length) {
+        pl.appendChild(el('p', 'field-label', 'カルーセルの構成'));
+        var ol = el('ul', 'angle-list');
+        p.plan.slides.forEach(function (s) { ol.appendChild(el('li', null, s)); });
+        pl.appendChild(ol);
+      }
+      if (p.plan.intro) { pl.appendChild(el('p', 'field-label', '紹介文')); pl.appendChild(el('p', 'buyer-intro', p.plan.intro)); }
+      card.appendChild(pl);
+    } else card.appendChild(el('p', 'hint', '企画案はありません（AIで作れませんでした）。「投稿にする」で、企画の画面から作れます。'));
+
+    var acts = el('div', 'buyer-actions');
+    [['want', '欲しい'], ['known', '知ってる'], ['skip', '興味なし']].forEach(function (v) {
+      var b = el('button', 'status-btn' + (verdict === v[0] ? ' active' : ''), (verdict === v[0] ? '✓ ' : '') + v[1]);
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        var now = window.BuyerStore.rate(p, v[0]);
+        showToast(now ? '「' + v[1] + '」を記録しました。次の発掘に反映します' : '評価を取り消しました');
+        renderBuyer();
+      });
+      acts.appendChild(b);
+    });
+    var post = el('button', 'btn btn-primary buyer-post', '投稿にする');
+    post.type = 'button';
+    post.addEventListener('click', function () {
+      if (verdict !== 'post') window.BuyerStore.rate(p, 'post');
+      var title = chosenTitle || String(p.name).slice(0, 30);
+      History.add({ title: title, topic: title, postType: 'バイヤー発掘便', genre: p.kind || '' }).then(setCurrentPostId, function () {});
+      location.hash = '#discover';
+      setTimeout(function () {
+        exploreProducts({
+          idea: { edited: true, ownTitle: true, title: title, curationType: 'unusual', genre: '', searchGenres: p.kind ? [p.kind] : [], whyInteresting: (p.plan && p.plan.pain) || p.reason || '', target: (p.plan && p.plan.target) || '', free: '' },
+          seed: { name: p.name, code: p.code || '', price: p.price || 0, url: p.url || '', image: p.image || '', shop: p.shop || '', brand: p.brand || '', reason: p.reason || '', caption: p.caption || '', intro: (p.plan && p.plan.intro) || '' }
+        });
+      }, 80);
+    });
+    acts.appendChild(post);
+    card.appendChild(acts);
+    return card;
+  }
+
+  function renderBuyer() {
+    if (!buyerEl) return;
+    buyerEl.innerHTML = '';
+    var intro = el('p', 'editor-note', 'ランキングで見かける人気商品ではなく、「こんな商品があるなんて知らなかった！」を探します。生活を豊かにするもの・時短・便利なガジェット・日常の小さなストレスを解消するもの。評価（欲しい・知ってる・興味なし）は次の発掘に反映します。');
+    buyerEl.appendChild(intro);
+    var row = el('div', 'buyer-start');
+    var themeSel = el('select', 'select');
+    [['auto', 'おまかせ（暮らし全般）'], ['jitan', '時短'], ['stress', '日常の小さなストレス解消'], ['gadget', '便利なガジェット'], ['rich', '暮らしを豊かにする']].forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; themeSel.appendChild(x); });
+    try { themeSel.value = localStorage.getItem('room-buyer-theme') || 'auto'; } catch (e) {}
+    themeSel.addEventListener('change', function () { try { localStorage.setItem('room-buyer-theme', themeSel.value); } catch (e) {} });
+    var go = el('button', 'btn btn-discover', '発掘開始');
+    go.type = 'button';
+    row.appendChild(themeSel);
+    row.appendChild(go);
+    buyerEl.appendChild(row);
+    var note = el('p', 'hint', '');
+    buyerEl.appendChild(note);
+    go.addEventListener('click', function () {
+      go.disabled = true;
+      note.textContent = 'バイヤーが探しています…（30〜60秒。別のアプリを開いても大丈夫です）';
+      buyerIntroduced().then(function (introduced) {
+        return jobCall('buyer', { theme: themeSel.value, feedback: window.BuyerStore.feedback(introduced) }, { label: 'バイヤー発掘便：' + themeSel.options[themeSel.selectedIndex].text, genre: '' });
+      }).then(function (r) {
+        go.disabled = false;
+        if (r.status !== 200) { note.textContent = r.data.error || '発掘できませんでした'; return; }
+        window.BuyerStore.addBatch({ at: Date.now(), theme: themeSel.value, picks: r.data.picks || [], searched: r.data.searched || [], notice: r.data.notice || '', rankingChecked: !!r.data.rankingChecked });
+        buyerTab = 'latest';
+        renderBuyer();
+      });
+    });
+
+    var tabs = el('div', 'trend-tabs buyer-tabs');
+    var counts = { want: window.BuyerStore.list('want').length, known: window.BuyerStore.list('known').length, skip: window.BuyerStore.list('skip').length, post: window.BuyerStore.list('post').length };
+    [['latest', '最新の便'], ['research', 'Web調査便'], ['want', '欲しい（' + counts.want + '）'], ['known', '知ってる（' + counts.known + '）'], ['skip', '興味なし（' + counts.skip + '）'], ['post', '投稿にした（' + counts.post + '）']].forEach(function (t) {
+      var b = el('button', 'trend-tab' + (buyerTab === t[0] ? ' active' : ''), t[1]);
+      b.type = 'button';
+      b.addEventListener('click', function () { buyerTab = t[0]; try { localStorage.setItem(BUYER_TAB_KEY, buyerTab); } catch (e) {} renderBuyer(); });
+      tabs.appendChild(b);
+    });
+    buyerEl.appendChild(tabs);
+    var list = el('div', 'buyer-list');
+    buyerEl.appendChild(list);
+
+    if (buyerTab === 'latest') {
+      var b = window.BuyerStore.batches()[0];
+      if (!b) { list.appendChild(el('p', 'manage-empty', 'まだ便は届いていません。「発掘開始」を押してください。')); return; }
+      list.appendChild(sourceLine('アプリの便｜' + dt(b.at) + '｜楽天市場の商品検索' + (b.rankingChecked ? '・総合ランキングを確認' : '') + '＋AI（バイヤーと企画担当）'));
+      if ((b.searched || []).length) list.appendChild(el('p', 'hint', '探した不便：' + b.searched.map(function (s) { return s.problem || s.kind; }).filter(Boolean).join('／')));
+      if (b.notice) list.appendChild(el('p', 'hint', b.notice));
+      var shown = b.picks.filter(function (p) { var v = window.BuyerStore.rating(p); return v !== 'known' && v !== 'skip'; });
+      if (!shown.length) list.appendChild(el('p', 'manage-empty', 'この便の商品はすべて評価済みです。次の便を「発掘開始」で呼んでください。'));
+      shown.forEach(function (p) { list.appendChild(buyerCard(p)); });
+    } else if (buyerTab === 'research') {
+      if (!buyerResearch) {
+        list.appendChild(el('p', 'hint', '読み込んでいます…'));
+        fetch('data/buyer-picks.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { buyerResearch = d || { picks: [] }; renderBuyer(); }, function () { buyerResearch = { picks: [] }; renderBuyer(); });
+        return;
+      }
+      list.appendChild(sourceLine('Web調査便｜' + (buyerResearch.generatedAt ? dt(buyerResearch.generatedAt) : '') + '｜' + (buyerResearch.by || 'Claude Code のバイヤーと企画担当')));
+      if (buyerResearch.notes) list.appendChild(el('p', 'hint', buyerResearch.notes));
+      list.appendChild(el('p', 'hint', 'Claude Code に「バイヤー発掘便をWebで調べて」と頼むと更新されます（自動では更新されません）。楽天にない商品は、購入先と楽天ROOMに載せられるかを分けて表示しています。'));
+      if (!(buyerResearch.picks || []).length) list.appendChild(el('p', 'manage-empty', 'まだWeb調査便はありません。'));
+      (buyerResearch.picks || []).forEach(function (p) { list.appendChild(buyerCard(p)); });
+    } else {
+      var rs = window.BuyerStore.list(buyerTab);
+      if (!rs.length) list.appendChild(el('p', 'manage-empty', 'まだありません。'));
+      rs.forEach(function (r) { list.appendChild(buyerCard(r.pick || r)); });
+    }
+  }
+  renderBuyer();
 
 })();

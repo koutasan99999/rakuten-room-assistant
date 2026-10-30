@@ -23,9 +23,10 @@ import coordImageHandler from '../server/coord-image.js';
 import trendsHandler from '../server/trends.js';
 import furusatoHandler from '../server/furusato.js';
 import brandNoteHandler from '../server/brand-note.js';
+import buyerHandler from '../server/buyer.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
 let env = process.env;
 
 if (process.env.MOCK) {
@@ -84,7 +85,11 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('ブランドに詳しい編集者')
+    openai: (body) => body.messages[0].content.includes('の商品バイヤーです')
+      ? aiReply({ angles: [{ problem: '濡れた傘で玄関が濡れる', kind: '傘 吸水マット', keyword: '傘 水滴 吸水' }, { problem: '靴下が裏返しで出てくる', kind: '洗濯ネット', keyword: '靴下 裏返し 洗濯' }, { problem: '鍋のふたの置き場がない', kind: '鍋ふたスタンド', keyword: '鍋ふた スタンド' }, { problem: 'ケーブルが机の裏に落ちる', kind: 'ケーブルホルダー', keyword: 'ケーブル ホルダー マグネット' }] })
+      : body.messages[0].content.includes('商品バイヤーと企画担当')
+      ? aiReply({ picks: [0, 1, 2, 3, 4].map((id) => ({ id, surprise: 5 - (id % 3), solve: 4, everyday: 4 - (id % 2), reason: '説明に、小さな不便を片づける工夫が書かれている', buyerComment: 'こういうの、あったら地味に助かる', titles: ['玄関の水たまり、これで終わり', 'この不便、道具で片づくなんて', '知らなかった小さな便利もの'], target: '雨の日に玄関が濡れて困る人', pain: '傘の水滴で床が濡れる', slides: ['1 表紙：玄関の水たまり', '2 こんな不便ありませんか', '3 商品の特徴', '4 置き方のイメージ', '5 ROOMにまとめています'], intro: '傘を立てた時の水滴を受け止める商品です。説明には、水を吸う素材を使っていると書かれています。玄関の床が濡れやすい人には気になる道具かもしれません。気になる人は商品ページで詳細を確認してみてください。' })) })
+      : body.messages[0].content.includes('ブランドに詳しい編集者')
       ? aiReply(body.messages[1].content.includes('KANGOL') ? { known: true, summary: 'イギリス発祥の帽子のブランド。カジュアルなバッグや小物もある。', taste: 'カジュアル' } : { known: false, summary: '', taste: '' })
       : body.messages[0].content.includes('コーディネーター')
       ? aiReply({ looks: [
@@ -183,6 +188,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/trends') return trendsHandler(req, res, env);
   if (url.pathname === '/api/furusato') return furusatoHandler(req, res, env);
   if (url.pathname === '/api/brand-note') return brandNoteHandler(req, res, env);
+  if (url.pathname === '/api/buyer') return buyerHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {
