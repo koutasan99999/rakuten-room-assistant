@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-30.9';
+  var APP_VERSION = '2026-10-31.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -581,7 +581,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -596,6 +596,9 @@
     if (fv) fv.hidden = view !== 'furusato';
     var bv = document.getElementById('view-buyer');
     if (bv) bv.hidden = view !== 'buyer';
+    var pv = document.getElementById('view-pitch');
+    if (pv) pv.hidden = view !== 'pitch';
+    if (view === 'pitch' && window.PitchView) window.PitchView.render();
     if (view === 'jobs' && typeof renderJobs === 'function') renderJobs();
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
       t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
@@ -5054,6 +5057,14 @@
     if (!hadWaiter && job.status !== 'cancelled') showToast('「' + job.label + '」の検索が' + (ok ? '終わりました' : '失敗しました') + '（検索ジョブで確認できます）');
     if (!ok || !job.result) return;
     var r = job.result;
+    // 「社長、これどうすか？」：画面を閉じている間に届いた商品も、プレゼンの順番待ちに入れる
+    if (job.type === 'pitch' && !hadWaiter && window.PitchStore) {
+      var pb = (job.params && job.params.body) || {};
+      if (pb.action === 'seed') window.PitchStore.markSeeded();
+      if (r.taste) window.PitchStore.setTasteNote(r.taste);
+      window.PitchStore.addMany(r.items || [], pb.action === 'more' && pb.base ? pb.base.key : null);
+      return;
+    }
     if (job.type === 'radar' || job.type === 'brand') {
       return Radar.merge(r.items || []).then(function (res) {
         job.meta = Object.assign({}, job.meta, { added: res.added, changed: res.changed });
@@ -6008,6 +6019,7 @@
   //   アプリの便：「発掘開始」で、アプリのサーバー（楽天の検索・ランキング＋AI）がバイヤーと企画担当の2役で探す
   //   Web調査便：Claude Code のサブエージェント（product-buyer → planning-lead）が Web で調べた結果（data/buyer-picks.json）。社長が頼んだときに更新
   Jobs.register('buyer', { tasks: singleTask('api/buyer'), count: function (r) { return (r.picks || []).length; } });
+  Jobs.register('pitch', { tasks: singleTask('api/pitch'), count: function (r) { return (r.items || []).length; } });
   JOB_TYPE_JA.buyer = 'バイヤー発掘便';
   var buyerEl = document.getElementById('buyer-body');
   var BUYER_TAB_KEY = 'room-buyer-tab';
@@ -6219,5 +6231,8 @@
     }
   }
   renderBuyer();
+
+  // 「社長、これどうすか？」（js/pitch.js）から使う道具
+  window.AppKit = { el: el, postJson: postJson, jobCall: jobCall, showToast: showToast, copyText: copyText, roomUrl: roomUrl, formatPrice: formatPrice, introduced: buyerIntroduced };
 
 })();

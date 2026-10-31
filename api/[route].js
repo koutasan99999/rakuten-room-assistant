@@ -14,6 +14,7 @@ import ideas from '../server/ideas.js';
 import image from '../server/image.js';
 import instagram from '../server/instagram.js';
 import intros from '../server/intros.js';
+import pitch from '../server/pitch.js';
 import planTitles from '../server/plan-titles.js';
 import plans from '../server/plans.js';
 import productUrl from '../server/product-url.js';
@@ -37,6 +38,7 @@ export const ROUTES = {
   'image': image,
   'instagram': instagram,
   'intros': intros,
+  'pitch': pitch,
   'plan-titles': planTitles,
   'plans': plans,
   'product-url': productUrl,
