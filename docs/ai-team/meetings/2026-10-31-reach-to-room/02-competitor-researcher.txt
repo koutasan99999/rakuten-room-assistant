@@ -1,0 +1,30 @@
+【競合調査担当の報告 2026-10-31】
+調べ方：Web検索の要約だけ。about.instagram.com・blog.google・find-model.jp は開けなかった。公式情報の多くは報道や第三者の記事を通した間接的な確認。
+
+【1 集客上の問題点（優先順）】
+1. 新しい人に届く入口がない（投稿9件・フォロワー1人・30日で閲覧1回）。リールがない。反応の数字が出た競合の実例はすべて動画とみられる。
+2. 名前と投稿テーマから、何のアカウントか伝わらない。比べた3件（airi、ken、ツヨシ）は表示名にジャンルを入れている。Mosseri氏は「名前とユーザー名にキーワードを入れる」よう勧めていた（2020年ごろの発言。古い可能性）。
+3. 1枚目に「誰向けか・価格・意外性」がない。競合の型は「○○を持っている人は」「これが100円」「使い方N選」。
+
+【2 検索型の根拠】
+1. 具体的な言葉で検索されている証拠（検索候補・検索量）は見つからなかった（未確認）。「一人暮らし 便利グッズ」「30代男性 プレゼント 3000円」の記事は多いが、検索されている証拠にはならない。
+2. Instagramの日本語のキーワード検索は、キャプションなどを照合する仕組み（2020年11月の報道。古い可能性）https://www.gizmodo.jp/2020/11/instagram-145.html
+3. ハッシュタグは1投稿5個まで。「検索には役立つが、リーチは増えない」（2025年12月の報道）https://www.socialmediatoday.com/news/instagram-implements-new-limits-on-hashtag-use/808309/
+4. 画像・動画そのものの解析、公開投稿のGoogle検索への表示：第三者の記事だけで原典は未確認。https://www.kontentino.com/q-and-a/instagram-search-seo/
+
+【3 発見型の根拠】
+1. 記録済みの3点（送信が重要、トライアルリール、オリジナル優先）は変わらない。
+2. Mosseri氏が重要とした指標：視聴時間、リーチあたりのいいね、リーチあたりの送信（2025年1月。第三者のまとめ経由）https://www.eclincher.com/articles/how-the-instagram-algorithm-works-in-2026
+3. Metaの透明性センター：リールの推薦に、視聴時間とInstagram外へのシェアの見込みを使う（日付未確認）https://transparency.meta.com/features/explaining-ranking/ig-reels-chaining/
+4. 「Your Algorithm」（2025年12月10日、米国）。日本で使えるかは未確認。https://techcrunch.com/2025/12/10/instagrams-new-your-algorithm-tool-gives-you-more-control-over-the-reels-you-see
+5. 「3分以内のリールだけが推薦される」は資料が食い違い未確認。
+
+【4 InstagramからROOMへの誘導】
+1. 楽天の公式特集・インタビューは見つからなかった。
+2. プロフィールのリンクで誘導できる、という記事（日付未確認）https://ecnomikata.com/ecnews/ecmall/9290/
+3. 商品タグは楽天のURLに使えないので、プロフィールのリンクかストーリーズのリンクスタンプで誘導する、という第三者の記事 https://tatap.jp/knowledge/rakuten-instagram-integration/
+4. 上位者の実際の誘導の事例は見つからなかった。
+
+【社長がスマホで見れば埋められる項目】
+1. Instagramの検索窓に「一人暮らし」「30代 プレゼント」などを入れたときの検索候補
+2. 楽天ROOM上位者のプロフィール・ハイライト・リンクの置き方

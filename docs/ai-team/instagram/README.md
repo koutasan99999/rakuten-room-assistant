@@ -52,5 +52,12 @@
   - https://support.claude.com/en/articles/12902428-use-claude-in-chrome-safely
   - https://code.claude.com/docs/en/chrome
 
+## スマートフォンだけで観察メモを作る方法（2026-10-30 追加。Macが使えないときはこちら）
+1. 社長が、iPhoneのInstagramアプリで、インサイトの画面（アカウント全体と、投稿ごと）のスクリーンショットを撮る。
+2. そのスクリーンショットを、このClaudeの会話に送る。
+3. CEO補佐が、画像に実際に写っている数字だけを snapshots/日付.md に書き写す。写っていない数字は「見えなかった」とする。
+4. 分析担当が、その観察メモだけで判定する。
+- AI社員はInstagramを操作しない（スクリーンショットを見るだけ）。
+
 ## いちばん簡単な接続方法（提案）：Mac の Claude in Chrome で「見るだけ」の観察メモを作る
 → 手順は `docs/ai-team/instagram/connect-chrome.md`

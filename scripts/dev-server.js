@@ -24,6 +24,7 @@ import trendsHandler from '../server/trends.js';
 import furusatoHandler from '../server/furusato.js';
 import brandNoteHandler from '../server/brand-note.js';
 import buyerHandler from '../server/buyer.js';
+import pitchHandler from '../server/pitch.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
@@ -81,11 +82,19 @@ if (process.env.MOCK) {
         return json(200, { items, pageCount: 3 });
       }
       const min = Number(url.searchParams.get('minPrice')) || 1000;
+      // 商品番号で1件引く（「社長、これどうすか？」の登録前の確認）
+      if (url.searchParams.get('itemCode')) { const c = url.searchParams.get('itemCode'); return json(200, { items: [{ itemCode: c, itemName: `確認した商品 ${c}`, itemPrice: 3980, itemUrl: `https://item.rakuten.co.jp/${c.replace(':', '/')}/`, mediumImageUrls: [], shopName: 'テストショップ', itemCaption: '説明', postageFlag: 0 }], pageCount: 1 }); }
       const kw = url.searchParams.get('keyword').replace(/\s/g, '').slice(0, 10) + (url.searchParams.get('page') || '');
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('の商品バイヤーです')
+    openai: (body) => body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
+      ? aiReply({ queries: [{ category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
+      : body.messages[0].content.includes('セレクトショップのバイヤーです。社長に')
+      ? aiReply({ picks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
+      : body.messages[0].content.includes('特集企画とカルーセル')
+      ? aiReply({ title: '休日の机を少し良くする', target: '在宅の時間が長い30代男性', slides: ['1 表紙：休日の机、少し良くしたい人へ', '2 この商品のいいところ', '3 素材と見た目', '4 弱点も正直に', '5 楽天ROOMにまとめました'], caption: '【PR】楽天アフィリエイトを利用しています\n休日の机を、少し良くしたい人へ。', hashtags: ['#デスク周り', '#ガジェット', '#30代メンズ', '#ギフト', '#インテリア'] })
+      : body.messages[0].content.includes('の商品バイヤーです')
       ? aiReply({ angles: [{ problem: '濡れた傘で玄関が濡れる', kind: '傘 吸水マット', keyword: '傘 水滴 吸水' }, { problem: '靴下が裏返しで出てくる', kind: '洗濯ネット', keyword: '靴下 裏返し 洗濯' }, { problem: '鍋のふたの置き場がない', kind: '鍋ふたスタンド', keyword: '鍋ふた スタンド' }, { problem: 'ケーブルが机の裏に落ちる', kind: 'ケーブルホルダー', keyword: 'ケーブル ホルダー マグネット' }] })
       : body.messages[0].content.includes('商品バイヤーと企画担当')
       ? aiReply({ picks: [0, 1, 2, 3, 4].map((id) => ({ id, surprise: 5 - (id % 3), solve: 4, everyday: 4 - (id % 2), reason: '説明に、小さな不便を片づける工夫が書かれている', buyerComment: 'こういうの、あったら地味に助かる', titles: ['玄関の水たまり、これで終わり', 'この不便、道具で片づくなんて', '知らなかった小さな便利もの'], target: '雨の日に玄関が濡れて困る人', pain: '傘の水滴で床が濡れる', slides: ['1 表紙：玄関の水たまり', '2 こんな不便ありませんか', '3 商品の特徴', '4 置き方のイメージ', '5 ROOMにまとめています'], intro: '傘を立てた時の水滴を受け止める商品です。説明には、水を吸う素材を使っていると書かれています。玄関の床が濡れやすい人には気になる道具かもしれません。気になる人は商品ページで詳細を確認してみてください。' })) })
@@ -189,6 +198,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/furusato') return furusatoHandler(req, res, env);
   if (url.pathname === '/api/brand-note') return brandNoteHandler(req, res, env);
   if (url.pathname === '/api/buyer') return buyerHandler(req, res, env);
+  if (url.pathname === '/api/pitch') return pitchHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

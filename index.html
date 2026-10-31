@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-10-30.9">
+  <meta name="app-version" content="2026-10-31.1">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-10-30.9">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-31.1">
 </head>
 <body>
   <header class="header">
@@ -18,6 +18,7 @@
     <nav class="view-tabs" aria-label="画面の切り替え">
       <a href="#discover" class="view-tab" data-view="discover">商品発掘</a>
       <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+      <a href="#pitch" class="view-tab" data-view="pitch">社長、これどうすか？</a>
       <a href="#buyer" class="view-tab" data-view="buyer">バイヤー発掘便</a>
       <a href="#furusato" class="view-tab" data-view="furusato">ふるさと納税</a>
       <a href="#jobs" class="view-tab" data-view="jobs">検索ジョブ <span id="jobs-count" class="tab-count"></span></a>
@@ -278,6 +279,12 @@
     <div id="results" class="results"></div>
   </main>
 
+  <!-- 社長、これどうすか？：バイヤー（AI）が1商品ずつプレゼンし、社長が判断する（js/pitch.js） -->
+  <main class="container" id="view-pitch" hidden>
+    <h2 class="curation-title">社長、これどうすか？</h2>
+    <div id="pitch-body"></div>
+  </main>
+
   <!-- バイヤー発掘便：「こんな商品があるなんて知らなかった！」を探す（評価は次の発掘に反映） -->
   <main class="container" id="view-buyer" hidden>
     <h2 class="curation-title">バイヤー発掘便</h2>
@@ -454,24 +461,26 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-10-30.9"></script>
-  <script src="js/history.js?v=2026-10-30.9"></script>
-  <script src="js/search-jobs.js?v=2026-10-30.9"></script>
-  <script src="js/buyer-store.js?v=2026-10-30.9"></script>
-  <script src="js/hidden-products.js?v=2026-10-30.9"></script>
-  <script src="js/radar-store.js?v=2026-10-30.9"></script>
-  <script src="js/brand-follow.js?v=2026-10-30.9"></script>
-  <script src="js/zip.js?v=2026-10-30.9"></script>
-  <script src="js/carousel-layout.js?v=2026-10-30.9"></script>
-  <script src="js/ig-render.js?v=2026-10-30.9"></script>
-  <script src="js/ig-covers.js?v=2026-10-30.9"></script>
-  <script src="js/ig-coord.js?v=2026-10-30.9"></script>
-  <script src="js/ig-multi.js?v=2026-10-30.9"></script>
-  <script src="js/reel-story.js?v=2026-10-30.9"></script>
-  <script src="js/coord-store.js?v=2026-10-30.9"></script>
-  <script src="js/coord-collage.js?v=2026-10-30.9"></script>
-  <script src="js/image-store.js?v=2026-10-30.9"></script>
-  <script src="js/fold.js?v=2026-10-30.9"></script>
-  <script src="js/app.js?v=2026-10-30.9"></script>
+  <script src="js/store.js?v=2026-10-31.1"></script>
+  <script src="js/history.js?v=2026-10-31.1"></script>
+  <script src="js/search-jobs.js?v=2026-10-31.1"></script>
+  <script src="js/buyer-store.js?v=2026-10-31.1"></script>
+  <script src="js/pitch-store.js?v=2026-10-31.1"></script>
+  <script src="js/hidden-products.js?v=2026-10-31.1"></script>
+  <script src="js/radar-store.js?v=2026-10-31.1"></script>
+  <script src="js/brand-follow.js?v=2026-10-31.1"></script>
+  <script src="js/zip.js?v=2026-10-31.1"></script>
+  <script src="js/carousel-layout.js?v=2026-10-31.1"></script>
+  <script src="js/ig-render.js?v=2026-10-31.1"></script>
+  <script src="js/ig-covers.js?v=2026-10-31.1"></script>
+  <script src="js/ig-coord.js?v=2026-10-31.1"></script>
+  <script src="js/ig-multi.js?v=2026-10-31.1"></script>
+  <script src="js/reel-story.js?v=2026-10-31.1"></script>
+  <script src="js/coord-store.js?v=2026-10-31.1"></script>
+  <script src="js/coord-collage.js?v=2026-10-31.1"></script>
+  <script src="js/image-store.js?v=2026-10-31.1"></script>
+  <script src="js/fold.js?v=2026-10-31.1"></script>
+  <script src="js/app.js?v=2026-10-31.1"></script>
+  <script src="js/pitch.js?v=2026-10-31.1"></script>
 </body>
 </html>

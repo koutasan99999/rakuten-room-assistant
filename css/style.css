@@ -803,3 +803,20 @@ body {
 .buyer-audit { margin: 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; background: #eef6f0; color: #1f6f43; }
 .buyer-audit.conditional { background: #fff6e5; color: #7a5a00; }
 .buyer-audit.hold { background: #fde2e2; color: #b00020; }
+
+/* 社長、これどうすか？ */
+.pitch-card { display: flex; flex-direction: column; gap: 10px; }
+.pitch-count { margin: 0; font-size: 12px; color: #6b7280; }
+.pitch-photo { width: 100%; max-height: 340px; object-fit: contain; background: #f6f6f4; border-radius: 12px; }
+.pitch-noimg { display: flex; align-items: center; justify-content: center; min-height: 120px; color: #9ca3af; font-size: 13px; background: #f3f4f6; border-radius: 12px; }
+.pitch-bubble { margin: 0; padding: 12px 14px; background: #fff8e8; border: 1px solid #f1dfb2; border-radius: 14px; line-height: 1.75; font-size: 15px; white-space: pre-wrap; }
+.pitch-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.pitch-actions .btn-primary { grid-column: 1 / -1; font-size: 17px; padding: 14px; }
+.pitch-actions .pitch-feature { grid-column: 1 / -1; }
+.pitch-actions .status-btn { min-height: 44px; }
+.pitch-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.pitch-check { margin: 10px 0; padding: 8px 10px; background: #f8fafc; border-radius: 10px; }
+.pitch-warn { color: #b45309; }
+.pitch-intro { width: 100%; box-sizing: border-box; font-size: 15px; line-height: 1.6; }
+.pitch-caption { white-space: pre-wrap; }
+.pitch-busy { padding: 10px; background: #eef6ff; border-radius: 10px; }
