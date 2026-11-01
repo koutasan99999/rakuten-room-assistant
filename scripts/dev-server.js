@@ -25,6 +25,7 @@ import furusatoHandler from '../server/furusato.js';
 import brandNoteHandler from '../server/brand-note.js';
 import buyerHandler from '../server/buyer.js';
 import pitchHandler from '../server/pitch.js';
+import thiefHandler from '../server/thief.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
@@ -88,7 +89,9 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
+    openai: (body) => body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
+      ? aiReply({ handle: 'ken_good_item', products: [{ name: 'つぶしやすいスプーンマッシャー K829DGY', brand: 'マーナ', model: 'K829DGY', aliases: ['marna'], evidence: '画像の上に商品名が書かれている' }, { name: 'ワイヤレス HDMI 送信機', brand: '', model: '', aliases: [], evidence: 'キャプションに書かれている' }] })
+      : body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
       ? aiReply({ queries: [{ category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長に')
       ? aiReply({ picks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
@@ -199,6 +202,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/brand-note') return brandNoteHandler(req, res, env);
   if (url.pathname === '/api/buyer') return buyerHandler(req, res, env);
   if (url.pathname === '/api/pitch') return pitchHandler(req, res, env);
+  if (url.pathname === '/api/thief') return thiefHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

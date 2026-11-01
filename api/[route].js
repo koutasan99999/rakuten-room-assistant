@@ -23,6 +23,7 @@ import releaseIdeas from '../server/release-ideas.js';
 import roomHashtags from '../server/room-hashtags.js';
 import search from '../server/search.js';
 import seedIdeas from '../server/seed-ideas.js';
+import thief from '../server/thief.js';
 import trends from '../server/trends.js';
 
 export const ROUTES = {
@@ -47,6 +48,7 @@ export const ROUTES = {
   'room-hashtags': roomHashtags,
   'search': search,
   'seed-ideas': seedIdeas,
+  'thief': thief,
   'trends': trends
 };
 

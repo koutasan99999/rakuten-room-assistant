@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-10-31.1';
+  var APP_VERSION = '2026-11-01.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -581,7 +581,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : parts[0] === '#thief' ? 'thief' : 'discover';
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -599,6 +599,9 @@
     var pv = document.getElementById('view-pitch');
     if (pv) pv.hidden = view !== 'pitch';
     if (view === 'pitch' && window.PitchView) window.PitchView.render();
+    var tv = document.getElementById('view-thief');
+    if (tv) tv.hidden = view !== 'thief';
+    if (view === 'thief' && window.ThiefView) window.ThiefView.render();
     if (view === 'jobs' && typeof renderJobs === 'function') renderJobs();
     Array.prototype.forEach.call(document.querySelectorAll('.view-tab'), function (t) {
       t.classList.toggle('active', t.getAttribute('data-view') === (view === 'compose' || view === 'room' || view === 'assets' ? 'manage' : view));
@@ -5058,6 +5061,12 @@
     if (!ok || !job.result) return;
     var r = job.result;
     // 「社長、これどうすか？」：画面を閉じている間に届いた商品も、プレゼンの順番待ちに入れる
+    // 商品ドロボー：画面を閉じている間に終わった楽天の検索も、商品に結びつけて残す
+    if (job.type === 'thief' && !hadWaiter && window.ThiefStore) {
+      var tb = (job.params && job.params.body) || {};
+      if (tb.pid) window.ThiefStore.update(tb.pid, { candidates: r.items || [], tried: r.tried || [], searchedAt: Date.now(), searchError: '' });
+      return;
+    }
     if (job.type === 'pitch' && !hadWaiter && window.PitchStore) {
       var pb = (job.params && job.params.body) || {};
       if (pb.action === 'seed') window.PitchStore.markSeeded();
@@ -6020,6 +6029,7 @@
   //   Web調査便：Claude Code のサブエージェント（product-buyer → planning-lead）が Web で調べた結果（data/buyer-picks.json）。社長が頼んだときに更新
   Jobs.register('buyer', { tasks: singleTask('api/buyer'), count: function (r) { return (r.picks || []).length; } });
   Jobs.register('pitch', { tasks: singleTask('api/pitch'), count: function (r) { return (r.items || []).length; } });
+  Jobs.register('thief', { tasks: singleTask('api/thief'), count: function (r) { return (r.items || []).length; } });
   JOB_TYPE_JA.buyer = 'バイヤー発掘便';
   var buyerEl = document.getElementById('buyer-body');
   var BUYER_TAB_KEY = 'room-buyer-tab';
