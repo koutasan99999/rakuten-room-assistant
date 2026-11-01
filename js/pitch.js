@@ -94,6 +94,8 @@
     var dl = el('dl', 'radar-facts');
     [['眼科医くまに合う理由', p.fit], ['買う前の弱点・注意点', p.caution]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     card.appendChild(dl);
+    if (p.sourcePost || p.sourceHandle) card.appendChild(el('p', 'hint', '商品ドロボー：@' + (p.sourceHandle || '不明') + (p.matchNote ? '｜' + p.matchNote : '')));
+    if (p.sourcePost) card.appendChild(linkBtn('参照元の投稿', p.sourcePost));
     if (p.url) card.appendChild(linkBtn('楽天の商品ページを見る', p.url));
     var acts = el('div', 'pitch-actions');
     acts.appendChild(btn('いいじゃん！', 'btn btn-primary', function () { adopt(p, false); }));
@@ -161,6 +163,7 @@
     var links = el('div', 'buyer-links');
     if (p.url) links.appendChild(linkBtn('楽天の商品ページ', p.url));
     if (p.code) links.appendChild(linkBtn('楽天ROOMで投稿画面を開く', K.roomUrl(p.code)));
+    if (p.sourcePost) links.appendChild(linkBtn('参照元の投稿', p.sourcePost));
     card.appendChild(links);
 
     card.appendChild(el('p', 'field-label', 'ROOM紹介文（直せます）'));
@@ -283,6 +286,17 @@
     });
   }
 
-  window.PitchView = { render: render };
+  // ほかの画面（商品ドロボー）から商品を受け取る。status があれば判断も記録し、いいじゃん！なら紹介文を作る
+  function addExternal(item, status) {
+    if (!S.addMany([item])) return '';
+    var key = item.key || item.code;
+    if (status) {
+      S.decide(key, status, '');
+      if (status === 'adopt') makeIntro(S.get(key));
+    }
+    return key;
+  }
+
+  window.PitchView = { render: render, addExternal: addExternal };
   if (location.hash.indexOf('#pitch') === 0) render();
 })();

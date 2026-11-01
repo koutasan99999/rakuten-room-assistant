@@ -820,3 +820,16 @@ body {
 .pitch-intro { width: 100%; box-sizing: border-box; font-size: 15px; line-height: 1.6; }
 .pitch-caption { white-space: pre-wrap; }
 .pitch-busy { padding: 10px; background: #eef6ff; border-radius: 10px; }
+
+/* 商品ドロボー */
+.thief-add { display: flex; flex-direction: column; gap: 8px; }
+.thief-account { cursor: pointer; }
+.thief-cand { padding: 10px 0; border-top: 1px solid var(--line); }
+.thief-cand-name { margin: 4px 0; font-size: 14px; line-height: 1.5; }
+.thief-match { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.thief-match.same { background: #1f6f43; color: #fff; }
+.thief-match.similar { background: #fff4d6; color: #8a5a00; }
+.thief-match.unknown { background: #eee; color: #555; }
+.thief-check { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 14px; line-height: 1.5; }
+.thief-check input { width: 22px; height: 22px; flex-shrink: 0; }
+.thief-cand .pitch-row .btn { width: auto; flex: 1 1 100%; }
