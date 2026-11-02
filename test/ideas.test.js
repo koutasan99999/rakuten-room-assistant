@@ -133,11 +133,11 @@ test('キャプション：本文→ROOM誘導→URL→アフィリエイト表�
   assert.equal((c.match(/room\.rakuten\.co\.jp/g) || []).length, 1);
   assert.ok(!c.includes('example.com') && !c.includes('#PR'));
   const tags = tagsOf(c);
-  assert.ok(tags.length >= 15 && tags.length <= 25, String(tags.length));
+  assert.ok(tags.length >= 3 && tags.length <= 5, String(tags.length));
   assert.equal(new Set(tags).size, tags.length);
   assert.ok(tags.every((t) => /^#[^#\s]+$/.test(t)), tags.join(' '));
   assert.ok(!tags.includes('#a/b'));
-  for (const t of ['#楽天ROOM', '#名入れギフト', '#出産祝い', '#ベビーギフト', '#出産祝いギフト', '#プレゼント迷子', '#ganka_kuma', '#眼科医くま']) assert.ok(tags.includes(t), t);
+  for (const t of ['#出産祝い', '#出産祝いギフト', '#眼科医くま']) assert.ok(tags.includes(t), t);
   assert.ok(!tags.includes('#防災'));
   assert.equal(data.items[0].memo, 'ブランド込みで贈るならこっち。'); // まとめで作った一言メモを優先
   // AIが失敗しても、予備の本文＋ROOM誘導・URL・表記・ハッシュタグ
@@ -145,25 +145,27 @@ test('キャプション：本文→ROOM誘導→URL→アフィリエイト表�
   mock = installFetchMock({ rakuten: () => json(500, {}), openai: () => aiReply('だめ') });
   const fb = (await call(instagram, { theme: '出産祝い', needCaption: true, collection: '出産祝い｜本気出して考えてみた', items: [{ name: '商品A', price: 1000 }] })).data;
   assert.ok(fb.caption.includes('紹介したものは楽天ROOMの「出産祝い｜本気出して考えてみた」にまとめています。\nプロフィールのリンクから見られます。\n\nhttps://room.rakuten.co.jp/room_d45e2c7b29/items\n\n※楽天アフィリエイトを利用しています。'));
-  assert.ok(tagsOf(fb.caption).length >= 15);
+  assert.ok(tagsOf(fb.caption).length >= 2 && tagsOf(fb.caption).length <= 5);
 });
 
-test('ハッシュタグ：テーマごとに中身が変わり、15〜25個・アカウントのタグ入り', () => {
+test('ハッシュタグ：テーマごとに中身が変わり、5個まで（大きなカテゴリ1・テーマ3・#眼科医くま1）', () => {
   const bousai = buildHashtags({ topic: '防災グッズ、まずこれ買っとけ', genre: '防災グッズ', postType: 'まずこれ買っとけ', aiTags: ['#停電対策', '#防災備蓄'] });
   const kosui = buildHashtags({ topic: '香水初心者の最初の3本', genre: '香り・美容' });
   for (const tags of [bousai, kosui, buildHashtags({ topic: 'なにか' })]) {
-    assert.ok(tags.length >= 15 && tags.length <= 25, tags.join(' '));
+    assert.ok(tags.length >= 2 && tags.length <= 5, tags.join(' '));
     assert.equal(new Set(tags).size, tags.length);
-    assert.ok(tags.includes('#ganka_kuma') && tags.includes('#眼科医くま'));
+    assert.equal(tags[tags.length - 1], '#眼科医くま');
+    assert.ok(!tags.includes('#買ってよかった'));
   }
-  for (const t of ['#防災', '#防災グッズ', '#防災リュック', '#備蓄', '#まずこれ', '#何を買えばいい', '#防災備蓄', '#災害対策', '#防災準備']) assert.ok(bousai.includes(t), t);
+  assert.equal(bousai[0], '#防災');
+  for (const t of ['#停電対策', '#防災備蓄']) assert.ok(bousai.includes(t), t);
   // 防災は「便利グッズ」ではなく防災で探す人に向けたタグ（#便利グッズ #生活便利グッズ は付けない）
   assert.ok(!bousai.includes('#便利グッズ') && !bousai.includes('#生活便利グッズ'));
-  for (const t of ['#香水', '#香水初心者', '#フレグランス', '#香水選び']) assert.ok(kosui.includes(t), t);
+  assert.ok(kosui.includes('#香水'));
   assert.ok(!kosui.includes('#防災') && !kosui.includes('#便利グッズ'));
-  // AIのタグが多すぎても25個まで、アカウントのタグは残る
+  // AIのタグが多すぎても5個まで、アカウントのタグは残る
   const many = buildHashtags({ topic: '防災', aiTags: Array.from({ length: 30 }, (_, i) => `#タグ${i}`) });
-  assert.ok(many.length <= 25 && many.includes('#眼科医くま'));
+  assert.ok(many.length <= 5 && many.includes('#眼科医くま'));
 });
 
 test('「まずこれ買っとけ」型の予備企画は、表紙サブタイトルを3種類から選ぶ', () => {

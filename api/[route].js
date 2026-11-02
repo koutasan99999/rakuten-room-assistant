@@ -11,6 +11,7 @@ import discover from '../server/discover.js';
 import explore from '../server/explore.js';
 import furusato from '../server/furusato.js';
 import ideas from '../server/ideas.js';
+import ig from '../server/ig.js';
 import image from '../server/image.js';
 import instagram from '../server/instagram.js';
 import intros from '../server/intros.js';
@@ -36,6 +37,7 @@ export const ROUTES = {
   'explore': explore,
   'furusato': furusato,
   'ideas': ideas,
+  'ig': ig,
   'image': image,
   'instagram': instagram,
   'intros': intros,
