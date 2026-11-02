@@ -107,3 +107,11 @@ test('候補のプレゼン：楽天の商品データのまま、出どころ�
   assert.equal(r2.data.item.pitch, '');
   assert.ok(r2.data.item.caution.includes('確認'));
 });
+
+test('コメント案：投稿の文章から短い一言を2つ。宣伝・体験の言葉の案は落とす', async () => {
+  mock = installFetchMock({ openai: () => aiReply({ comments: ['グレーのセットアップ、靴の色で印象が変わりますね', '私も使ってます！最高です', 'プロフ見てください'] }) });
+  const r = await call({ action: 'comment', caption: 'グレーのセットアップに白スニーカーを合わせました' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.comments, ['グレーのセットアップ、靴の色で印象が変わりますね']);
+  assert.equal((await call({ action: 'comment', caption: '' })).status, 400);
+});

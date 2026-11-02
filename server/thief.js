@@ -1,6 +1,6 @@
-// 商品ドロボーのAPI：action: extract（スクリーンショットから商品名を読む）／search（楽天で探して照合）／pitch（候補のプレゼンを書く）
+// 商品ドロボーのAPI：action: extract（スクリーンショットから商品名を読む）／search（楽天で探して照合）／pitch（候補のプレゼンを書く）／comment（手でコメントするときの一言の案。投稿はしない）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
-import { extractFromScreenshot, pitchCandidate } from '../lib/thief.js';
+import { extractFromScreenshot, pitchCandidate, draftComments } from '../lib/thief.js';
 import { findOnRakuten } from '../lib/product-match.js';
 import { maskSecrets } from '../lib/ai.js';
 
@@ -32,6 +32,11 @@ export default async function handler(req, res, env = process.env) {
       const candidate = { code: str(c.code, 120), name: str(c.name, 200), price: Number(c.price) || 0, postage: str(c.postage, 10), url: str(c.url, 400), image: str(c.image, 400), shop: str(c.shop, 80), caption: str(c.caption, 300), reviewCount: Number(c.reviewCount) || 0 };
       const source = { handle: str(body.source && body.source.handle, 30) };
       return send(res, 200, { item: await pitchCandidate({ candidate, source, env, deadline: startedAt + 40000 }) });
+    }
+    if (action === 'comment') {
+      const caption = str(body.caption, 1000).trim();
+      if (caption.length < 5) return send(res, 400, { error: '投稿の文章を貼ってください' });
+      return send(res, 200, { comments: await draftComments({ caption, env, deadline: startedAt + 30000 }) });
     }
     return send(res, 400, { error: '操作が分かりません' });
   } catch (e) {
