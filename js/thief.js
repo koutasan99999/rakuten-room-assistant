@@ -36,20 +36,26 @@
     var r = a.handle && research && research.accounts ? research.accounts[a.handle] : null;
     return r ? Object.assign({ status: 'done' }, r) : null;
   }
-  var STATUS = { pending: '調査待ち', running: '調査中', done: '調査済み', insufficient: '情報不足', error: 'エラー', off: '自動調査はオフ' };
+  var STATUS = { pending: '調査待ち', running: '調査中', done: '調査済み', insufficient: '情報不足', error: 'エラー', off: '自動調査はオフ', budget: '今月の上限で停止' };
   function statusOf(a) {
     var r = researchOf(a);
     if (r) return r.status === 'insufficient' ? '情報不足' : '調査済み';
     return STATUS[(a.research && a.research.status) || 'pending'];
   }
+  // 調査の結果と料金を記録する（検索ジョブが画面の外で終わったときも app.js から呼ばれる）
+  function saveResearch(handle, httpStatus, d) {
+    if (d.cost) T.addCost(handle, d.cost, d.status || 'error');
+    if (httpStatus !== 200 || d.status === 'error') T.setResearch(handle, { status: 'error', error: d.error || '調査できませんでした' });
+    else if (d.status === 'off' || d.status === 'budget') T.setResearch(handle, { status: d.status, notice: d.notice });
+    else T.setResearch(handle, d);
+  }
   // 登録したら、すぐに自動調査を始める（検索ジョブなので、画面を閉じても続く）
   function startResearch(a) {
     if (!a.handle) return;
     T.setResearch(a.handle, { status: 'running' });
-    K.jobCall('thief', { action: 'research', handle: a.handle }, { label: '参考アカウントの調査：@' + a.handle, genre: '' }).then(function (r) {
-      var d = r.data || {};
-      if (r.status !== 200) T.setResearch(a.handle, { status: 'error', error: d.error || '調査できませんでした' });
-      else T.setResearch(a.handle, d.status === 'off' ? { status: 'off', notice: d.notice } : d);
+    var mc = T.monthCost();
+    K.jobCall('thief', { action: 'research', handle: a.handle, budget: { month: mc.month, spentYenCap: mc.yenCap } }, { label: '参考アカウントの調査：@' + a.handle, genre: '' }).then(function (r) {
+      saveResearch(a.handle, r.status, r.data || {});
       render();
     });
   }
@@ -76,10 +82,12 @@
     body.appendChild(box);
     var list = T.accounts();
     if (!list.length) { body.appendChild(el('p', 'manage-empty', 'まだ登録したアカウントはありません。')); return; }
-    var off = list.filter(function (a) { return a.handle && !researchOf(a) && a.research && a.research.status === 'off'; });
+    var mc = T.monthCost();
+    body.appendChild(el('p', 'hint', '今月の自動調査：' + mc.runs + '件・検索' + mc.searches + '回・約' + mc.yen + '円（上限管理用の高めの計算では' + mc.yenCap + '円／上限500円）。料金は応答の使用量からの計算で、実際の請求はOpenAIの管理画面の額です。'));
+    var off = list.filter(function (a) { return a.handle && !researchOf(a) && a.research && (a.research.status === 'off' || a.research.status === 'budget'); });
     if (off.length) {
       var ask = el('div', 'card');
-      ask.appendChild(el('p', 'hint', '自動調査がまだオフのため、' + off.length + ' 件が調査待ちです。オンになるまでは、AI社員（Claude）が会話の中で調べて、この画面に反映します。'));
+      ask.appendChild(el('p', 'hint', '自動調査が止まっているため（今月の上限、またはオフ）、' + off.length + ' 件が調査待ちです。上限で止まった分は、来月に自動では再開しません。「もう一度調べる」で再開できます。'));
       body.appendChild(ask);
     }
     list.forEach(function (a) {
@@ -109,7 +117,7 @@
     rc.appendChild(el('p', 'field-label', 'AI社員の調査'));
     rc.appendChild(el('p', 'hint', '状態：' + statusOf(a) + (a.research && a.research.error ? '（' + a.research.error + '）' : '')));
     if (!r) {
-      if (a.research && a.research.status === 'off') rc.appendChild(el('p', 'hint', a.research.notice || '自動調査はオフです。'));
+      if (a.research && (a.research.status === 'off' || a.research.status === 'budget')) rc.appendChild(el('p', 'hint', a.research.notice || '自動調査は止まっています。'));
       if (a.handle && (!a.research || a.research.status !== 'running')) rc.appendChild(btn('もう一度調べる', 'status-btn', function () { startResearch(a); render(); }));
     } else {
       var dl = el('dl', 'radar-facts');
@@ -350,6 +358,6 @@
     return T.accounts().map(function (a) { var r = researchOf(a); return r && r.status === 'done' ? { handle: a.handle, memo: a.memo || '', themes: r.themes || [], angles: r.angles || [], learn: r.learn || [] } : null; }).filter(Boolean).slice(0, 8);
   }
 
-  window.ThiefView = { render: render, insights: insights };
+  window.ThiefView = { render: render, insights: insights, saveResearch: saveResearch };
   if (location.hash.indexOf('#thief') === 0) render();
 })();

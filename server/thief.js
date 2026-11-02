@@ -2,7 +2,7 @@
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { extractFromScreenshot, pitchCandidate, draftComments } from '../lib/thief.js';
 import { findOnRakuten } from '../lib/product-match.js';
-import { researchAccount, researchEnabled } from '../lib/reference-research.js';
+import { researchAccount, researchEnabled, budgetCheck, MAX_RUN_YEN } from '../lib/reference-research.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -37,8 +37,16 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'research') {
       const handle = String(body.handle || '').toLowerCase();
       if (!/^[a-z0-9._]{1,30}$/.test(handle)) return send(res, 400, { error: 'アカウントのIDが読み取れません' });
-      if (!researchEnabled(env)) return send(res, 200, { status: 'off', notice: '自動調査はまだオフです（Web検索の料金を社長が確認したらオンにします）。' });
-      return send(res, 200, { handle, ...(await researchAccount({ handle, env, deadline: startedAt + 55000 })) });
+      if (!researchEnabled(env)) return send(res, 200, { status: 'off', notice: '自動調査は止めてあります（REFERENCE_RESEARCH=off）。' });
+      // 月の上限：端末の記録（今月の上限管理用の料金）とサーバーの記録の多いほうで判定し、1回分の最大額を足して超えるなら実行しない
+      const b = budgetCheck({ env, spentYenCap: body.budget && body.budget.month === new Date().toISOString().slice(0, 7) ? body.budget.spentYenCap : 0 });
+      if (!b.ok) return send(res, 200, { status: 'budget', budget: { ...b, maxRunYen: MAX_RUN_YEN }, notice: `今月の調査の上限（${b.cap}円）に近いため、自動で止めました。来月になると再開します。` });
+      try {
+        return send(res, 200, { handle, budget: { ...b, maxRunYen: MAX_RUN_YEN }, ...(await researchAccount({ handle, env, deadline: startedAt + 55000 })) });
+      } catch (e) {
+        // 502などを返すと検索ジョブが自動でやり直し、料金が重なるので、失敗も200で返す（やり直しは社長が「もう一度調べる」を押したときだけ）
+        return send(res, 200, { status: 'error', error: '調査できませんでした。', detail: maskSecrets(e.message).slice(0, 200), cost: e.cost || null });
+      }
     }
     if (action === 'comment') {
       const caption = str(body.caption, 1000).trim();
