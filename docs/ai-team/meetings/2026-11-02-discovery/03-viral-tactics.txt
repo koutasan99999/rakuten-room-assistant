@@ -1,0 +1,52 @@
+【集客部長の報告 2026-11-02：ゼロから視聴回数を取りにいく施策】
+前提：アカウントステータスの確認が先（問題があれば、どの施策も効かない）。help.instagram.com・techcrunch.com は開けず、仕様は検索結果の要約から。公式の原文は未確認。
+
+【調査結果（出典・日付）】
+1. ハッシュタグ：1投稿・1リールにつき5個まで（2025年12月、Instagram公式アカウントの発表として複数の報道）。Mosseri氏は「少数の関連タグのほうがよい。リーチを保証しない」。キャプションとコメントの合計で数えるかは未確認。
+   問題：アプリの lib/hashtags.js は15〜25個のタグを作る仕様で、上限を超えている（CEO補佐がコードで確認済み）。
+2. 独自性：同じ・ほぼ同じ投稿はオリジナルだけがおすすめに出る（2024年5月）。2026年4月30日に対象が写真・カルーセルにも広がった（TechCrunch・tubefilter）。楽天の商品画像を並べただけの投稿がオリジナルでないと判定される心配は強くなった（仮説）。
+3. 主な指標：視聴時間、リーチあたりのいいね、リーチあたりの送信（2025年1月、二次情報）。リールは3分までおすすめ対象。最初は少数のフォロワー外に見せ、反応がよければ広げる。「最初の3秒」の数値基準に公式の根拠はない。
+4. トライアルリール：プロアカウントが必要。フォロワー200人以上・1,000人以上の二つの説（2026年）。今は使えない可能性が高い。
+5. カルーセルの2枚目の再表示：作り手の観察談だけ。
+6. コラボ投稿：共同投稿者は最大5人（二次情報）。
+7. 音源：ビジネスアカウントは商用に使えるMeta Sound Collectionに限られる（Metaヘルプの要約）。アフィリエイトの投稿では、Sound Collectionか自作の音源を使う。
+8. リミックス：公開アカウントは初期設定でリミックスを許可（Instagramヘルプ）。相手の設定の範囲で使える公式の機能。
+9. 他のSNS：Pinterestは楽天を公式のアフィリエイトパートナーに挙げている（Pinterest日本の公式ブログ）。楽天側の規約の原文は未確認。YouTubeショートは説明欄のリンクが2023年8月31日から押せない。X・Threadsは未確認。
+10. 1日の操作数の上限：公式の数値は公開されていない。第三者の数字はばらばら。
+11. 楽天の商品画像の利用条件：未確認。楽天アフィリエイト事務局は、同じ内容の繰り返しや関係のないハッシュタグをスパムとして扱う（2022年の事務局ブログ）。
+
+【施策】
+1. ハッシュタグを5個に（大きい1・悩み/用途3・#眼科医くま 1）：可能性 低〜中／0円／1投稿2分／タグ選びは自動化可／送客に向く。
+2. 自作の図解リール（7〜15秒。1秒目に悩みの一文、数字の入った比較図、結論、最初に戻るループ）：可能性 中〜高（視聴時間・送信の指標を狙え、画像が自作で独自性の問題を避けられる）／0円／社長10分／台本〜書き出しまで自動化可／送客 中。
+3. メーカー素材の許諾利用：可能性 中／0円／依頼文はAI、送信は社長5分（承認）／返事は不明／送客に向く。依頼文の骨子：名乗りとアカウント（PR表記・楽天ROOM経由）／使いたい素材と使い道（リール1本・期間・加工の範囲）／クレジット／医療・健康の効果はうたわない／断ってもらってかまわない。プレスキットは「報道目的のみ」が多いので確認が必要。
+4. 小規模クリエイターとのコラボ投稿：可能性 高（相手のフォロワーにも表示）、ただし0からは受けてもらいにくい／0円／DMは社長（承認）。DMの骨子：相手の投稿の具体的によかった点／企画（図解は当社）／名義・PR表記・報酬なし／断りやすい書き方。
+5. メーカーのリールのリミックス（許可されているものだけ）：可能性 中／0円／15分／送客 中。反応の言葉と比較の図解で付加価値をつける。
+6. 関連アカウントへのコメント（手動、1日5件まで）：可能性 低／1日10分／自動化しない。
+7. Pinterest（始めるかは社長の判断）：可能性 中／1ピン3分／アプリの縦長の画像を使える／送客に一番向く。
+8. YouTubeショート：リンクが押せないので見送り。
+
+【Claude Codeで自動化できる範囲】
+1. Reelのシーン画像をffmpegで1080×1920・30fpsの動画に（この環境にffmpeg 6.1があることはCEO補佐が確認）。字幕は焼き込み、最初と最後を同じにしてループ。音はSound Collectionの曲を社長がアプリ内で付ける。
+2. ハッシュタグを5個以内に直す修正（承認後）、キャプション、依頼文の下書き、インサイトの書き写しと判定。
+3. 投稿・DM・コメントは社長が手で。
+
+【今週の3つ（集客部長の案）】
+1. ハッシュタグを5個以内に（lib/hashtags.js の修正は承認後）。見る数字：7日後のハッシュタグ経由のリーチ。
+2. 図解リール1本（題材：既存の「備蓄数の決め方」）。AIがffmpegで書き出す→社長が音源を付けて投稿（10分・承認）。見る数字：72時間後のフォロワー外リーチ・平均視聴時間・送信・プロフィールへのアクセス。
+3. メーカー1社への素材使用の許諾依頼（社長が送信5分・承認）。見る数字：14日以内の返事。
+
+【出典】
+https://www.blogdumoderateur.com/instagram-limite-hashtags-5-par-publication/
+https://hipertextual.com/internet/instagram-limite-cinco-hashtags-publicacion/
+https://www.gigazine.net/gsc_news/en/20240502-instagram-updated-algorithm-prioritizes-original-content
+https://techcrunch.com/2026/04/30/instagram-restricts-reach-of-content-aggregators-in-new-crackdown/
+https://tubefilter.com/2026/04/30/instagram-removes-algorithm-recommendations-repost-content-aggregator
+https://www.socialmediatoday.com/news/instagram-officially-expands-reels-length-to-3-minutes/737766/
+https://www.socialmediatoday.com/news/instagram-shares-algorithm-insights-2025/738034/
+https://www.planoly.com/blog/how-to-post-a-trial-reel-on-instagram
+https://epidemicsound.com/blog/instagram-collab-posts
+https://www.foximusic.com/blog/instagram-reels-music-copyright-legal-guide/
+https://help.instagram.com/792438641600810
+https://create.pinterest.com/ja/blog/affiliate-marketing-link-basics/
+https://plaza.rakuten.co.jp/affiliatestaff/diary/202202080000/
+https://tubefilter.com/2023/08/10/youtube-shorts-comments-spam/
