@@ -30,7 +30,29 @@
       if (d && d.accounts) { research = d; if (location.hash.indexOf('#thief') === 0) render(); }
     }, function () {});
   }
-  function researchOf(a) { return a.handle && research && research.accounts ? research.accounts[a.handle] : null; }
+  // 自動調査の結果（この端末）を優先し、無ければAI社員が調べた記録（data/reference-accounts.json）を使う
+  function researchOf(a) {
+    if (a.research && (a.research.status === 'done' || a.research.status === 'insufficient')) return a.research;
+    var r = a.handle && research && research.accounts ? research.accounts[a.handle] : null;
+    return r ? Object.assign({ status: 'done' }, r) : null;
+  }
+  var STATUS = { pending: '調査待ち', running: '調査中', done: '調査済み', insufficient: '情報不足', error: 'エラー', off: '自動調査はオフ' };
+  function statusOf(a) {
+    var r = researchOf(a);
+    if (r) return r.status === 'insufficient' ? '情報不足' : '調査済み';
+    return STATUS[(a.research && a.research.status) || 'pending'];
+  }
+  // 登録したら、すぐに自動調査を始める（検索ジョブなので、画面を閉じても続く）
+  function startResearch(a) {
+    if (!a.handle) return;
+    T.setResearch(a.handle, { status: 'running' });
+    K.jobCall('thief', { action: 'research', handle: a.handle }, { label: '参考アカウントの調査：@' + a.handle, genre: '' }).then(function (r) {
+      var d = r.data || {};
+      if (r.status !== 200) T.setResearch(a.handle, { status: 'error', error: d.error || '調査できませんでした' });
+      else T.setResearch(a.handle, d.status === 'off' ? { status: 'off', notice: d.notice } : d);
+      render();
+    });
+  }
 
   // ---- アカウント一覧 ----
   function renderAccounts() {
@@ -44,8 +66,9 @@
     box.appendChild(btn('登録する', 'btn btn-primary', function () {
       var r = T.parseInput(inp.value);
       if (!r) { msg.textContent = 'URLかIDの形が読み取れませんでした（例：https://www.instagram.com/kose_wear/）'; return; }
-      T.addAccount(r.handle, memo.value.trim());
-      K.showToast(r.handle ? '@' + r.handle + ' を登録しました' : '登録しました');
+      var added = T.addAccount(r.handle, memo.value.trim());
+      K.showToast(r.handle ? '@' + r.handle + ' を登録しました。調査を始めます' : '登録しました');
+      if (!researchOf(added)) startResearch(added);
       inp.value = ''; memo.value = '';
       render();
     }));
@@ -53,21 +76,17 @@
     body.appendChild(box);
     var list = T.accounts();
     if (!list.length) { body.appendChild(el('p', 'manage-empty', 'まだ登録したアカウントはありません。')); return; }
-    var pending = list.filter(function (a) { return a.handle && !researchOf(a); });
-    if (pending.length) {
+    var off = list.filter(function (a) { return a.handle && !researchOf(a) && a.research && a.research.status === 'off'; });
+    if (off.length) {
       var ask = el('div', 'card');
-      ask.appendChild(el('p', 'hint', 'まだAI社員が調べていないアカウントが ' + pending.length + ' 件あります。下のボタンで頼む文をコピーし、Claude（AI社員の会話）に貼ってください。'));
-      ask.appendChild(btn('AI社員に調査を頼む文をコピー', 'btn btn-secondary', function () {
-        var text = '参考アカウントを調べて、商品ドロボーのページに反映してください。\n' + pending.map(function (a) { return 'https://www.instagram.com/' + a.handle + '/' + (a.memo ? '（' + a.memo + '）' : ''); }).join('\n');
-        K.copyText(text).then(function () { K.showToast('コピーしました。Claudeに貼ってください'); }, function () {});
-      }));
+      ask.appendChild(el('p', 'hint', '自動調査がまだオフのため、' + off.length + ' 件が調査待ちです。オンになるまでは、AI社員（Claude）が会話の中で調べて、この画面に反映します。'));
       body.appendChild(ask);
     }
     list.forEach(function (a) {
       var r = researchOf(a);
       var card = el('article', 'card thief-account');
       card.appendChild(el('h3', 'cand-name', a.handle ? '@' + a.handle : 'IDなし（投稿URLから登録）'));
-      card.appendChild(el('p', 'hint', [a.memo, r ? 'AI社員の調査あり（' + (r.checkedAt || '') + '）' : 'AI社員の調査待ち', a.count ? '商品 ' + a.count + '件' : ''].filter(Boolean).join('｜')));
+      card.appendChild(el('p', 'hint', [a.memo, statusOf(a) + (r && r.checkedAt ? '（' + r.checkedAt + '）' : ''), a.count ? '商品 ' + a.count + '件' : ''].filter(Boolean).join('｜')));
       card.addEventListener('click', function () { current = a.id; render(); });
       body.appendChild(card);
     });
@@ -88,11 +107,16 @@
     var r = researchOf(a);
     var rc = el('div', 'card');
     rc.appendChild(el('p', 'field-label', 'AI社員の調査'));
-    if (!r) rc.appendChild(el('p', 'hint', 'まだ調べていません。一覧の「AI社員に調査を頼む文をコピー」から頼めます。'));
-    else {
+    rc.appendChild(el('p', 'hint', '状態：' + statusOf(a) + (a.research && a.research.error ? '（' + a.research.error + '）' : '')));
+    if (!r) {
+      if (a.research && a.research.status === 'off') rc.appendChild(el('p', 'hint', a.research.notice || '自動調査はオフです。'));
+      if (a.handle && (!a.research || a.research.status !== 'running')) rc.appendChild(btn('もう一度調べる', 'status-btn', function () { startResearch(a); render(); }));
+    } else {
       var dl = el('dl', 'radar-facts');
-      facts(dl, [['調べた日', r.checkedAt], ['どんなアカウントか', r.summary], ['よく扱うテーマ', r.themes], ['使っている言葉・タグ', r.keywords], ['見ていそうな人（推測）', r.audience], ['確認できなかったこと', r.unknown]]);
+      facts(dl, [['調べた日', r.checkedAt], ['どんなアカウントか', r.summary], ['よく扱うテーマ', r.themes], ['使っている言葉・タグ', r.keywords], ['見ていそうな人（推測）', r.audience], ['眼科医くまが学べる点', r.learn], ['確認できなかったこと', r.unknown]]);
       rc.appendChild(dl);
+      if ((r.sources || []).length) { var src = el('div', 'buyer-links'); r.sources.forEach(function (u) { src.appendChild(linkBtn(u.replace(/^https:\/\/(www\.)?/, '').slice(0, 40), u)); }); rc.appendChild(src); }
+      if (a.handle) rc.appendChild(btn('調べ直す', 'link-btn', function () { startResearch(a); render(); }));
     }
     body.appendChild(rc);
 
@@ -320,6 +344,12 @@
     if (a) renderAccount(a); else renderAccounts();
   }
 
-  window.ThiefView = { render: render };
+  // 「社長、これどうすか？」の商品探しに渡す、参考アカウントのまとめ（調査済みのものだけ）
+  function insights() {
+    loadResearch();
+    return T.accounts().map(function (a) { var r = researchOf(a); return r && r.status === 'done' ? { handle: a.handle, memo: a.memo || '', themes: r.themes || [], angles: r.angles || [], learn: r.learn || [] } : null; }).filter(Boolean).slice(0, 8);
+  }
+
+  window.ThiefView = { render: render, insights: insights };
   if (location.hash.indexOf('#thief') === 0) render();
 })();

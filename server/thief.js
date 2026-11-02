@@ -2,6 +2,7 @@
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { extractFromScreenshot, pitchCandidate, draftComments } from '../lib/thief.js';
 import { findOnRakuten } from '../lib/product-match.js';
+import { researchAccount, researchEnabled } from '../lib/reference-research.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -32,6 +33,12 @@ export default async function handler(req, res, env = process.env) {
       const candidate = { code: str(c.code, 120), name: str(c.name, 200), price: Number(c.price) || 0, postage: str(c.postage, 10), url: str(c.url, 400), image: str(c.image, 400), shop: str(c.shop, 80), caption: str(c.caption, 300), reviewCount: Number(c.reviewCount) || 0 };
       const source = { handle: str(body.source && body.source.handle, 30) };
       return send(res, 200, { item: await pitchCandidate({ candidate, source, env, deadline: startedAt + 40000 }) });
+    }
+    if (action === 'research') {
+      const handle = String(body.handle || '').toLowerCase();
+      if (!/^[a-z0-9._]{1,30}$/.test(handle)) return send(res, 400, { error: 'アカウントのIDが読み取れません' });
+      if (!researchEnabled(env)) return send(res, 200, { status: 'off', notice: '自動調査はまだオフです（Web検索の料金を社長が確認したらオンにします）。' });
+      return send(res, 200, { handle, ...(await researchAccount({ handle, env, deadline: startedAt + 55000 })) });
     }
     if (action === 'comment') {
       const caption = str(body.caption, 1000).trim();

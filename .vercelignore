@@ -1,0 +1,6 @@
+# 本番（Vercel）に公開しないもの。社内の資料・AI社員の設定・テスト・作業用の道具は外に出さない
+docs/
+.claude/
+test/
+scripts/
+README.md

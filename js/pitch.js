@@ -31,7 +31,9 @@
   function fetchItems(action, extra, label, after) {
     busy = action;
     render();
-    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste() }, extra || {});
+    // 社長が登録した参考アカウントの調査（テーマ・視聴者に届く切り口）も、商品探しに使う
+    var refs = window.ThiefView && window.ThiefView.insights ? window.ThiefView.insights() : [];
+    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste(), refs: refs }, extra || {});
     return K.jobCall('pitch', payload, { label: '社長、これどうすか？：' + label, genre: '' }).then(function (r) {
       busy = '';
       if (r.status !== 200) { lastNotice = (r.data && r.data.error) || '探せませんでした'; render(); return; }

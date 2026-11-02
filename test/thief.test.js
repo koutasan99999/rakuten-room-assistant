@@ -115,3 +115,29 @@ test('コメント案：投稿の文章から短い一言を2つ。宣伝・体�
   assert.deepEqual(r.data.comments, ['グレーのセットアップ、靴の色で印象が変わりますね']);
   assert.equal((await call({ action: 'comment', caption: '' })).status, 400);
 });
+
+test('コメントの品質：「！」の多用・絵文字・決まり文句の褒め言葉・投稿に触れていないものを見つける', async () => {
+  const { commentIssues } = await import('../lib/thief.js');
+  const cap = 'グレーのセットアップに白スニーカーを合わせました';
+  assert.deepEqual(commentIssues('グレーに白スニーカー、季節を問わず使えそうですね', cap), []);
+  assert.ok(commentIssues('めっちゃ素敵ですね！！', cap).includes('「！」が多い'));
+  assert.ok(commentIssues('グレー、最高ですね', cap).includes('決まり文句の褒め言葉'));
+  assert.ok(commentIssues('グレーのセットアップ好きです😊', cap).includes('絵文字'));
+  assert.ok(commentIssues('今日はいい天気でしたね', cap).includes('投稿の内容に触れていない'));
+});
+
+test('参考アカウントの自動調査：オフのときは動かない。オンでは、実際に参照したURLがあるときだけ内容を出す', async () => {
+  const { researchAccount } = await import('../lib/reference-research.js');
+  const off = await call({ action: 'research', handle: 'kose_wear' });
+  assert.equal(off.data.status, 'off');
+  const reply = (text, urls) => async () => new Response(JSON.stringify({ output: [{ type: 'message', content: [{ type: 'output_text', text, annotations: urls.map((url) => ({ type: 'url_citation', url })) }] }] }), { status: 200 });
+  const json = JSON.stringify({ found: true, summary: 'メンズのキレイめカジュアル', themes: ['キレイめ'], keywords: ['169cm'], audience: '20〜30代男性（推測）', learn: ['身長を名前に入れる'], angles: ['服に合う小物'], unknown: ['フォロワー数'] });
+  const ok = await researchAccount({ handle: 'kose_wear', env: { OPENAI_API_KEY: 'k' }, deadline: Date.now() + 30000, fetchImpl: reply(`調べました。${json}`, ['https://www.threads.com/@kose_wear']) });
+  assert.equal(ok.status, 'done');
+  assert.deepEqual(ok.sources, ['https://www.threads.com/@kose_wear']);
+  assert.equal(ok.angles[0], '服に合う小物');
+  // 出典が1つも無ければ、内容を出さずに「情報不足」
+  const none = await researchAccount({ handle: 'gift_yasan', env: { OPENAI_API_KEY: 'k' }, deadline: Date.now() + 30000, fetchImpl: reply(json, []) });
+  assert.equal(none.status, 'insufficient');
+  assert.equal(none.summary, '');
+});
