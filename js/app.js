@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-02.1';
+  var APP_VERSION = '2026-11-02.2';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -5064,7 +5064,8 @@
     // 商品ドロボー：画面を閉じている間に終わった楽天の検索も、商品に結びつけて残す
     if (job.type === 'thief' && !hadWaiter && window.ThiefStore) {
       var tb = (job.params && job.params.body) || {};
-      if (tb.pid) window.ThiefStore.update(tb.pid, { candidates: r.items || [], tried: r.tried || [], searchedAt: Date.now(), searchError: '' });
+      if (tb.action === 'research' && tb.handle) window.ThiefStore.setResearch(tb.handle, r.status === 'off' ? { status: 'off', notice: r.notice } : r);
+      else if (tb.pid) window.ThiefStore.update(tb.pid, { candidates: r.items || [], tried: r.tried || [], searchedAt: Date.now(), searchError: '' });
       return;
     }
     if (job.type === 'pitch' && !hadWaiter && window.PitchStore) {

@@ -1,7 +1,7 @@
 // 「社長、これどうすか？」のAPI：画面のボタンで呼ぶ（自動では呼ばない）。
 // action: seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
-import { readTaste, readExclude, scout, seed, verify, featurePlan } from '../lib/pitch.js';
+import { readTaste, readExclude, readRefs, scout, seed, verify, featurePlan } from '../lib/pitch.js';
 import { generateIntros } from '../lib/explore.js';
 import { maskSecrets } from '../lib/ai.js';
 
@@ -26,7 +26,7 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'scout' || action === 'more') {
       const base = action === 'more' ? readProduct(body.base) : null;
       if (base && !base.name) return send(res, 400, { error: '元の商品がありません' });
-      return send(res, 200, await scout({ taste: readTaste(body.taste), exclude: readExclude(body.exclude), base, env, referer, startedAt }));
+      return send(res, 200, await scout({ taste: readTaste(body.taste), refs: readRefs(body.refs), exclude: readExclude(body.exclude), base, env, referer, startedAt }));
     }
     const p = readProduct(body.product);
     if (action === 'verify') {

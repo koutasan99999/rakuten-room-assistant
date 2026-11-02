@@ -125,3 +125,17 @@ test('紹介文：採用した商品の紹介文を1件だけ作る。商品が�
   assert.equal((await call({ action: 'intro', product: {} })).status, 400);
   assert.equal((await call({ action: 'nope', product: { name: 'a' } })).status, 400);
 });
+
+test('参考アカウントの調査を、商品を探す方向の決定に渡す', async () => {
+  let planUser = '';
+  mock = installFetchMock({
+    rakuten: () => json(200, { pageCount: 1, items: [item('レザー キーケース 黒', 1)] }),
+    openai: (body) => {
+      if (body.messages[0].content.includes('社長（オーナー）')) { planUser = body.messages[1].content; return aiReply({ queries: [{ category: '雑貨', keyword: 'レザー キーケース', angle: '服に合う小物' }, { category: 'ガジェット', keyword: 'モバイルバッテリー 黒', angle: '小物' }] }); }
+      return aiReply({ picks: [{ id: 0, category: '雑貨', pitch: PITCH, fit: '合う', caution: '色味は要確認' }] });
+    }
+  });
+  const r = await call({ action: 'scout', refs: [{ handle: 'kose_wear', themes: ['キレイめカジュアル'], angles: ['キレイめ服に合う持ち物'] }, { handle: '', themes: ['x'] }] });
+  assert.equal(r.status, 200);
+  assert.ok(planUser.includes('@kose_wear') && planUser.includes('キレイめ服に合う持ち物'), planUser);
+});

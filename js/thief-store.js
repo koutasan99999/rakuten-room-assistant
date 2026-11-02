@@ -49,6 +49,21 @@
       write(s);
       return s.accounts[id];
     },
+    // 自動調査の状態と結果（status: pending 調査待ち／running 調査中／done 調査済み／insufficient 情報不足／error エラー／off 自動調査がオフ）
+    setResearch: function (handle, r) {
+      var s = read();
+      var a = s.accounts[handle];
+      if (!a) return null;
+      a.research = Object.assign({}, a.research || {}, r, { updatedAt: Date.now() });
+      write(s);
+      return a;
+    },
+    // 投稿企画・商品選びに使う、参考アカウントのまとめ（調査済みのものだけ）
+    insights: function () {
+      var s = read();
+      return Object.keys(s.accounts).map(function (k) { return s.accounts[k]; }).filter(function (a) { return a.research && a.research.status === 'done'; })
+        .slice(0, 8).map(function (a) { return { handle: a.handle, memo: a.memo || '', themes: a.research.themes || [], angles: a.research.angles || [], learn: a.research.learn || [] }; });
+    },
     removeAccount: function (id) {
       var s = read();
       delete s.accounts[id];
