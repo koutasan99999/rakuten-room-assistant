@@ -1,0 +1,38 @@
+【リサーチ部長の検証 2026-11-02：最初の30件】
+【結論】
+1. 検証済み0件、一部確認16件、未検証14件。
+2. Instagramで過去60日以内の投稿を確かめられたアカウントは0件。60日以内の更新が確認できたのは、本人のブログ（2026年10月13日付）の @tezlog の1件だけ（Instagramではない）。
+3. コメント欄（項目4）は30件すべて未確認。そのため、どれも「検証済み」にできない。
+
+【調べ方と制約】
+1. instagram.com は開いていない。bing.com・duckduckgo.com にも接続できず、WebSearch だけを使った。
+2. 項目1の根拠は検索結果のプロフィールの抜粋（保存された時点は不明）。今もあるかは未確認。
+3. 日付の「推定」は、TikTok・Lemon8・Xの投稿URLの番号からの計算（推測）。
+4. 項目5・6はプロフィールの抜粋からの推測。
+
+【一部確認 16件】（項目1は抜粋で確認、項目2はInstagramでは未確認、項目4は未確認）
+1. @tezlog：X・Threads・ブログあり。ブログに2026年10月12日・13日付の記事。実際の製品レビュー（相性高）
+2. @kukulog4：X・YouTube・TikTokあり。デスクツアー動画は2023年11月頃（推定・古い可能性）
+3. @jungoweb：ブログとXあり。GoodsPress 2022年6月号（古い可能性）。フォロワー246人
+4. @gadgetomo0615：YouTube・X・TikTokあり。TikTok動画は2025年12月頃（推定）
+5. @room_penta：goodroomの記事で実際の部屋（記事の日付は未確認）
+6. @wear_taiki：Lemon8に部屋の投稿。2022年頃（推定・古い）
+7. @hoshimon.3582：YouTubeにデニムの経年変化の動画（日付未確認）。フォロワー1,026人
+8. @alc1231：まいどなニュースの記事（日付未確認）
+9. @cafe_book_time：実在の店名と営業情報が載った投稿（2024年・古い可能性）
+10. @campyasan：楽天ROOM「きゃんぷ屋さん」あり（同じ収益源なので観察用の方針に当たる）
+11. @yusuke.outdoor：I♡CAMPの記事（2024年10月号・古い可能性）
+12. @kiokucamera：ブログ・X（2015年から）。投稿5,043件
+13. @gingacamera：フォロワー181人・投稿29件。Instagramには過去の写真を載せているとのこと（効果は小さい）
+14. @chronopeace：Xに「Instagramのフォロワー3万人」の投稿（2025年7月頃・推定）
+15. @kaban.no.nakami.labo：フォロワー466人（効果は薄い）
+16. @easygoing_outdoors：ブログ（2025年6月18日）とYouTube。フォロワー1,753人
+
+【未検証 14件】
+@neokino_yatu（共同投稿の第1候補だが外部の根拠0件）、@kou_gram0419（同じIDのXが「東京の大学生」で30代向けとずれるおそれ）、@artech__gadget、@gadget_get_boy、@ajitolife、@nor__vlog、@uniqlo_yamamoto、@ytk_014、@fashion_160kou、@tokyo_cafe_hopping、@cafe_dan4、@yuji_wasou_de_cafe、@karaokesukicha358、@men_in_the_kichen（検索で見つからない）
+
+【項目4（と項目2）を確認する方法】
+1. 社長がスマホで最新3投稿の日付とコメント欄を見る（30件で約45分）。
+2. ログイン済みChromeでのClaude in Chromeの閲覧（自動操作と見なされるおそれ。このクラウドからは使えない）。
+3. Business Discovery（投稿日・いいね数・コメント数まで。コメント本文は取れない見込み）。
+4. 外部の閲覧サイト（imginnなど）：接続できず、規約上の問題もありうるので使わない。
