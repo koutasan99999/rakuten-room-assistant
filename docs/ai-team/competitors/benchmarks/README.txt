@@ -26,3 +26,9 @@
    (1) 登録日：2026-10-30
    (2) 登録の理由：社長が普段からよく見ていて、眼科医くまが目指す商品紹介の方向性に近い。
    (3) 記録：ken_good_item.txt
+2. こーせ / kose（@kose_wear）https://www.instagram.com/kose_wear/
+   (1) 登録日：2026-11-02（社長の指定：普段見ている）
+   (2) 記録：data/reference-accounts.json（商品ドロボーの画面に表示）
+3. @gift_yasan https://www.instagram.com/gift_yasan/
+   (1) 登録日：2026-11-02（社長の指定：普段見ている）
+   (2) Web検索では情報が見つからなかった（未確認）。記録：data/reference-accounts.json

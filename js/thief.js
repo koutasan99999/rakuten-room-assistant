@@ -1,5 +1,6 @@
-// 「商品ドロボー」の画面：Instagramで見つけた商品紹介アカウントを登録し、紹介されていた商品を楽天で探して、
-// 「社長、これどうすか？」（採用・保留・違うな・ROOM紹介文）につなぐ。
+// 「商品ドロボー」の画面：社長が参考にしているInstagramアカウントをURLだけで登録し、
+// AI社員の調査（data/reference-accounts.json）と、その視聴者に届く投稿の切り口を見せる。
+// 任意で、紹介されていた商品を楽天で探して「社長、これどうすか？」につなぐ・手でコメントするときの一言を作る。
 // Instagramの投稿は取りに行かない。商品は社長の入力か、社長のスクリーンショットに文字で書かれているものだけ（AIの推測で商品を足さない）。
 (function () {
   'use strict';
@@ -20,49 +21,123 @@
   function input(ph, val) { var i = el('input', 'input'); i.type = 'text'; i.placeholder = ph; i.value = val || ''; return i; }
   function cleanName(n) { return String(n || '').replace(/[【\[].*?[】\]]/g, '').trim().slice(0, 70) || n; }
 
+  // AI社員が調べた参考アカウントの記録（data/reference-accounts.json。Claude Code のAI社員が調べて更新する）
+  var research = null;
+  function loadResearch() {
+    if (research) return;
+    research = { accounts: {} };
+    fetch('data/reference-accounts.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (d && d.accounts) { research = d; if (location.hash.indexOf('#thief') === 0) render(); }
+    }, function () {});
+  }
+  function researchOf(a) { return a.handle && research && research.accounts ? research.accounts[a.handle] : null; }
+
   // ---- アカウント一覧 ----
   function renderAccounts() {
-    body.appendChild(el('p', 'editor-note', 'Instagramで見つけた商品紹介アカウントを登録して、紹介されていた商品を楽天で探します。Instagramの投稿はこのアプリからは読み込みません（ログインが必要で、自動で集めることは規約で禁止されているため）。商品は、名前を入力するか、自分で撮ったスクリーンショットに書かれている商品名を読み取って登録します。スクリーンショットは読み取りに使うだけで、保存しません。'));
+    body.appendChild(el('p', 'editor-note', '参考にしているInstagramアカウントのURLを貼るだけで登録できます。AI社員がそのアカウントのテーマ・視聴者・使っている言葉を調べ、「その視聴者に眼科医くまの投稿が届く切り口」を考えて、投稿づくりに使います。Instagramの投稿はこのアプリからは読み込みません（ログインが必要なため）。'));
     var box = el('div', 'card thief-add');
-    box.appendChild(el('p', 'field-label', 'InstagramのID または 投稿URL'));
-    var inp = input('例：@ken_good_item または https://www.instagram.com/p/…');
-    var memo = input('メモ（任意）例：ガジェット紹介');
+    box.appendChild(el('p', 'field-label', '参考アカウントのURL（またはID）'));
+    var inp = input('例：https://www.instagram.com/kose_wear/');
+    var memo = input('メモ（任意）例：服の選び方が参考になる');
     var msg = el('p', 'hint', '');
     box.appendChild(inp); box.appendChild(memo);
     box.appendChild(btn('登録する', 'btn btn-primary', function () {
       var r = T.parseInput(inp.value);
-      if (!r) { msg.textContent = 'IDか投稿URLの形が読み取れませんでした（例：@ken_good_item）'; return; }
-      var a = T.addAccount(r.handle, memo.value.trim());
-      current = a.id;
-      if (r.postUrl) pendingPost = r.postUrl;
+      if (!r) { msg.textContent = 'URLかIDの形が読み取れませんでした（例：https://www.instagram.com/kose_wear/）'; return; }
+      T.addAccount(r.handle, memo.value.trim());
+      K.showToast(r.handle ? '@' + r.handle + ' を登録しました' : '登録しました');
+      inp.value = ''; memo.value = '';
       render();
     }));
     box.appendChild(msg);
     body.appendChild(box);
     var list = T.accounts();
     if (!list.length) { body.appendChild(el('p', 'manage-empty', 'まだ登録したアカウントはありません。')); return; }
+    var pending = list.filter(function (a) { return a.handle && !researchOf(a); });
+    if (pending.length) {
+      var ask = el('div', 'card');
+      ask.appendChild(el('p', 'hint', 'まだAI社員が調べていないアカウントが ' + pending.length + ' 件あります。下のボタンで頼む文をコピーし、Claude（AI社員の会話）に貼ってください。'));
+      ask.appendChild(btn('AI社員に調査を頼む文をコピー', 'btn btn-secondary', function () {
+        var text = '参考アカウントを調べて、商品ドロボーのページに反映してください。\n' + pending.map(function (a) { return 'https://www.instagram.com/' + a.handle + '/' + (a.memo ? '（' + a.memo + '）' : ''); }).join('\n');
+        K.copyText(text).then(function () { K.showToast('コピーしました。Claudeに貼ってください'); }, function () {});
+      }));
+      body.appendChild(ask);
+    }
     list.forEach(function (a) {
+      var r = researchOf(a);
       var card = el('article', 'card thief-account');
       card.appendChild(el('h3', 'cand-name', a.handle ? '@' + a.handle : 'IDなし（投稿URLから登録）'));
-      card.appendChild(el('p', 'hint', (a.memo ? a.memo + '｜' : '') + '登録した商品 ' + a.count + '件'));
+      card.appendChild(el('p', 'hint', [a.memo, r ? 'AI社員の調査あり（' + (r.checkedAt || '') + '）' : 'AI社員の調査待ち', a.count ? '商品 ' + a.count + '件' : ''].filter(Boolean).join('｜')));
       card.addEventListener('click', function () { current = a.id; render(); });
       body.appendChild(card);
     });
   }
-  var pendingPost = '';
 
-  // ---- アカウントの商品一覧 ----
+  function facts(dl, rows) { rows.forEach(function (x) { if (x[1] && (!Array.isArray(x[1]) || x[1].length)) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, Array.isArray(x[1]) ? x[1].join('／') : x[1])); } }); }
+
+  // ---- 参考アカウントの詳細 ----
   function renderAccount(a) {
     var head = el('div', 'pitch-row');
-    head.appendChild(btn('← アカウント一覧', 'status-btn', function () { current = ''; extracted = null; render(); }));
+    head.appendChild(btn('← 参考アカウント一覧', 'status-btn', function () { current = ''; extracted = null; render(); }));
     if (a.url) head.appendChild(linkBtn('Instagramで開く', a.url));
     body.appendChild(head);
     body.appendChild(el('h3', 'curation-title', a.handle ? '@' + a.handle : 'IDなし（投稿URLから登録）'));
     if (a.memo) body.appendChild(el('p', 'hint', a.memo));
 
-    // 商品の登録：入力とスクリーンショット
-    var box = el('div', 'card thief-add');
-    box.appendChild(el('p', 'field-label', '紹介されていた商品を登録'));
+    // 1. AI社員の調査
+    var r = researchOf(a);
+    var rc = el('div', 'card');
+    rc.appendChild(el('p', 'field-label', 'AI社員の調査'));
+    if (!r) rc.appendChild(el('p', 'hint', 'まだ調べていません。一覧の「AI社員に調査を頼む文をコピー」から頼めます。'));
+    else {
+      var dl = el('dl', 'radar-facts');
+      facts(dl, [['調べた日', r.checkedAt], ['どんなアカウントか', r.summary], ['よく扱うテーマ', r.themes], ['使っている言葉・タグ', r.keywords], ['見ていそうな人（推測）', r.audience], ['確認できなかったこと', r.unknown]]);
+      rc.appendChild(dl);
+    }
+    body.appendChild(rc);
+
+    // 2. その視聴者に届く投稿の切り口（まねではなく、同じ人が興味を持つ別の角度）
+    if (r && (r.angles || []).length) {
+      var ac = el('div', 'card');
+      ac.appendChild(el('p', 'field-label', 'この視聴者に届ける、眼科医くまの投稿の切り口'));
+      ac.appendChild(el('p', 'hint', 'Instagramのおすすめは、似た投稿に反応した人に届きやすいとされます。同じ人が興味を持つテーマで、まねではない投稿を作ります（AI社員が投稿づくりに使います）。'));
+      var ul = el('ul', 'angle-list');
+      r.angles.forEach(function (x) { ul.appendChild(el('li', null, x)); });
+      ac.appendChild(ul);
+      body.appendChild(ac);
+    }
+
+    // 3. コメントするとき（任意・手で）：投稿の文章を貼ると、自然なコメント案を2つ作る
+    var cm = el('details', 'card');
+    cm.appendChild(el('summary', null, 'コメントするなら（任意・手で）'));
+    cm.appendChild(el('p', 'hint', 'AIが代わりにコメントすることはできません（公式の仕組みがなく、自動操作は規約で禁止されているため）。コメントしたい投稿があれば、その投稿の文章を貼ると、宣伝にならない自然な一言を2つ作ります。'));
+    var ta = el('textarea', 'input');
+    ta.rows = 3; ta.placeholder = 'コメントしたい投稿の文章（キャプション）を貼る';
+    cm.appendChild(ta);
+    var out = el('div');
+    cm.appendChild(btn('コメント案を作る', 'status-btn', function () {
+      if (ta.value.trim().length < 5) { K.showToast('投稿の文章を貼ってください'); return; }
+      out.textContent = '作っています…';
+      K.postJson('api/thief', { action: 'comment', caption: ta.value.trim(), handle: a.handle }).then(function (res) {
+        out.innerHTML = '';
+        if (res.status !== 200) { out.textContent = (res.data && res.data.error) || '作れませんでした'; return; }
+        (res.data.comments || []).forEach(function (c) {
+          var row = el('div', 'pitch-row');
+          row.appendChild(el('span', 'thief-cand-name', c));
+          row.appendChild(btn('コピー', 'status-btn', function () { K.copyText(c).then(function () { K.showToast('コピーしました'); }, function () {}); }));
+          out.appendChild(row);
+        });
+      });
+    }));
+    cm.appendChild(out);
+    body.appendChild(cm);
+
+    // 4. 紹介されていた商品の登録（任意）
+    var pd = el('details', 'card');
+    var ps = T.products(a.id);
+    pd.open = ps.length > 0 || !!extracted;
+    pd.appendChild(el('summary', null, '紹介されていた商品を楽天で探す（任意）' + (ps.length ? '：' + ps.length + '件' : '')));
+    var box = el('div', 'thief-add');
     var post = input('投稿URL（任意）https://www.instagram.com/p/…', pendingPost);
     pendingPost = '';
     var name = input('商品名（必須）');
@@ -83,17 +158,16 @@
     file.type = 'file'; file.accept = 'image/*';
     file.addEventListener('change', function () { if (file.files[0]) readShot(file.files[0], post.value.trim(), a); });
     box.appendChild(file);
-    box.appendChild(el('p', 'hint', '投稿の画面のスクリーンショットを選ぶと、画像に文字で書かれている商品名だけを読み取ります（写っているだけの商品は読み取りません）。画像は保存しません。'));
+    box.appendChild(el('p', 'hint', '画像に文字で書かれている商品名だけを読み取ります。画像は保存しません。'));
     box.appendChild(msg);
     if (busy.extract) box.appendChild(el('p', 'hint pitch-busy', 'スクリーンショットを読み取っています…'));
-    body.appendChild(box);
-    if (extracted) body.appendChild(extractedBox(a));
-
-    var ps = T.products(a.id);
-    if (!ps.length) { body.appendChild(el('p', 'manage-empty', 'まだ商品は登録されていません。')); return; }
-    ps.forEach(function (p) { body.appendChild(productCard(p, a)); });
+    pd.appendChild(box);
+    if (extracted) pd.appendChild(extractedBox(a));
+    ps.forEach(function (p) { pd.appendChild(productCard(p, a)); });
+    body.appendChild(pd);
     body.appendChild(btn('このアカウントを削除', 'link-btn', function () { if (window.confirm('このアカウントと登録した商品を削除しますか？（社長、これどうすか？に送った商品は残ります）')) { T.removeAccount(a.id); current = ''; render(); } }));
   }
+  var pendingPost = '';
 
   // スクリーンショットを縮小して送る（画像は送ったあと捨てる）
   function readShot(f, postUrl, a) {
@@ -240,6 +314,7 @@
   }
 
   function render() {
+    loadResearch();
     body.innerHTML = '';
     var a = current && T.account(current);
     if (a) renderAccount(a); else renderAccounts();

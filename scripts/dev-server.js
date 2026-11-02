@@ -89,7 +89,9 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
+    openai: (body) => body.messages[0].content.includes('自然なコメントを書く手伝い')
+      ? aiReply({ comments: ['白スニーカーで一気に軽く見えますね', 'このグレー、季節を問わず使えそうです'] })
+      : body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
       ? aiReply({ handle: 'ken_good_item', products: [{ name: 'つぶしやすいスプーンマッシャー K829DGY', brand: 'マーナ', model: 'K829DGY', aliases: ['marna'], evidence: '画像の上に商品名が書かれている' }, { name: 'ワイヤレス HDMI 送信機', brand: '', model: '', aliases: [], evidence: 'キャプションに書かれている' }] })
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
       ? aiReply({ queries: [{ category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
