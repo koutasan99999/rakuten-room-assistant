@@ -13,6 +13,7 @@
     s = s && typeof s === 'object' ? s : {};
     s.accounts = s.accounts && typeof s.accounts === 'object' ? s.accounts : {};
     s.products = s.products && typeof s.products === 'object' ? s.products : {};
+    s.costs = Array.isArray(s.costs) ? s.costs : [];
     return s;
   }
   function write(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; } }
@@ -57,6 +58,20 @@
       a.research = Object.assign({}, a.research || {}, r, { updatedAt: Date.now() });
       write(s);
       return a;
+    },
+    // 自動調査の料金の記録（1回ごと）。月の上限の判定に使い、画面にも出す
+    addCost: function (handle, cost, status) {
+      if (!cost) return;
+      var s = read();
+      s.costs.push({ at: Date.now(), month: new Date().toISOString().slice(0, 7), handle: handle, status: status || '', searches: cost.searches || 0, yen: Number(cost.yen) || 0, yenCap: Number(cost.yenCap) || 0 });
+      s.costs = s.costs.slice(-500);
+      write(s);
+    },
+    monthCost: function () {
+      var m = new Date().toISOString().slice(0, 7);
+      var list = read().costs.filter(function (c) { return c.month === m; });
+      var sum = function (k) { return Math.round(list.reduce(function (n, c) { return n + c[k]; }, 0) * 100) / 100; };
+      return { month: m, runs: list.length, searches: sum('searches'), yen: sum('yen'), yenCap: sum('yenCap') };
     },
     // 投稿企画・商品選びに使う、参考アカウントのまとめ（調査済みのものだけ）
     insights: function () {
