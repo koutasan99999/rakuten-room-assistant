@@ -27,8 +27,8 @@ test('検索語の段階：ブランド＋型番 → 型番だけ → ブラン�
   assert.ok(ks.some((k) => k.startsWith('ノースフェイス')), ks.join(' / '));
   assert.ok(!ks.some((k) => k.includes('送料無料')));
   assert.equal(new Set(ks).size, ks.length);
-  // 型番もブランドも無いときは、主な言葉を前から減らす
-  assert.deepEqual(queryLadder(readTarget({ name: 'つぶしやすい スプーン マッシャー' })).map((s) => s.keyword), ['つぶしやすい スプーン マッシャー', 'つぶしやすい スプーン', 'つぶしやすい']);
+  // 型番もブランドも無いときは、情報の少ない言葉から外す（種類の言葉「マッシャー」は最後まで残す）
+  assert.deepEqual(queryLadder(readTarget({ name: 'つぶしやすい スプーン マッシャー' })).map((s) => s.keyword), ['つぶしやすい スプーン マッシャー', 'つぶしやすい マッシャー', 'マッシャー']);
 });
 
 test('照合：型番が一致したときだけ同一商品。型番違い・付属品・型番なしは同一と断定しない', () => {
@@ -69,8 +69,10 @@ test('楽天で探す：段階的に検索し、同一商品が見つかった�
   });
   const r = await call({ action: 'search', target: { name: 'つぶしやすいスプーンマッシャー', brand: 'マーナ', model: 'K829DGY' } });
   assert.equal(r.status, 200);
-  assert.deepEqual(asked, ['マーナ K829DGY', 'K829DGY']);
-  assert.deepEqual(r.data.items.map((x) => x.match), ['same', 'unknown']); // 同じ型番の2件は、同じ商品として1件にまとめる
+  // 同一商品が見つかったら、類似の候補を足すための検索をあと1回だけして止める
+  assert.deepEqual(asked, ['マーナ K829DGY', 'K829DGY', 'マーナ つぶしやすいスプーンマッシャー']);
+  // 同じ型番でも別ショップの掲載は残す（安いショップを選べるように。まとめすぎると候補が少なくなるため）
+  assert.deepEqual(r.data.items.map((x) => x.match), ['same', 'same', 'unknown', 'unknown']);
   assert.ok(r.data.items[0].note.includes('型番 K829DGY が一致'));
   assert.equal(r.data.tried[0].count, 0);
   assert.equal((await call({ action: 'search', target: { name: 'a' } })).status, 400);
