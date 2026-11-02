@@ -64,3 +64,40 @@ test('投稿：オフのときは投稿しない。オンでも1日の上限を�
   assert.equal(posts[2].params.get('children'), 'c1,c2');
   await assert.rejects(publish(igConfig({ IG_ACCESS_TOKEN: 't', IG_PUBLISH_ENABLED: '1' }), { kind: 'carousel', imageUrls: ['http://a/1.jpg', 'https://a/2.jpg'] }), /https/);
 });
+
+test('予定の投稿：投稿済み（キャプションに marker がある）は飛ばし、次の1件を公開URLで投稿する。定期実行は合言葉が無ければ動かない', async () => {
+  const { publishNext } = await import('../lib/ig-graph.js');
+  let n = 0;
+  const calls = stub([
+    [/GET \/v23\.0\/me\/media$/, () => ({ data: [{ caption: '【PR】\n前の投稿の一行目' }] })],
+    [/content_publishing_limit/, () => ({ data: [{ quota_usage: 0 }] })],
+    [/POST \/v23\.0\/me\/media$/, () => ({ id: `c${++n}` })],
+    [/GET \/v23\.0\/c\d+$/, () => ({ status_code: 'FINISHED' })],
+    [/POST \/v23\.0\/me\/media_publish$/, () => ({ id: 'post9' })]
+  ]);
+  const queue = { items: [
+    { id: 'old', kind: 'carousel', marker: '前の投稿の一行目', images: ['media/a/1.jpg', 'media/a/2.jpg'], caption: 'x' },
+    { id: 'future', kind: 'carousel', marker: 'まだ先', notBefore: '2999-01-01', images: ['media/c/1.jpg', 'media/c/2.jpg'], caption: 'z' },
+    { id: 'new', kind: 'carousel', marker: '新しい投稿', images: ['media/b/1.jpg', 'media/b/2.jpg'], caption: '【PR】\n新しい投稿' }
+  ] };
+  const r = await publishNext(igConfig({ IG_ACCESS_TOKEN: 't', IG_PUBLISH_ENABLED: '1' }), { queue, baseUrl: 'https://app.example' });
+  assert.deepEqual(r, { done: true, id: 'new', mediaId: 'post9' });
+  assert.equal(calls.find((c) => c.method === 'POST' && c.params.get('image_url')).params.get('image_url'), 'https://app.example/media/b/1.jpg');
+  // 定期実行：CRON_SECRET が無い・違うときは何もしない
+  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+  await ig({ method: 'GET', headers: { authorization: 'Bearer x' } }, res, { IG_ACCESS_TOKEN: 't' });
+  assert.equal(res.statusCode, 401);
+});
+
+test('本番に置く投稿の予定と素材がそろっている（画像はJPEG・2〜10枚、PR表記、ハッシュタグ5個まで）', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const q = JSON.parse(readFileSync(new URL('../data/post-queue.json', import.meta.url), 'utf8'));
+  for (const it of q.items) {
+    assert.ok(it.images.length >= 2 && it.images.length <= 10);
+    for (const u of it.images) { assert.match(u, /\.jpg$/); assert.ok(existsSync(new URL(`../${u}`, import.meta.url)), u); }
+    assert.ok(it.caption.startsWith('【PR】'));
+    assert.ok(it.caption.includes(it.marker));
+    assert.ok((it.caption.match(/#\S+/g) || []).length <= 5);
+  }
+  assert.ok(!readFileSync(new URL('../.vercelignore', import.meta.url), 'utf8').includes('media'));
+});

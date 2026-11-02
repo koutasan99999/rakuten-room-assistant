@@ -130,6 +130,7 @@ test('参考アカウントの自動調査：止めてあるときは動かな�
   const { researchAccount, _resetServerLedger } = await import('../lib/reference-research.js');
   _resetServerLedger();
   const callEnv = async (body, env) => { const req = { method: 'POST', headers: { host: 'x.app' }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await thiefApi(req, res, env); return JSON.parse(res.body); };
+  assert.equal((await callEnv({ action: 'research', handle: 'kose_wear' }, ENV)).status, 'off'); // 既定で停止
   assert.equal((await callEnv({ action: 'research', handle: 'kose_wear' }, { ...ENV, REFERENCE_RESEARCH: 'off' })).status, 'off');
   const reply = (text, urls, searches = 2) => async (url, opts) => {
     const body = JSON.parse(opts.body);
@@ -163,7 +164,7 @@ test('月の上限：今月の上限管理用の料金に1回分の最大額を�
   mock = installFetchMock({ openai: () => { called++; return aiReply({}); } });
   const req = { method: 'POST', headers: { host: 'x.app' }, body: { action: 'research', handle: 'kose_wear', budget: { month: new Date().toISOString().slice(0, 7), spentYenCap: 495 } } };
   const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
-  await thiefApi(req, res, ENV);
+  await thiefApi(req, res, { ...ENV, REFERENCE_RESEARCH: 'on' });
   const d = JSON.parse(res.body);
   assert.equal(d.status, 'budget');
   assert.equal(called, 0);
@@ -175,8 +176,10 @@ test('調査の失敗は200で返す（検索ジョブの自動のやり直し�
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 500 });
   try {
-    const r = await call({ action: 'research', handle: 'kose_wear' });
-    assert.equal(r.status, 200);
-    assert.equal(r.data.status, 'error');
+    const req = { method: 'POST', headers: { host: 'x.app' }, body: { action: 'research', handle: 'kose_wear' } };
+    const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+    await thiefApi(req, res, { ...ENV, REFERENCE_RESEARCH: 'on' });
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).status, 'error');
   } finally { globalThis.fetch = original; }
 });
