@@ -2,11 +2,31 @@
 // トークンが設定されていなければ「未設定」と返すだけ。他人へのフォロー・コメントの機能はない。
 import { send, readBody } from '../lib/http.js';
 import crypto from 'node:crypto';
-import { igConfig, accountSummary, accountInsights, recentMedia, refreshToken, publish } from '../lib/ig-graph.js';
+import { igConfig, accountSummary, accountInsights, recentMedia, refreshToken, publish, publishNext } from '../lib/ig-graph.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
+function baseUrlOf(req, env) {
+  return String(env.PUBLIC_BASE_URL || `https://${req.headers['x-forwarded-host'] || req.headers.host || ''}`).replace(/\/$/, '');
+}
+
+// 予定の投稿を1件出す（Vercelの定期実行と、アプリの両方から使う）
+async function runPublishNext(req, env, cfg) {
+  const base = baseUrlOf(req, env);
+  const q = await fetch(`${base}/data/post-queue.json`, { signal: AbortSignal.timeout(10000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (!q) return { done: false, reason: '投稿の予定（data/post-queue.json）を読めませんでした' };
+  return publishNext(cfg, { queue: q, baseUrl: base });
+}
+
 export default async function handler(req, res, env = process.env) {
+  // Vercelの定期実行（1日1回）：CRON_SECRET が一致したときだけ、予定の投稿を1件出す
+  if (req.method === 'GET') {
+    const auth = String(req.headers.authorization || '');
+    if (!env.CRON_SECRET || !same(auth, `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
+    const cfg = igConfig(env);
+    if (!cfg.ready || !cfg.publishEnabled) return send(res, 200, { done: false, reason: '投稿の設定（IG_ACCESS_TOKEN・IG_PUBLISH_ENABLED=1）がまだです' });
+    try { const r = await runPublishNext(req, env, cfg); console.log('[ig cron]', JSON.stringify(r)); return send(res, 200, r); } catch (e) { console.error('[ig cron] error', e.message); return send(res, 502, { done: false, error: e.message }); }
+  }
   if (req.method !== 'POST') return send(res, 405, { error: 'POSTで呼び出してください' });
   if (env.APP_PASSCODE && !same(req.headers['x-app-passcode'] || '', env.APP_PASSCODE)) return send(res, 401, { error: '合言葉が違います', needPasscode: true });
   const cfg = igConfig(env);
@@ -25,6 +45,7 @@ export default async function handler(req, res, env = process.env) {
       const changed = !!r.access_token && r.access_token !== cfg.token;
       return send(res, 200, { ready: true, refreshed: true, expiresIn: r.expires_in, changed, notice: changed ? '新しいトークンが発行されました。Vercelの環境変数 IG_ACCESS_TOKEN の入れ直しが必要です。' : '期限を延ばしました（入れ直しは不要）。' });
     }
+    if (action === 'publish-next') return send(res, 200, { ready: true, ...(await runPublishNext(req, env, cfg)) });
     if (action === 'publish') {
       const kind = String(body.kind || '');
       const caption = String(body.caption || '').slice(0, 2200);

@@ -73,8 +73,8 @@
       var r = T.parseInput(inp.value);
       if (!r) { msg.textContent = 'URLかIDの形が読み取れませんでした（例：https://www.instagram.com/kose_wear/）'; return; }
       var added = T.addAccount(r.handle, memo.value.trim());
-      K.showToast(r.handle ? '@' + r.handle + ' を登録しました。調査を始めます' : '登録しました');
-      if (!researchOf(added)) startResearch(added);
+      K.showToast(r.handle ? '@' + r.handle + ' を登録しました' : '登録しました');
+      // 有料の自動調査は停止中（2026-11-02 社長の指示）。登録したURLは保存だけする
       inp.value = ''; memo.value = '';
       render();
     }));
