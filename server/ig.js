@@ -19,7 +19,12 @@ export default async function handler(req, res, env = process.env) {
       const days = Math.max(1, Math.min(30, Number(body.days) || 7));
       return send(res, 200, { ready: true, account: await accountSummary(cfg), insights: await accountInsights(cfg, { days }), media: await recentMedia(cfg, { limit: 10 }) });
     }
-    if (action === 'refresh') { const r = await refreshToken(cfg); return send(res, 200, { ready: true, refreshed: true, expiresIn: r.expires_in, notice: '新しいトークンを環境変数に入れ直してください（Vercelの設定）。' }); }
+    if (action === 'refresh') {
+      // 長期トークンの期限を延ばす。返ってきたトークンが今と同じなら、入れ直しは要らない（違うときだけ知らせる。トークン自体は返さない）
+      const r = await refreshToken(cfg);
+      const changed = !!r.access_token && r.access_token !== cfg.token;
+      return send(res, 200, { ready: true, refreshed: true, expiresIn: r.expires_in, changed, notice: changed ? '新しいトークンが発行されました。Vercelの環境変数 IG_ACCESS_TOKEN の入れ直しが必要です。' : '期限を延ばしました（入れ直しは不要）。' });
+    }
     if (action === 'publish') {
       const kind = String(body.kind || '');
       const caption = String(body.caption || '').slice(0, 2200);
