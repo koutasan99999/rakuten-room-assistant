@@ -149,7 +149,7 @@ test('投稿セット：企画を決め、枠ごとに楽天で探して3〜6点
     },
     openai: (body) => {
       const sys = body.messages[0].content;
-      if (sys.includes('1つの投稿で3〜6商品を紹介する企画')) { planUser = body.messages[1].content; return aiReply({ pattern: 'gift', title: '5,000円で贈る大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物需要', appeal: '自分では買わないけれど嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '予備', keyword: 'なにか' }] }); }
+      if (sys.includes('1つの投稿で3〜8商品を紹介する企画')) { planUser = body.messages[1].content; return aiReply({ pattern: 'gift', title: '5,000円で贈る大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物需要', appeal: '自分では買わないけれど嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '予備', keyword: 'なにか' }] }); }
       return aiReply({ picks: [{ slot: 0, id: 0, feature: '本革のキーケース', why: '毎日使う小物' }, { slot: 1, id: 1, feature: '香り付き', why: '気軽に贈れる' }, { slot: 2, id: 0, feature: '真鍮の軸', why: '机に置いて絵になる' }, { slot: 3, id: 0, feature: '愛用しています', why: 'x' }] });
     }
   });
@@ -196,7 +196,7 @@ test('投稿セット：社長が採用した商品を企画に渡し、選ば�
     },
     openai: (body) => {
       const sys = body.messages[0].content;
-      if (sys.includes('1つの投稿で3〜6商品を紹介する企画')) {
+      if (sys.includes('1つの投稿で3〜8商品を紹介する企画')) {
         planUser = body.messages[1].content;
         return aiReply({ pattern: 'gift', title: '贈る小物', target: '30代男性', reason: 'r', appeal: 'a', adopted: [{ id: 0, role: '本命', feature: '本革', why: '社長の採用' }, { id: 1, role: '相棒', feature: '真鍮', why: '同じ机で' }], slots: [{ role: '手頃', keyword: 'ハンドクリーム' }] });
       }

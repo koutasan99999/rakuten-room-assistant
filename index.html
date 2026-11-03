@@ -7,35 +7,41 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-11-03.2">
+  <meta name="app-version" content="2026-11-03.3">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-11-03.2">
+  <link rel="stylesheet" href="css/style.css?v=2026-11-03.3">
 </head>
 <body>
   <header class="header">
     <h1>ROOM商品発掘</h1>
     <p class="lead">楽天市場から投稿向きの商品を探して、紹介文まで用意します。</p>
     <nav class="view-tabs" aria-label="画面の切り替え">
-      <a href="#discover" class="view-tab" data-view="discover">商品発掘</a>
-      <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+      <!-- 2026-11-03 整理：メインは「社長、これどうすか？」（プレゼン・広げる・採用済み・投稿セット）。検索は補助。
+           商品ドロボー（#thief）・バイヤー発掘便（#buyer）・ふるさと納税（#furusato）は、画面とデータを残してタブだけ隠す（検索の画面の下から開ける） -->
       <a href="#pitch" class="view-tab" data-view="pitch">社長、これどうすか？</a>
-      <!-- 商品ドロボーは開発を凍結（2026-11-02）。画面とデータは残し、タブだけ隠す（#thief で開ける） -->
-      <a href="#buyer" class="view-tab" data-view="buyer">バイヤー発掘便</a>
-      <a href="#furusato" class="view-tab" data-view="furusato">ふるさと納税</a>
+      <a href="#discover" class="view-tab" data-view="discover">検索（補助）</a>
+      <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
       <a href="#jobs" class="view-tab" data-view="jobs">検索ジョブ <span id="jobs-count" class="tab-count"></span></a>
     </nav>
   </header>
 
   <main class="container" id="view-discover">
     <!-- 探し方は3つ。1つずつ開いて、画面が長くなりすぎないようにする -->
+    <p class="editor-note">補助の検索です。ふだんは「社長、これどうすか？」で、AI社員のプレゼンと「この商品から広げる」を使ってください。</p>
     <nav class="mode-tabs" aria-label="探し方">
-      <button type="button" class="mode-tab" data-mode="idea">企画から探す</button>
-      <button type="button" class="mode-tab" data-mode="cond">条件を指定して探す</button>
-      <button type="button" class="mode-tab" data-mode="random">完全ランダム</button>
-      <button type="button" class="mode-tab" data-mode="radar">新作・予約を探す</button>
-      <button type="button" class="mode-tab" data-mode="trend">トレンド発掘</button>
-      <button type="button" class="mode-tab" data-mode="coord">コーデを作る</button>
+      <button type="button" class="mode-tab" data-mode="cond">キーワード・条件で探す</button>
+      <button type="button" class="mode-tab" data-mode="radar">新商品・予約</button>
+      <button type="button" class="mode-tab" data-mode="trend">トレンド</button>
     </nav>
+    <!-- 企画から探す・完全ランダム・コーデを作るは「社長、これどうすか？」の「広げる」と投稿セットの自動制作に統合。入口だけ畳んで残す -->
+    <details class="detail-box old-menu">
+      <summary>前の探し方（企画から・ランダム・コーデ）</summary>
+      <nav class="mode-tabs" aria-label="前の探し方">
+        <button type="button" class="mode-tab" data-mode="idea">企画から探す</button>
+        <button type="button" class="mode-tab" data-mode="random">完全ランダム</button>
+        <button type="button" class="mode-tab" data-mode="coord">コーデを作る</button>
+      </nav>
+    </details>
 
     <!-- 編集中の企画（下書き）。ページを移っても、あとから開き直せる -->
     <div id="plan-drafts" class="plan-drafts" hidden></div>
@@ -92,7 +98,8 @@
           <option value="other">その他</option>
         </select>
       </label>
-      <div class="field">
+      <!-- 選び方の型（まずコレ・本命と代替・プレゼントなど）は、AIが企画を考えるときの編集パターンとして内部に残す。入口は隠す（おまかせ） -->
+      <div class="field" hidden>
         <span class="field-label">選び方の型</span>
         <div id="type-choices" class="type-choices" role="radiogroup" aria-label="選び方の型"></div>
       </div>
@@ -262,6 +269,10 @@
       <button type="button" id="radar-more" class="btn btn-secondary" hidden>もっと見る</button>
     </section>
 
+    <nav class="quick-links" aria-label="その他の機能">
+      <a class="quick" href="#buyer">バイヤー発掘便</a>
+      <a class="quick" href="#furusato">ふるさと納税</a>
+    </nav>
     <nav class="quick-links" aria-label="投稿管理">
       <a class="quick" href="#manage:room_candidate">ROOM候補</a>
       <a class="quick" href="#manage:ig_waiting">Instagram投稿待ち</a>
@@ -468,30 +479,32 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-11-03.2"></script>
-  <script src="js/history.js?v=2026-11-03.2"></script>
-  <script src="js/search-jobs.js?v=2026-11-03.2"></script>
-  <script src="js/buyer-store.js?v=2026-11-03.2"></script>
-  <script src="js/pitch-store.js?v=2026-11-03.2"></script>
-  <script src="js/thief-store.js?v=2026-11-03.2"></script>
-  <script src="js/hidden-products.js?v=2026-11-03.2"></script>
-  <script src="js/radar-store.js?v=2026-11-03.2"></script>
-  <script src="js/brand-follow.js?v=2026-11-03.2"></script>
-  <script src="js/zip.js?v=2026-11-03.2"></script>
-  <script src="js/carousel-layout.js?v=2026-11-03.2"></script>
-  <script src="js/ig-render.js?v=2026-11-03.2"></script>
-  <script src="js/ig-covers.js?v=2026-11-03.2"></script>
-  <script src="js/ig-coord.js?v=2026-11-03.2"></script>
-  <script src="js/ig-multi.js?v=2026-11-03.2"></script>
-  <script src="js/reel-story.js?v=2026-11-03.2"></script>
-  <script src="js/coord-store.js?v=2026-11-03.2"></script>
-  <script src="js/coord-collage.js?v=2026-11-03.2"></script>
-  <script src="js/image-store.js?v=2026-11-03.2"></script>
-  <script src="js/fold.js?v=2026-11-03.2"></script>
-  <script src="js/app.js?v=2026-11-03.2"></script>
-  <script src="js/delivery-store.js?v=2026-11-03.2"></script>
-  <script src="js/delivery.js?v=2026-11-03.2"></script>
-  <script src="js/pitch.js?v=2026-11-03.2"></script>
-  <script src="js/thief.js?v=2026-11-03.2"></script>
+  <script src="js/store.js?v=2026-11-03.3"></script>
+  <script src="js/history.js?v=2026-11-03.3"></script>
+  <script src="js/search-jobs.js?v=2026-11-03.3"></script>
+  <script src="js/buyer-store.js?v=2026-11-03.3"></script>
+  <script src="js/pitch-store.js?v=2026-11-03.3"></script>
+  <script src="js/thief-store.js?v=2026-11-03.3"></script>
+  <script src="js/hidden-products.js?v=2026-11-03.3"></script>
+  <script src="js/radar-store.js?v=2026-11-03.3"></script>
+  <script src="js/brand-follow.js?v=2026-11-03.3"></script>
+  <script src="js/zip.js?v=2026-11-03.3"></script>
+  <script src="js/carousel-layout.js?v=2026-11-03.3"></script>
+  <script src="js/ig-render.js?v=2026-11-03.3"></script>
+  <script src="js/ig-covers.js?v=2026-11-03.3"></script>
+  <script src="js/ig-coord.js?v=2026-11-03.3"></script>
+  <script src="js/ig-multi.js?v=2026-11-03.3"></script>
+  <script src="js/reel-story.js?v=2026-11-03.3"></script>
+  <script src="js/coord-store.js?v=2026-11-03.3"></script>
+  <script src="js/coord-collage.js?v=2026-11-03.3"></script>
+  <script src="js/image-store.js?v=2026-11-03.3"></script>
+  <script src="js/fold.js?v=2026-11-03.3"></script>
+  <script src="js/app.js?v=2026-11-03.3"></script>
+  <script src="js/delivery-store.js?v=2026-11-03.3"></script>
+  <script src="js/delivery.js?v=2026-11-03.3"></script>
+  <script src="js/explore-store.js?v=2026-11-03.3"></script>
+  <script src="js/explore.js?v=2026-11-03.3"></script>
+  <script src="js/pitch.js?v=2026-11-03.3"></script>
+  <script src="js/thief.js?v=2026-11-03.3"></script>
 </body>
 </html>

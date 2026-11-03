@@ -1,4 +1,4 @@
-// 「社長、これどうすか？」の納品画面：AI社員が自分で企画し、商品（3〜6点）・Instagram用の画像・キャプション・購入先までそろえた
+// 「社長、これどうすか？」の納品画面：AI社員が自分で企画し、商品（3〜8点）・Instagram用の画像・キャプション・購入先までそろえた
 // 投稿セットを並べる。社長は「採用」「差し替え・修正」「却下」を選ぶだけ。確認待ちが3件より少なければ、AI社員が自動で次を作る。
 // 画像は既存の仕組み（api/instagram で表紙・商品カードの文字とキャプション、IgRender で描画）で、開いたときに描き直す。
 (function () {
@@ -36,7 +36,7 @@
   }
   function adoptedUnused() { return adoptedAll().filter(function (p) { return !usageOf(p).length; }); }
   function slimAdopted(list) {
-    return list.slice(0, 20).map(function (p) { return { key: p.key, code: p.code, name: p.name, price: p.price, postage: p.postage, url: p.url, image: p.image, shop: p.shop, brand: p.brand, category: p.category, caption: String(p.caption || '').slice(0, 300), pitch: String(p.pitch || '').slice(0, 200), fit: p.fit, reason: p.reason, fetchedAt: p.fetchedAt, decidedAt: p.decidedAt }; });
+    return list.slice(0, 20).map(function (p) { return { key: p.key, code: p.code, name: p.name, price: p.price, postage: p.postage, url: p.url, image: p.image, shop: p.shop, brand: p.brand, category: p.category, caption: String(p.caption || '').slice(0, 300), pitch: String(p.pitch || '').slice(0, 200), fit: p.fit, reason: p.reason, fetchedAt: p.fetchedAt, decidedAt: p.decidedAt, path: p.path || '', relation: p.relation || '' }; });
   }
   // 掲載商品が、社長の採用か、AIの新規提案か（前の版で作ったセットは、採用リストの商品番号で判断する）
   function isAdopted(it) {
@@ -60,6 +60,8 @@
     if (!set.copy) list.push('表紙・キャプションの文章をまだ作れていない');
     var cap = captionOf(set);
     if (set.copy && !/アフィリエイト|PR/.test(cap)) list.push('キャプションに広告・アフィリエイトの表示がない');
+    // 楽天の商品画像をInstagramの画像に使ってよいかは、まだ確認できていない（無断の転用にならないよう、投稿前に確認が必要）
+    if (!set.imageRightsOk) list.push('画像の権利：楽天の商品画像を使っています。Instagramでの利用条件が未確認のため、このまま投稿しないでください');
     return list;
   }
 
@@ -109,7 +111,7 @@
   function approved() { try { return localStorage.getItem(OK_KEY) === '1'; } catch (e) { return false; } }
   function ensureStock() {
     // 社長が投稿セットを開いている間・差し替えの途中は、新しい制作を始めない（差し替えを先に進めるため）
-    if (busy || fails >= 2 || !approved() || openId || Object.keys(altBusy).length || location.hash.indexOf('#pitch') !== 0) return;
+    if (busy || fails >= 2 || !approved() || openId || !container || !container.isConnected || Object.keys(altBusy).length || location.hash.indexOf('#pitch') !== 0) return;
     if (D.pendingCount() < STOCK) produce();
   }
 
@@ -128,7 +130,7 @@
         topic: copy.topic || set.title, category: set.patternLabel || '', subtitle: set.target || '',
         // 表紙の大見出しは、企画のタイトル（直したものがあればそれ）にそろえる（表紙と中身がずれないように）
         cover: style === 'serious_think' ? null : (function () { var t = set.titleEdit || set.title; return { style: style, title: t, accent: cv.accent && t.indexOf(cv.accent) !== -1 ? cv.accent : '', sub: set.target || cv.sub || '', badge: cv.badge || '', price: cv.price || '' }; })(),
-        bear: r[1], ctaMessage: ctaOf(set),
+        bear: r[1], ctaMessage: ctaOf(set), coverHero: true,
         items: set.items.map(function (it, i) { var c = ci[i] || {}; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: c.memo || it.feature, price: it.price, role: it.role, brand: it.brand }; })
       };
       var slides = window.IgRender.renderPost(post);
@@ -312,6 +314,7 @@
     }
     box.appendChild(el('p', 'hint', '投稿セットを作るとき、まだ投稿にしていない採用商品を優先して使います（企画として自然に並ぶものだけ。合わないものは無理に入れません）。'));
     box.appendChild(btn(adoptedOpen ? '一覧を閉じる' : '一覧を見る', 'status-btn', function () { adoptedOpen = !adoptedOpen; paint(); }));
+    box.appendChild(btn('採用済みの画面で見る', 'link-btn', function () { if (window.PitchView && window.PitchView.show) window.PitchView.show('adopted'); }));
     if (adoptedOpen) {
       list.forEach(function (p) {
         var row = el('div', 'delivery-item');
@@ -381,6 +384,7 @@
       if (it.code) acts.appendChild(linkBtn('ROOMで投稿画面を開く', K.roomUrl(it.code)));
       acts.appendChild(btn(it.room === 'registered' ? 'ROOM登録を取り消す' : 'ROOMに登録した', 'status-btn', function () { var cur = D.get(set.id); cur.items[i].room = cur.items[i].room === 'registered' ? 'unregistered' : 'registered'; D.save(cur); paint(); }));
       var alt = set.alt && set.alt.index === i ? set.alt : null;
+      if (window.ExploreView) acts.appendChild(btn('この商品から広げる', 'status-btn', function () { window.ExploreView.open(it, 'set'); }));
       if (!alt) acts.appendChild(btn('この商品を差し替える', 'status-btn', function () { D.save(Object.assign({}, D.get(set.id), { alt: { index: i, code: it.code || '', state: 'asking', reason: '' } })); paint(); }));
       row.appendChild(acts);
       if (alt) row.appendChild(altPanel(set, i, alt));
@@ -430,7 +434,8 @@
     var row1 = el('div', 'pitch-actions');
     row1.appendChild(btn(set.status === 'adopted' ? '採用済み' : '採用する', 'btn btn-primary', function () { D.decide(set.id, 'adopted', ''); K.showToast('採用しました。画像を保存して投稿できます'); paint(); }));
     row1.appendChild(btn('デザインを変える', 'status-btn', function () {
-      var styles = (window.IgRender.COVER_STYLES || []).map(function (s) { return s.id; }).filter(function (id) { return id !== 'new_release'; });
+      // 商品画像を小さく並べるだけの表紙（初心者セット・用途で選ぶ・買っとけ）は使わない
+      var styles = (window.IgRender.COVER_STYLES || []).map(function (s) { return s.id; }).filter(function (id) { return ['new_release', 'starter_set', 'use_case', 'buy_this_first'].indexOf(id) === -1; });
       var idx = styles.indexOf(styleOf(set));
       set.coverStyle = styles[(idx + 1) % styles.length];
       D.save(set);
@@ -466,14 +471,14 @@
   }
 
   function paint() {
-    if (!container) return;
+    if (!container || !container.isConnected) return;
     container.innerHTML = '';
     var set = openId && D.get(openId);
     // 文章（表紙・キャプション）がまだないセットは、作る（再読み込みで途中になった分・裏で終わった分）
     var noCopy = D.all().filter(function (x) { return x.status !== 'rejected' && !x.copy && !x.copyError && !copyBusy[x.id] && !(x.alt && x.alt.state === 'searching'); })[0];
     if (noCopy && !busy && !Object.keys(copyBusy).length) setTimeout(function () { remakeCopy(noCopy.id); }, 0);
     if (set) { container.appendChild(detail(set)); return; }
-    container.appendChild(el('p', 'editor-note', 'AI社員が企画を考え、実在の商品（3〜6点）・Instagram用の画像・キャプション・購入先までそろえた投稿セットです。開いて「採用」「差し替え・修正」「却下」を選ぶだけで大丈夫です。確認待ちが3件より少なくなると、AI社員が次を作ります。'));
+    container.appendChild(el('p', 'editor-note', 'AI社員が企画を考え、実在の商品（3〜8点）・Instagram用の画像・キャプション・購入先までそろえた投稿セットです。開いて「採用」「差し替え・修正」「却下」を選ぶだけで大丈夫です。確認待ちが3件より少なくなると、AI社員が次を作ります。'));
     container.appendChild(adoptedSection());
     if (!approved()) {
       var ok = el('div', 'card');
@@ -493,9 +498,6 @@
       if (!xs.length) container.appendChild(el('p', 'manage-empty', busy ? '最初の投稿セットを作っています。' : 'まだありません。'));
       xs.forEach(function (x) { container.appendChild(card(x)); });
     });
-    var legacy = el('p', 'hint');
-    legacy.appendChild(btn('（旧）1商品ずつの提案を見る', 'link-btn', function () { if (window.PitchView) window.PitchView.render(true); }));
-    container.appendChild(legacy);
   }
 
   function render(target) {
