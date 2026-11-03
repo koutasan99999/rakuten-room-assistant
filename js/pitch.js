@@ -264,9 +264,14 @@
     list.appendChild(ul);
   }
 
-  function render() {
+  // 2026-11-03 から、この画面は「投稿セットの納品」（js/delivery.js）が主。1商品ずつの提案は（旧）として残す
+  var legacy = false;
+  function render(showLegacy) {
+    if (showLegacy === true) legacy = true;
+    if (!legacy && window.DeliveryView) { window.DeliveryView.render(body); return; }
     body.innerHTML = '';
-    body.appendChild(el('p', 'editor-note', 'バイヤーが商品を1つずつプレゼンします。「いいじゃん！」はROOM登録待ちに入り、紹介文を作ります。判断と理由は次の発掘に反映します。ROOMへの投稿は自動では行いません（社長が投稿画面で登録します）。'));
+    body.appendChild(btn('← 投稿セットの納品に戻る', 'status-btn', function () { legacy = false; render(); }));
+    body.appendChild(el('p', 'editor-note', '（旧）バイヤーが商品を1つずつプレゼンします。「いいじゃん！」はROOM登録待ちに入り、紹介文を作ります。判断と理由は次の発掘に反映します。ROOMへの投稿は自動では行いません（社長が投稿画面で登録します）。'));
     var counts = { adopt: S.list('adopt').length, hold: S.list('hold').length, reject: S.list('reject').length };
     var waiting = S.list('adopt').filter(function (x) { return x.room !== 'done'; }).length;
     var tabs = el('div', 'trend-tabs');

@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-02.4';
+  var APP_VERSION = '2026-11-03.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -6029,7 +6029,7 @@
   //   アプリの便：「発掘開始」で、アプリのサーバー（楽天の検索・ランキング＋AI）がバイヤーと企画担当の2役で探す
   //   Web調査便：Claude Code のサブエージェント（product-buyer → planning-lead）が Web で調べた結果（data/buyer-picks.json）。社長が頼んだときに更新
   Jobs.register('buyer', { tasks: singleTask('api/buyer'), count: function (r) { return (r.picks || []).length; } });
-  Jobs.register('pitch', { tasks: singleTask('api/pitch'), count: function (r) { return (r.items || []).length; } });
+  Jobs.register('pitch', { tasks: singleTask('api/pitch'), count: function (r) { return r.set ? (r.set.items || []).length : (r.items || []).length; } });
   Jobs.register('thief', { tasks: singleTask('api/thief'), count: function (r) { return (r.items || []).length; } });
   JOB_TYPE_JA.buyer = 'バイヤー発掘便';
   var buyerEl = document.getElementById('buyer-body');
@@ -6244,6 +6244,7 @@
   renderBuyer();
 
   // 「社長、これどうすか？」（js/pitch.js）から使う道具
-  window.AppKit = { el: el, postJson: postJson, jobCall: jobCall, showToast: showToast, copyText: copyText, roomUrl: roomUrl, formatPrice: formatPrice, introduced: buyerIntroduced };
+  window.AppKit = { el: el, postJson: postJson, jobCall: jobCall, showToast: showToast, copyText: copyText, roomUrl: roomUrl, formatPrice: formatPrice, introduced: buyerIntroduced,
+    loadProductImage: loadProductImage, canvasToBlob: canvasToBlob, saveFiles: saveFiles, downloadBlob: downloadBlob, bearSrc: BEAR_SRC };
 
 })();

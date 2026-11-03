@@ -89,7 +89,11 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('自然なコメントを書く手伝い')
+    openai: (body) => body.messages[0].content.includes('1つの投稿で3〜6商品を紹介する企画')
+      ? aiReply({ pattern: ['gift', 'hero_alt', 'brand', 'discovery'][Math.floor(Math.random() * 4)], title: '5,000円で贈る、大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物を探す人が増える時期', appeal: '自分では買わないけれど、もらうと嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '香り', keyword: 'ルームフレグランス' }] })
+      : body.messages[0].content.includes('枠ごとに、候補から商品を1つ選びます')
+      ? aiReply({ picks: [0, 1, 2, 3].map((slot) => ({ slot, id: slot % 2, feature: '説明に、素材と使い方の工夫が書かれている', why: '企画の役割に合う' })) })
+      : body.messages[0].content.includes('自然なコメントを書く手伝い')
       ? aiReply({ comments: ['白スニーカーで一気に軽く見えますね', 'このグレー、季節を問わず使えそうです'] })
       : body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
       ? aiReply({ handle: 'ken_good_item', products: [{ name: 'つぶしやすいスプーンマッシャー K829DGY', brand: 'マーナ', model: 'K829DGY', aliases: ['marna'], evidence: '画像の上に商品名が書かれている' }, { name: 'ワイヤレス HDMI 送信機', brand: '', model: '', aliases: [], evidence: 'キャプションに書かれている' }] })
