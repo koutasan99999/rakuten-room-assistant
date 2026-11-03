@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-03.1';
+  var APP_VERSION = '2026-11-03.2';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -5068,6 +5068,8 @@
       else if (tb.pid) window.ThiefStore.update(tb.pid, { candidates: r.items || [], tried: r.tried || [], searchedAt: Date.now(), searchError: '' });
       return;
     }
+    // 投稿セットの制作・差し替えの候補：画面が待っていない間（再読み込み・別の画面）に終わった分も、納品の記録に残す
+    if (job.type === 'pitch' && !hadWaiter && window.DeliveryView && window.DeliveryView.onJobDone(job)) return;
     if (job.type === 'pitch' && !hadWaiter && window.PitchStore) {
       var pb = (job.params && job.params.body) || {};
       if (pb.action === 'seed') window.PitchStore.markSeeded();

@@ -843,3 +843,11 @@ body {
 .delivery-slides figure { margin: 0; flex: 0 0 78%; scroll-snap-align: start; }
 .delivery-slides img { width: 100%; border-radius: 10px; border: 1px solid var(--line); display: block; }
 .delivery-slides figcaption { font-size: 11px; color: var(--muted); padding-top: 4px; }
+/* 社長が採用した商品と、AIの新規提案の区別 */
+.tag.src-adopted { background: #1f6f43; color: #fff; border-color: #1f6f43; }
+.tag.src-ai { background: #eef2f7; color: #3b4a5c; border-color: #cfd8e3; }
+.delivery-thumbwrap { position: relative; flex-shrink: 0; }
+.delivery-thumbwrap.is-adopted .delivery-thumb { border: 2px solid #1f6f43; }
+.thumb-badge { position: absolute; left: 2px; bottom: 2px; background: #1f6f43; color: #fff; font-size: 10px; padding: 1px 4px; border-radius: 4px; }
+.alt-panel { margin-top: 8px; background: #fafaf7; }
+.alt-panel textarea { width: 100%; box-sizing: border-box; }

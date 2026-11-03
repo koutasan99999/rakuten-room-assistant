@@ -1,9 +1,9 @@
 // 「社長、これどうすか？」のAPI：画面のボタンで呼ぶ（自動では呼ばない）。
-// action: set（投稿セットの自動制作）／replace（投稿セットの1商品の差し替え）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
+// action: set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { readTaste, readExclude, readRefs, scout, seed, verify, featurePlan } from '../lib/pitch.js';
 import { generateIntros } from '../lib/explore.js';
-import { buildSet, replaceItem, readHistory, PATTERNS } from '../lib/postset.js';
+import { buildSet, replaceItem, alternatives, readHistory, readAdopted, PATTERNS } from '../lib/postset.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -33,13 +33,18 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'set') {
       const ex = readExclude(body.exclude);
       const recent = (Array.isArray(body.recentPatterns) ? body.recentPatterns : []).map(String).filter((x) => PATTERNS[x]).slice(0, 5);
-      const set = await buildSet({ history: readHistory(body.history), recentPatterns: recent, exclude: new Set([...ex.codes, ...ex.names]), note: String(body.note || '').slice(0, 120), env, referer, startedAt });
+      const set = await buildSet({ history: readHistory(body.history), recentPatterns: recent, adopted: readAdopted(body.adopted), exclude: new Set([...ex.codes, ...ex.names]), note: String(body.note || '').slice(0, 120), env, referer, startedAt });
       return send(res, 200, { set });
     }
     if (action === 'replace') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;
       if (!set || !Array.isArray(set.items)) return send(res, 400, { error: '投稿セットがありません' });
       return send(res, 200, { set: await replaceItem({ set, index: Number(body.index), env, referer, startedAt }) });
+    }
+    if (action === 'alternatives') {
+      const set = body.set && typeof body.set === 'object' ? body.set : null;
+      if (!set || !Array.isArray(set.items)) return send(res, 400, { error: '投稿セットがありません' });
+      return send(res, 200, await alternatives({ set, index: Number(body.index), reason: String(body.reason || '').slice(0, 100), adopted: readAdopted(body.adopted), env, referer, startedAt }));
     }
     const p = readProduct(body.product);
     if (action === 'verify') {
