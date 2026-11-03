@@ -109,6 +109,32 @@
     setTasteNote: function (t) { var s = read(); if (t) { s.tasteNote = String(t).slice(0, 200); write(s); } },
     seeded: function () { return read().seeded; },
     markSeeded: function () { var s = read(); s.seeded = true; write(s); },
+    // 同じ商品の記録（商品番号か、商品名の先頭が同じ）
+    find: function (p) {
+      var it = read().items;
+      var k = keyOf(p);
+      if (it[k]) return it[k];
+      var nk = nameKey(p.name);
+      var ks = Object.keys(it);
+      for (var i = 0; i < ks.length; i++) { var x = it[ks[i]]; if (p.code && x.code === p.code || nameKey(x.name) === nk) return x; }
+      return null;
+    },
+    // どの画面からでも「いいじゃん！（採用）」する。同じ商品は二重に登録しない（前の判断があれば採用に変える）。
+    // extra：どこから見つけたか（origin）・探索経路（path）・起点との関係（relation）
+    adoptFrom: function (p, reason, extra) {
+      var found = api.find(p);
+      if (found && found.status === 'adopt') {
+        if (extra && extra.path && !found.path) api.update(found.key, { path: extra.path, relation: extra.relation || found.relation || '' });
+        return { key: found.key, already: true };
+      }
+      if (!found) {
+        api.addMany([Object.assign({}, p, extra || {})]);
+        found = api.find(p);
+        if (!found) return null;
+      } else if (extra) api.update(found.key, extra);
+      api.decide(found.key, 'adopt', reason || '');
+      return { key: found.key, already: false };
+    },
     // 同じ商品がほかに採用されていないか（ROOM登録前の重複の確認）
     duplicates: function (key) {
       var it = read().items;

@@ -82,6 +82,22 @@ if (process.env.MOCK) {
         const items = names.map((n, i) => ({ itemCode: `collab:${pg}-${i}`, itemName: pg > 1 ? n.replace('スニーカー', `スニーカー ${pg}号`) : n, itemPrice: 12000 + i * 1500, itemUrl: `https://item.rakuten.co.jp/collab/${pg}-${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/c/${i}.jpg?_ex=128x128`], shopName: `セレクト${i % 3}`, itemCaption: '' }));
         return json(200, { items, pageCount: 3 });
       }
+      // 服・靴・小物（「この商品から広げる」の確認用）：ブランド名入りの商品名。価格の上下限・ブランド指定を守る
+      const fk = url.searchParams.get('keyword') || '';
+      if (/Tシャツ|パンツ|スニーカー|バッグ|サングラス|キャップ|時計|ベルト|ソックス/.test(fk) && !url.searchParams.get('itemCode')) {
+        const brands = ['BEAMS', 'UNITED ARROWS', 'URBAN RESEARCH', 'nano universe', 'Champion', 'Hanes', 'CHUMS', 'KANGOL'];
+        const fixed = brands.find((b) => fk.toUpperCase().startsWith(b.toUpperCase()));
+        const lo = Number(url.searchParams.get('minPrice')) || 1500;
+        const hi = Number(url.searchParams.get('maxPrice')) || 16000;
+        const body = fk.replace(fixed || '', '').trim();
+        const variants = ['ヘビーウェイト', 'ポケット付き', 'リラックスフィット', 'オーガニックコットン', '定番', 'ワイド', 'ミニマル', '別注'];
+        const items = Array.from({ length: 12 }, (_, i) => {
+          const b = fixed || brands[i % brands.length];
+          return { itemCode: `fa:${b.replace(/\s/g, '')}-${body.replace(/\s/g, '')}-${i}`, itemName: `${b} ${variants[i % variants.length]} ${body} ${['ホワイト', 'ブラック', 'ネイビー', 'グレー'][i % 4]} メンズ`, itemPrice: Math.round((lo + ((hi - lo) * i) / 11) / 10) * 10,
+            itemUrl: `https://item.rakuten.co.jp/fa${i % 4}/${encodeURIComponent(b + body)}${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/fa/${i}.jpg?_ex=128x128`], shopName: `${b}公式ストア`.replace(/^(Hanes|Champion)/, 'セレクトショップ'), itemCaption: `${variants[i % variants.length]}の${body}。綿100%。`, reviewCount: url.searchParams.get('sort') === '-reviewCount' ? 900 - i * 60 : 20 + i * 7, reviewAverage: 4.2, postageFlag: i % 2 };
+        });
+        return json(200, { items, pageCount: 2 });
+      }
       const min = Number(url.searchParams.get('minPrice')) || 1000;
       // 商品番号で1件引く（「社長、これどうすか？」の登録前の確認）
       if (url.searchParams.get('itemCode')) { const c = url.searchParams.get('itemCode'); return json(200, { items: [{ itemCode: c, itemName: `確認した商品 ${c}`, itemPrice: 3980, itemUrl: `https://item.rakuten.co.jp/${c.replace(':', '/')}/`, mediumImageUrls: [], shopName: 'テストショップ', itemCaption: '説明', postageFlag: 0 }], pageCount: 1 }); }
@@ -89,11 +105,30 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('1つの投稿で3〜6商品を紹介する企画')
+    openai: (body) => body.messages[0].content.includes('1つの投稿で3〜8商品を紹介する企画')
       ? (body.messages[1].content.includes('A0:')
         // 社長が採用した商品があれば、それを中心に（A0・A1を使い、残りの枠をAIが探す）
         ? aiReply({ pattern: 'discovery', title: '社長の採用品から、大人の小物', target: '30代男性の自分用と贈り物', reason: '社長が採用した商品を中心にした企画', appeal: '知らなかった出会いのある小物', adopted: [{ id: 0, role: '本命', feature: '採用時の説明に書かれた特徴', why: '社長が採用した商品' }].concat(body.messages[1].content.includes('A1:') ? [{ id: 1, role: '相棒', feature: '採用時の説明に書かれた特徴', why: '本命と同じ場面で使える' }] : []), slots: [{ role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }] })
         : aiReply({ pattern: ['gift', 'hero_alt', 'brand', 'discovery'][Math.floor(Math.random() * 4)], title: '5,000円で贈る、大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物を探す人が増える時期', appeal: '自分では買わないけれど、もらうと嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '香り', keyword: 'ルームフレグランス' }] }))
+      : body.messages[0].content.includes('探すための検索語を決めます')
+      ? (() => {
+        const u = body.messages[1].content;
+        const mode = (u.match(/探し方: (\w+)/) || [])[1];
+        const Q = { cheaper: [['無地 Tシャツ 厚手', 'Tシャツ']], brand: [['Tシャツ', 'Tシャツ'], ['キャップ', 'キャップ']], same_price: [['BEAMS ポケット Tシャツ', 'Tシャツ']],
+          coord: [['カーゴパンツ メンズ', 'カーゴパンツ'], ['白 スニーカー メンズ', 'スニーカー'], ['ショルダーバッグ メンズ', 'バッグ'], ['キャップ メンズ', 'キャップ']],
+          accessory: [['サングラス メンズ', 'サングラス'], ['レザーベルト', 'ベルト'], ['ソックス 3足', 'ソックス']], omakase: [['腕時計 シンプル', '時計'], ['トートバッグ キャンバス', 'バッグ'], ['ソックス 柄', 'ソックス']] }[mode] || [['Tシャツ', 'Tシャツ']];
+        // スニーカーを起点にしたコーデは、バッグ・時計を探す
+        const q = mode === 'coord' && /スニーカー/.test(u.split('\n')[1] || '') ? [['トートバッグ メンズ', 'バッグ'], ['腕時計 メンズ', '時計'], ['ソックス メンズ', 'ソックス']] : Q;
+        return aiReply({ queries: q.map(([keyword, label]) => ({ keyword, label, why: '起点と同じ場面で使える' })), looks: mode === 'coord' ? [{ name: '休日のきれいめカジュアル', concept: '白と黒でまとめ、太めのボトムで今っぽく', labels: q.slice(0, 2).map((x) => x[1]) }, { name: '街歩きのラフスタイル', concept: '小物で色を足して、軽く見せる', labels: q.slice(2).map((x) => x[1]) }] : [] });
+      })()
+      : body.messages[0].content.includes('起点の商品から広げて見つけた楽天の候補')
+      ? (() => {
+        const ids = [...body.messages[1].content.matchAll(/^ {2}(\d+-\d+): /gm)].map((m) => m[1]);
+        const groups = [...new Set(ids.map((x) => x.split('-')[0]))];
+        const pick = [];
+        for (let j = 0; pick.length < 7 && j < 6; j++) groups.forEach((g) => { const id = `${g}-${j * 2}`; if (ids.includes(id) && pick.length < 7) pick.push(id); });
+        return aiReply({ picks: pick.map((id) => ({ id, relation: '起点と同じ休日の服装に合わせやすい', similar: '無地で落ち着いた色', differ: '生地の厚さとシルエットが違う', feature: '綿100%と説明に書かれている', look: Number(id.split('-')[0]) < 2 ? 0 : 1 })) });
+      })()
       : body.messages[0].content.includes('楽天市場で商品を探す検索語を1つ決めます')
       ? aiReply({ keyword: '本革 キーケース 日本製' })
       : body.messages[0].content.includes('1商品を差し替える候補を選びます')
@@ -105,7 +140,7 @@ if (process.env.MOCK) {
       : body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
       ? aiReply({ handle: 'ken_good_item', products: [{ name: 'つぶしやすいスプーンマッシャー K829DGY', brand: 'マーナ', model: 'K829DGY', aliases: ['marna'], evidence: '画像の上に商品名が書かれている' }, { name: 'ワイヤレス HDMI 送信機', brand: '', model: '', aliases: [], evidence: 'キャプションに書かれている' }] })
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
-      ? aiReply({ queries: [{ category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
+      ? aiReply({ queries: [{ category: '服', keyword: 'BEAMS Tシャツ', angle: '定番ブランドの無地T' }, { category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長に')
       ? aiReply({ picks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
       : body.messages[0].content.includes('特集企画とカルーセル')

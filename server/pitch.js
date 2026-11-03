@@ -1,10 +1,11 @@
 // 「社長、これどうすか？」のAPI：画面のボタンで呼ぶ（自動では呼ばない）。
-// action: set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
+// action: expand（この商品から広げる）／set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { readTaste, readExclude, readRefs, scout, seed, verify, featurePlan } from '../lib/pitch.js';
 import { generateIntros } from '../lib/explore.js';
 import { buildSet, replaceItem, alternatives, readHistory, readAdopted, PATTERNS } from '../lib/postset.js';
-import { maskSecrets } from '../lib/ai.js';
+import { expand, readBase, readPath } from '../lib/expand.js';
+import { maskSecrets, AiError } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
 function readProduct(x) {
@@ -41,6 +42,13 @@ export default async function handler(req, res, env = process.env) {
       if (!set || !Array.isArray(set.items)) return send(res, 400, { error: '投稿セットがありません' });
       return send(res, 200, { set: await replaceItem({ set, index: Number(body.index), env, referer, startedAt }) });
     }
+    // この商品から広げる（関連する実在の商品を探す。探索は何段階でも続けられる）
+    if (action === 'expand') {
+      const base = readBase(body.base);
+      if (!base.name) return send(res, 400, { error: '起点の商品がありません' });
+      const ex = readExclude(body.exclude);
+      return send(res, 200, await expand({ base, mode: str(body.mode, 20), path: readPath(body.path), exclude: new Set([...ex.codes, ...ex.names]), env, referer, startedAt }));
+    }
     if (action === 'alternatives') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;
       if (!set || !Array.isArray(set.items)) return send(res, 400, { error: '投稿セットがありません' });
@@ -59,6 +67,8 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'feature') return send(res, 200, await featurePlan({ product: p, env, deadline: startedAt + 50000 }));
     return send(res, 400, { error: '操作が分かりません' });
   } catch (e) {
+    // 広げる：理由の分かる失敗（ブランドが分からない・条件に合う商品がない）は、やり直さずにそのまま伝える（同じ検索を何度も呼ばない）
+    if (action === 'expand' && e instanceof AiError) return send(res, 422, { error: e.message });
     return send(res, 502, { error: 'うまくいきませんでした。少し時間をおいてもう一度お試しください。', detail: maskSecrets(e.message).slice(0, 200) });
   }
 }

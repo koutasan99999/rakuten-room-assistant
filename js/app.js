@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-03.2';
+  var APP_VERSION = '2026-11-03.3';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -581,7 +581,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : parts[0] === '#thief' ? 'thief' : 'discover';
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : parts[0] === '#thief' ? 'thief' : parts[0] === '#discover' ? 'discover' : 'pitch'; // 何も指定がなければ「社長、これどうすか？」から
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -4115,7 +4115,8 @@
     };
   }
   function readConditions() {
-    return { genre: genreSelect.value, type: selectedType, free: freeText.value.trim(), details: readDetails() };
+    // 選び方の型の入口は隠している（AIにおまかせ）。前に保存した型が残っていても使わない
+    return { genre: genreSelect.value, type: typeChoices.closest('[hidden]') ? 'omakase' : selectedType, free: freeText.value.trim(), details: readDetails() };
   }
   function saveConditions() {
     try { localStorage.setItem(COND_KEY, JSON.stringify(readConditions())); } catch (e) {}
@@ -5057,6 +5058,7 @@
     drawJobsBadge();
     if (location.hash.indexOf('#jobs') === 0) renderJobs();
     var ok = job.status === 'completed' || job.status === 'partial';
+    if (!ok && !hadWaiter && job.type === 'pitch' && job.status !== 'cancelled' && window.ExploreView) window.ExploreView.onJobDone(job);
     if (!hadWaiter && job.status !== 'cancelled') showToast('「' + job.label + '」の検索が' + (ok ? '終わりました' : '失敗しました') + '（検索ジョブで確認できます）');
     if (!ok || !job.result) return;
     var r = job.result;
@@ -5069,6 +5071,7 @@
       return;
     }
     // 投稿セットの制作・差し替えの候補：画面が待っていない間（再読み込み・別の画面）に終わった分も、納品の記録に残す
+    if (job.type === 'pitch' && !hadWaiter && window.ExploreView && window.ExploreView.onJobDone(job)) return;
     if (job.type === 'pitch' && !hadWaiter && window.DeliveryView && window.DeliveryView.onJobDone(job)) return;
     if (job.type === 'pitch' && !hadWaiter && window.PitchStore) {
       var pb = (job.params && job.params.body) || {};
