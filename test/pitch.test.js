@@ -183,3 +183,70 @@ test('投稿セット：品質確認で、3点未満・URLや価格がない・�
   assert.equal(r.data.set.items[0].name, '別のキーケース');
   assert.equal(r.data.set.items[1].name, 'ハンドクリーム');
 });
+
+test('投稿セット：社長が採用した商品を企画に渡し、選ばれた採用商品を楽天で確認し直して「社長が採用」として載せる。足りない分だけAIが探す', async () => {
+  let planUser = '';
+  const looked = [];
+  mock = installFetchMock({
+    rakuten: (url) => {
+      const code = url.searchParams.get('itemCode');
+      if (code) { looked.push(code); return json(200, { items: code === 'gone:1' ? [] : [item('採用したキーケース（最新）', 7, { code })] }); }
+      const kw = url.searchParams.get('keyword');
+      return json(200, { pageCount: 1, items: [item('採用したキーケース', 7, { code: 'ad:1' }), item(`${kw} A`, kw.length), item(`${kw} B`, kw.length + 50)] });
+    },
+    openai: (body) => {
+      const sys = body.messages[0].content;
+      if (sys.includes('1つの投稿で3〜6商品を紹介する企画')) {
+        planUser = body.messages[1].content;
+        return aiReply({ pattern: 'gift', title: '贈る小物', target: '30代男性', reason: 'r', appeal: 'a', adopted: [{ id: 0, role: '本命', feature: '本革', why: '社長の採用' }, { id: 1, role: '相棒', feature: '真鍮', why: '同じ机で' }], slots: [{ role: '手頃', keyword: 'ハンドクリーム' }] });
+      }
+      return aiReply({ picks: [{ slot: 0, id: 0, feature: '香り付き', why: '気軽に贈れる' }] });
+    }
+  });
+  const adopted = [
+    { key: 'ad:1', code: 'ad:1', name: '採用したキーケース', price: 5000, url: 'https://item.rakuten.co.jp/s/7/', image: 'https://img/1.jpg', reason: '革の色がいい', pitch: '本革のキーケース' },
+    { key: 'gone:1', code: 'gone:1', name: '販売終了したペン', price: 3000, url: 'https://item.rakuten.co.jp/s/8/', image: 'https://img/2.jpg' },
+    { key: 'bad', name: 'URLがない商品', url: 'http://example.com' }
+  ];
+  const r = await call({ action: 'set', history: [], recentPatterns: [], adopted });
+  assert.equal(r.status, 200);
+  const s = r.data.set;
+  assert.ok(planUser.includes('A0: 採用したキーケース') && planUser.includes('革の色がいい') && !planUser.includes('URLがない商品'), planUser);
+  assert.deepEqual(looked, ['ad:1', 'gone:1']);
+  assert.equal(s.items[0].source, 'adopted');
+  assert.equal(s.items[0].adoptedKey, 'ad:1');
+  assert.equal(s.items[0].role, '本命');
+  assert.equal(s.items[0].price, 5680); // 楽天で確認し直した価格
+  assert.deepEqual(s.adoptedMissing, ['販売終了したペン']);
+  assert.equal(s.items.length, 2);
+  assert.equal(s.items[1].source, 'ai');
+  assert.ok(!s.items.slice(1).some((x) => x.code === 'ad:1'), 'AIの検索結果から採用商品を外す');
+});
+
+test('差し替えの候補：理由から検索語を決め、まだ投稿にしていない採用商品も候補に入れる。掲載中の商品は出さない', async () => {
+  let asked = '';
+  let altUser = '';
+  mock = installFetchMock({
+    rakuten: (url) => {
+      if (url.searchParams.get('itemCode')) return json(200, { items: [item('採用した名刺入れ', 9, { code: 'ad:9' })] });
+      asked = url.searchParams.get('keyword');
+      return json(200, { items: [item('今のキーケース', 1, { code: 'c:1' }), item('上質なキーケース', 2, { code: 'c:2' }), item('ハンドクリーム', 3, { code: 'c:3' })] });
+    },
+    openai: (body) => {
+      const sys = body.messages[0].content;
+      if (sys.includes('検索語を1つ決めます')) return aiReply({ keyword: '本革 キーケース 日本製' });
+      altUser = body.messages[1].content;
+      return aiReply({ picks: [{ id: 'S0', feature: '型押しの革', why: '社長の採用品' }, { id: 'R0', feature: '本革', why: '高級感' }, { id: 'R0', feature: '重複', why: 'x' }, { id: 'R5', feature: 'ない', why: 'x' }] });
+    }
+  });
+  const set = { title: '贈り物', pattern: 'gift', slots: [{ role: '本命', keyword: 'レザー キーケース' }], items: [
+    { role: '本命', name: '今のキーケース', code: 'c:1' }, { role: '手頃', name: 'ハンドクリーム', code: 'c:3' }, { role: '変わり種', name: '真鍮ペン', code: 'c:4' }] };
+  const adopted = [{ key: 'ad:9', code: 'ad:9', name: '採用した名刺入れ', price: 4000, url: 'https://item.rakuten.co.jp/s/9/', image: 'https://img/9.jpg', reason: '色' }, { key: 'c:3', code: 'c:3', name: 'ハンドクリーム', price: 1, url: 'https://item.rakuten.co.jp/s/3/' }];
+  const r = await call({ action: 'alternatives', set, index: 0, reason: 'もっと高級感', adopted });
+  assert.equal(r.status, 200);
+  assert.equal(asked, '本革 キーケース 日本製');
+  assert.ok(altUser.includes('S0（社長が採用）: 採用した名刺入れ') && !altUser.includes('S1'), altUser);
+  assert.ok(!altUser.includes('今のキーケース /'), '掲載中の商品は候補に出さない');
+  assert.deepEqual(r.data.candidates.map((c) => [c.name, c.source, c.role]), [['採用した名刺入れ', 'adopted', '本命'], ['上質なキーケース', 'ai', '本命']]);
+  assert.equal(r.data.candidates[0].priceNote, '');
+});

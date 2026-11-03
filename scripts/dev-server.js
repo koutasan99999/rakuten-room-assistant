@@ -90,7 +90,14 @@ if (process.env.MOCK) {
       return json(200, { items, pageCount: 3 });
     },
     openai: (body) => body.messages[0].content.includes('1つの投稿で3〜6商品を紹介する企画')
-      ? aiReply({ pattern: ['gift', 'hero_alt', 'brand', 'discovery'][Math.floor(Math.random() * 4)], title: '5,000円で贈る、大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物を探す人が増える時期', appeal: '自分では買わないけれど、もらうと嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '香り', keyword: 'ルームフレグランス' }] })
+      ? (body.messages[1].content.includes('A0:')
+        // 社長が採用した商品があれば、それを中心に（A0・A1を使い、残りの枠をAIが探す）
+        ? aiReply({ pattern: 'discovery', title: '社長の採用品から、大人の小物', target: '30代男性の自分用と贈り物', reason: '社長が採用した商品を中心にした企画', appeal: '知らなかった出会いのある小物', adopted: [{ id: 0, role: '本命', feature: '採用時の説明に書かれた特徴', why: '社長が採用した商品' }].concat(body.messages[1].content.includes('A1:') ? [{ id: 1, role: '相棒', feature: '採用時の説明に書かれた特徴', why: '本命と同じ場面で使える' }] : []), slots: [{ role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }] })
+        : aiReply({ pattern: ['gift', 'hero_alt', 'brand', 'discovery'][Math.floor(Math.random() * 4)], title: '5,000円で贈る、大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物を探す人が増える時期', appeal: '自分では買わないけれど、もらうと嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '香り', keyword: 'ルームフレグランス' }] }))
+      : body.messages[0].content.includes('楽天市場で商品を探す検索語を1つ決めます')
+      ? aiReply({ keyword: '本革 キーケース 日本製' })
+      : body.messages[0].content.includes('1商品を差し替える候補を選びます')
+      ? aiReply({ picks: (body.messages[1].content.includes('S0（社長が採用）') ? [{ id: 'S0', feature: '採用時の説明に書かれた特徴', why: '社長が採用した商品で、企画に合う' }] : []).concat([0, 1, 2].map((i) => ({ id: 'R' + i, feature: '説明に、素材と作りが書かれている', why: '同じ役割で、修正理由に合う' }))) })
       : body.messages[0].content.includes('枠ごとに、候補から商品を1つ選びます')
       ? aiReply({ picks: [0, 1, 2, 3].map((slot) => ({ slot, id: slot % 2, feature: '説明に、素材と使い方の工夫が書かれている', why: '企画の役割に合う' })) })
       : body.messages[0].content.includes('自然なコメントを書く手伝い')
@@ -169,7 +176,8 @@ if (process.env.MOCK) {
         ...(body.messages[0].content.includes('表紙）に載せる文字') ? { cover: { style: 'value_pick', title: '防災グッズ、\nまずコレを買え', accent: 'コレ', sub: '最初の1セットはここから' } } : {}),
         ...(body.messages[0].content.includes('caption') ? { caption: '5,000円のプレゼントって、安っぽく見えないか一番気になる予算だと思う。\n\n誕生日が続く時期なので、一度ちゃんと整理しておきたかった。\n\n今回は「渡して不自然じゃないか」「自分では買わないけど嬉しいか」で選びました。\n\n迷ったら1枚目、少し奮発するなら3枚目、という並びです。\n\n買う前に見返せるよう、保存しておいてください。', hashtags: ['#30代男性プレゼント', '#誕生日プレゼント', '#プレゼント選び'] } : {}),
         ...(body.messages[0].content.includes('2枚目') ? { summary: { title: '出産祝い、結局むずかしい。', points: ['ちゃんとして見える', '実際に使える', 'もらって困りにくい'], verdict: '今回はこの3つで選びました。' } } : {}),
-        items: Array.from({ length: 20 }, (_, id) => ({ id, slug: `item${id}`, shortName: ['今治ガーゼタオル', 'スタイ3枚セット', 'ベビーブランケット', 'ストローマグ', '木のおもちゃ', 'おむつケーキ'][id % 6] + (id >= 6 ? ` ${id + 1}` : ''), subline: '名入れ対応、箱入りで渡しやすい', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。', '安く済ませたいなら、このへんがちょうどいい。', '迷ったらまずこれでいい枠。', '高いけど、ブランドごと贈る意味があるやつ。'][id % 6] }))
+        // 投稿セット（企画のタイトルが来る）のときは、渡された商品名から短い名前を作る（商品と文字がずれないかを確かめるため）
+        items: Array.from({ length: 20 }, (_, id) => ({ id, slug: `item${id}`, shortName: (body.messages[1].content.includes('ROOMのコレクション名') && (body.messages[1].content.match(new RegExp(`^${id}: (.+?) /`, 'm')) || [])[1] || '').slice(0, 12) || ['今治ガーゼタオル', 'スタイ3枚セット', 'ベビーブランケット', 'ストローマグ', '木のおもちゃ', 'おむつケーキ'][id % 6] + (id >= 6 ? ` ${id + 1}` : ''), subline: '名入れ対応、箱入りで渡しやすい', memo: ['出産祝いって迷うけど、こういう実用品は外しにくい。', '自分では後回しにしがちだから、もらうと嬉しい。', '見た目も良くて、ちゃんと選んだ感じが出る。', '安く済ませたいなら、このへんがちょうどいい。', '迷ったらまずこれでいい枠。', '高いけど、ブランドごと贈る意味があるやつ。'][id % 6] }))
       })
       : body.messages[0].content.includes('検索プラン')
       ? aiReply({ summary: '30代男性が最初に買う香水。仕事でも使いやすいもの', title: '30代男性の最初の香水', audience: '30代男性', maxPrice: 10000, brand: true, keywords: ['メンズ 香水'], slots: [{ label: '最初の1本', keyword: 'メンズ 香水', maxPrice: 8000 }, { label: '2本目', keyword: 'オードパルファム', maxPrice: 10000 }] })
