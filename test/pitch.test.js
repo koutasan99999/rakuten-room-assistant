@@ -139,3 +139,47 @@ test('参考アカウントの調査を、商品を探す方向の決定に渡�
   assert.equal(r.status, 200);
   assert.ok(planUser.includes('@kose_wear') && planUser.includes('キレイめ服に合う持ち物'), planUser);
 });
+
+test('投稿セット：企画を決め、枠ごとに楽天で探して3〜6点を選ぶ。履歴と直近の企画パターンを渡し、品質確認の結果を付ける', async () => {
+  let planUser = '';
+  mock = installFetchMock({
+    rakuten: (url) => {
+      const kw = url.searchParams.get('keyword');
+      return json(200, { pageCount: 1, items: [item(`${kw} A`, kw.length), item(`${kw} B`, kw.length + 50)] });
+    },
+    openai: (body) => {
+      const sys = body.messages[0].content;
+      if (sys.includes('1つの投稿で3〜6商品を紹介する企画')) { planUser = body.messages[1].content; return aiReply({ pattern: 'gift', title: '5,000円で贈る大人の小物', target: '30代男性への贈り物', reason: '年末の贈り物需要', appeal: '自分では買わないけれど嬉しい', slots: [{ role: '本命', keyword: 'レザー キーケース' }, { role: '手頃', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }, { role: '予備', keyword: 'なにか' }] }); }
+      return aiReply({ picks: [{ slot: 0, id: 0, feature: '本革のキーケース', why: '毎日使う小物' }, { slot: 1, id: 1, feature: '香り付き', why: '気軽に贈れる' }, { slot: 2, id: 0, feature: '真鍮の軸', why: '机に置いて絵になる' }, { slot: 3, id: 0, feature: '愛用しています', why: 'x' }] });
+    }
+  });
+  const r = await call({ action: 'set', history: [{ status: 'reject', title: '洗剤まとめ', pattern: 'first_pick', reason: '日用品はいらない' }], recentPatterns: ['first_pick'] });
+  assert.equal(r.status, 200);
+  const s = r.data.set;
+  assert.ok(planUser.includes('日用品はいらない') && planUser.includes('first_pick'), planUser);
+  assert.equal(s.pattern, 'gift');
+  assert.equal(s.items.length, 3); // 体験の言葉の枠は落とす（数合わせしない）
+  assert.deepEqual(s.items.map((x) => x.role), ['本命', '手頃', '変わり種']);
+  assert.ok(s.items.every((x) => x.price > 0 && x.url.startsWith('https://item.rakuten.co.jp/') && x.image && x.room === 'unregistered' && x.priceCheckedAt));
+  assert.deepEqual(s.issues, []);
+});
+
+test('投稿セット：品質確認で、3点未満・URLや価格がない・重複を見つける。差し替えは同じ枠で、掲載中の商品を除いて選び直す', async () => {
+  const { qualityCheck } = await import('../lib/postset.js');
+  assert.ok(qualityCheck({ title: 'x', items: [{ name: 'a', price: 1, url: 'https://item.rakuten.co.jp/a/', image: 'i' }] }).some((t) => t.includes('3点')));
+  assert.ok(qualityCheck({ title: 'x', items: [1, 2, 3].map((i) => ({ name: 'a', price: 0, url: 'http://x', image: '' })) }).length >= 4);
+  let asked = '';
+  mock = installFetchMock({
+    rakuten: (url) => { asked = url.searchParams.get('keyword'); return json(200, { items: [item('今のキーケース', 1, { code: 'c:1' }), item('別のキーケース', 2, { code: 'c:2' })] }); },
+    openai: () => aiReply({ picks: [{ slot: 0, id: 0, feature: '型押しの革', why: '本命として' }] })
+  });
+  const set = { title: '贈り物', pattern: 'gift', slots: [{ role: '本命', keyword: 'レザー キーケース' }], items: [
+    { role: '本命', name: '今のキーケース', code: 'c:1', price: 5000, url: 'https://item.rakuten.co.jp/s/1/', image: 'i' },
+    { role: '手頃', name: 'ハンドクリーム', code: 'c:3', price: 1500, url: 'https://item.rakuten.co.jp/s/3/', image: 'i' },
+    { role: '変わり種', name: '真鍮ペン', code: 'c:4', price: 3000, url: 'https://item.rakuten.co.jp/s/4/', image: 'i' }] };
+  const r = await call({ action: 'replace', set, index: 0 });
+  assert.equal(r.status, 200);
+  assert.equal(asked, 'レザー キーケース');
+  assert.equal(r.data.set.items[0].name, '別のキーケース');
+  assert.equal(r.data.set.items[1].name, 'ハンドクリーム');
+});
