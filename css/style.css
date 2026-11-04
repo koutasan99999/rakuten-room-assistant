@@ -921,3 +921,13 @@ div.xp-thumb { display: flex; align-items: center; justify-content: center; colo
 .co-vtitle { font-weight: 700; flex: 1 1 60%; }
 .co-tool { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-top: 10px; background: #fff; }
 .co-room textarea { width: 100%; box-sizing: border-box; margin: 8px 0; }
+/* 経営報告（2026-11-05）：推奨・折りたたみ・改善版の比較 */
+.co-rec { color: #1f6f43; font-weight: 700; }
+.co-more > summary { font-size: 12px; color: var(--muted); cursor: pointer; padding: 4px 0; }
+.co-variants { display: grid; gap: 10px; margin-top: 8px; }
+.co-vcard { border: 1px solid var(--line); border-radius: 12px; padding: 8px; background: #fff; }
+.co-recommended { border: 2px solid #1f6f43; }
+.co-vhead { font-size: 12px; font-weight: 700; color: #555; margin: 0 0 2px; }
+.co-vimgs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+.co-vimgs img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }

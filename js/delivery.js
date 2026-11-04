@@ -61,7 +61,7 @@
     var cap = captionOf(set);
     if (set.copy && !/アフィリエイト|PR/.test(cap)) list.push('キャプションに広告・アフィリエイトの表示がない');
     // 楽天の商品画像をInstagramの画像に使ってよいかは、まだ確認できていない（無断の転用にならないよう、投稿前に確認が必要）
-    if (!set.imageRightsOk) list.push('画像の権利：楽天の商品画像を使っています。Instagramでの利用条件が未確認のため、このまま投稿しないでください');
+    if (!set.imageRightsOk && !set.noPhoto) list.push('画像の権利：楽天の商品画像を使っています。Instagramでの利用条件が未確認のため、このまま投稿しないでください');
     return list;
   }
 
@@ -117,9 +117,10 @@
 
   // スライド（Instagram用の完成画像）を描く
   function slidesOf(set) {
-    var key = set.id + ':' + (set.copyAt || '') + ':' + styleOf(set) + ':' + (set.titleEdit || '') + ':' + allRoom(set) + ':' + set.items.map(function (it) { return it.code || it.name; }).join(',');
+    var key = set.id + ':' + (set.copyAt || '') + ':' + styleOf(set) + ':' + (set.titleEdit || '') + ':' + allRoom(set) + ':' + (set.noPhoto ? 'np' : '') + ':' + set.items.map(function (it) { return it.code || it.name; }).join(',');
     if (slideCache[key]) return Promise.resolve(slideCache[key]);
-    var images = Promise.all(set.items.map(function (it) { return K.loadProductImage(it.image); }));
+    // 商品写真を使わない版は、楽天の商品画像を読み込まない
+    var images = set.noPhoto ? Promise.resolve(set.items.map(function () { return null; })) : Promise.all(set.items.map(function (it) { return K.loadProductImage(it.image); }));
     var bear = window.IgRender.loadImage(K.bearSrc).catch(function () { return null; });
     return Promise.all([images, bear]).then(function (r) {
       var copy = set.copy || {};
@@ -130,8 +131,8 @@
         topic: copy.topic || set.title, category: set.patternLabel || '', subtitle: set.target || '',
         // 表紙の大見出しは、企画のタイトル（直したものがあればそれ）にそろえる（表紙と中身がずれないように）
         cover: style === 'serious_think' ? null : (function () { var t = set.titleEdit || set.title; return { style: style, title: t, accent: cv.accent && t.indexOf(cv.accent) !== -1 ? cv.accent : '', sub: set.target || cv.sub || '', badge: cv.badge || '', price: cv.price || '' }; })(),
-        bear: r[1], ctaMessage: ctaOf(set), coverHero: true,
-        items: set.items.map(function (it, i) { var c = ci[i] || {}; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: c.memo || it.feature, price: it.price, role: it.role, brand: it.brand }; })
+        bear: r[1], ctaMessage: ctaOf(set), coverHero: true, noPhoto: !!set.noPhoto,
+        items: set.items.map(function (it, i) { var c = ci[i] || {}; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: c.memo || it.feature, price: it.price, role: it.role, brand: it.brand, point: it.feature || c.subline || '' }; })
       };
       var slides = window.IgRender.renderPost(post);
       return Promise.all(slides.map(function (s) { return K.canvasToBlob(s.canvas); })).then(function (blobs) {
@@ -228,7 +229,9 @@
   function card(set) {
     var c = el('article', 'card delivery-card');
     var chips = el('div', 'chips');
-    chips.appendChild(el('span', set.status === 'adopted' ? 'idea-edited' : 'role', D.STATUS[set.status] || set.status));
+    chips.appendChild(el('span', set.status === 'adopted' ? 'idea-edited' : 'role', set.supersededBy ? '改善版に置き換え済み' : D.STATUS[set.status] || set.status));
+    if (set.improvedFrom) chips.appendChild(el('span', 'tag src-adopted', '改善版'));
+    if (set.noPhoto) chips.appendChild(el('span', 'tag', '商品写真なし'));
     chips.appendChild(el('span', 'tag', set.patternLabel ? set.patternLabel.split('（')[0] : ''));
     var iss = issuesOf(set);
     if (iss.length) chips.appendChild(el('span', 'tag pitch-warn', '要確認 ' + iss.length));
@@ -528,5 +531,11 @@
     ensureStock();
   }
 
-  window.DeliveryView = { render: render, onJobDone: onJobDone, adopted: adoptedAll };
+  // 改善案の比較用：投稿セットに見出し・表紙の型・写真の有無を当てた試作の画像（表紙と1枚目の商品）を描く（保存はしない）
+  function previewVariant(set, v) {
+    var trial = Object.assign({}, set, { id: set.id + '-trial-' + (v.key || v.title), titleEdit: v.title, coverStyle: v.coverStyle || set.coverStyle, noPhoto: v.photo === false });
+    return slidesOf(trial).then(function (out) { return { urls: out.urls.slice(0, 2), files: out.files }; });
+  }
+
+  window.DeliveryView = { previewVariant: previewVariant, issuesOf: issuesOf, render: render, onJobDone: onJobDone, adopted: adoptedAll };
 })();
