@@ -5,6 +5,7 @@
 import assets from '../server/assets.js';
 import brandNote from '../server/brand-note.js';
 import buyer from '../server/buyer.js';
+import company from '../server/company.js';
 import coord from '../server/coord.js';
 import coordImage from '../server/coord-image.js';
 import discover from '../server/discover.js';
@@ -31,6 +32,7 @@ export const ROUTES = {
   'assets': assets,
   'brand-note': brandNote,
   'buyer': buyer,
+  'company': company,
   'coord': coord,
   'coord-image': coordImage,
   'discover': discover,

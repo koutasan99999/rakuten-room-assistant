@@ -349,6 +349,7 @@
     var dl = el('dl', 'radar-facts');
     [['誰向け', set.target], ['この企画を選んだ理由', set.reason], ['伝えたい魅力', set.appeal]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     a.appendChild(dl);
+    if (set.improveNote) a.appendChild(el('p', 'hint', set.improveNote));
     if (altBusy[set.id]) a.appendChild(el('p', 'hint pitch-busy', altBusy[set.id] + '…'));
     if (copyBusy[set.id]) a.appendChild(el('p', 'hint pitch-busy', '今の商品一覧で、表紙・商品カード・キャプションを作り直しています…'));
     if (!set.copy && set.copyError && !copyBusy[set.id]) { a.appendChild(el('p', 'hint pitch-warn', '文章を作れませんでした：' + set.copyError)); a.appendChild(btn('文章を作り直す', 'status-btn', function () { remakeCopy(set.id); })); }
@@ -427,6 +428,27 @@
     if (!allRoom(set)) d.appendChild(el('p', 'hint', '楽天ROOMに全商品を登録するまでは、「紹介したものは楽天ROOMにまとめています」とは書きません。登録したら、各商品の「ROOMに登録した」を押すと文面と最後のスライドが切り替わります。'));
     d.appendChild(btn('キャプションをコピー', 'btn btn-secondary', function () { K.copyText(ta.value).then(function () { K.showToast('コピーしました'); }, function () {}); }));
     wrap.appendChild(d);
+
+    // F. Instagramに公開した記録（社長が投稿したら投稿URLを残す。経営会議の「公開の確認」に使う）
+    var f = el('div', 'card');
+    f.appendChild(el('p', 'field-label', 'Instagramへの公開'));
+    if (set.igPost && set.igPost.url) {
+      f.appendChild(el('p', 'hint', stamp(set.igPost.at) + ' に公開（社長の記録）'));
+      f.appendChild(linkBtn('投稿を開く', set.igPost.url));
+    } else {
+      f.appendChild(el('p', 'hint', 'まだ公開の記録がありません。投稿したら、投稿URLを記録してください（AI社員が反応を確認し、改善に使います）。'));
+      f.appendChild(btn('Instagramに投稿した（URLを記録）', 'status-btn', function () {
+        var u = (window.prompt('Instagramの投稿URL（https://www.instagram.com/p/…）', '') || '').trim();
+        if (!/^https:\/\/(www\.)?instagram\.com\//.test(u)) { if (u) K.showToast('InstagramのURLを入れてください'); return; }
+        var cur = D.get(set.id);
+        cur.igPost = { url: u, at: new Date().toISOString() };
+        D.save(cur);
+        if (window.CompanyStore) window.CompanyStore.addActivity({ type: 'post', label: 'Instagramに投稿「' + (set.titleEdit || set.title) + '」', url: u, status: 'sent', by: 'owner', setId: set.id });
+        K.showToast('公開を記録しました');
+        paint();
+      }));
+    }
+    wrap.appendChild(f);
 
     // E. 判断（採用・差し替え・修正・却下）
     var e = el('div', 'card');
