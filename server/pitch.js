@@ -47,7 +47,7 @@ export default async function handler(req, res, env = process.env) {
       const base = readBase(body.base);
       if (!base.name) return send(res, 400, { error: '起点の商品がありません' });
       const ex = readExclude(body.exclude);
-      return send(res, 200, await expand({ base, mode: str(body.mode, 20), path: readPath(body.path), exclude: new Set([...ex.codes, ...ex.names]), env, referer, startedAt }));
+      return send(res, 200, await expand({ base, mode: str(body.mode, 20), path: readPath(body.path), exclude: new Set([...ex.codes, ...ex.names]), want: Number(body.want) || 0, env, referer, startedAt }));
     }
     if (action === 'alternatives') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;
