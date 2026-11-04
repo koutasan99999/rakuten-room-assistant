@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import handler from '../server/discover.js';
+import companyHandler from '../server/company.js';
 import exploreHandler from '../server/explore.js';
 import introsHandler from '../server/intros.js';
 import instagramHandler from '../server/instagram.js';
@@ -105,7 +106,28 @@ if (process.env.MOCK) {
       const items = makeItems(20, kw).map((it, i) => ({ ...it, itemPrice: min + i * 100, shopName: `${kw}ショップ${i % 3}` }));
       return json(200, { items, pageCount: 3 });
     },
-    openai: (body) => body.messages[0].content.includes('1つの投稿で3〜8商品を紹介する企画')
+    openai: (body) => body.messages[0].content.includes('今日の経営会議をします')
+      ? (() => {
+        // 渡された事実・業務の番号だけを使う（偽の会議）
+        const u = body.messages[1].content;
+        const ids = [...u.matchAll(/^(F\d+)（/gm)].map((m) => m[1]);
+        const tasks = [...u.matchAll(/^(t[a-z0-9]+): /gm)].map((m) => m[1]);
+        return aiReply({
+          summary: '公開の記録がなく、改善の効果を測れていない。今日は公開と画像の改善を優先する',
+          statements: [['sns', 'Instagramの公開を確認できていません。公開されないと反応を測れません'], ['designer', '表紙の型を変えた改善版を作れます'], ['copywriter', '見出しが似てきています。切り口を変えます'], ['buyer', '採用商品の未使用分を次のセットに回します'], ['sales', 'ROOMの登録状況が未確認です'], ['editor', '今週は新規企画より、既存セットの公開を優先したい'], ['ceo', '公開の確認と画像の改善を今日の優先にします'], ['sns', 'コメントしました']].map(([role, text]) => ({ role, text, facts: ids.slice(0, 2) })),
+          issues: [{ title: '画像が通販カタログのように見える', cause: '楽天の商品画像を並べた構成', facts: ids.slice(0, 1), owner: 'designer' }, { title: '根拠のない問題', cause: 'x', facts: [], owner: 'ceo' }],
+          proposals: [{ role: 'editor', title: '社長、今週は新しい発掘より、既存の投稿セットの公開を優先させてください', facts: ids.slice(0, 2), impact: '公開がないと何が反応されるか分かりません', request: '承認か却下で答えてください', kind: 'decision' }, { role: 'sns', title: '根拠のない提言', facts: [], impact: 'x', request: 'y', kind: 'decision' }],
+          taskUpdates: tasks.map((id) => ({ id, note: '担当が作業中。社長の確認を待っている', status: 'doing' })),
+          newTasks: [], plan: ['採用済みの投稿セット1件の表紙を、価格比較の切り口で作り直す', 'ROOM登録の確認を社長に依頼する'], improvements: [{ problem: '表紙の見出しが似ている', idea: '切り口を毎回変える（価格比較・意外性・問題提起）' }]
+        });
+      })()
+      : body.messages[0].content.includes('社長が会議室で返信しました')
+      ? aiReply({ messages: [{ role: 'designer', text: '承知しました。今の制作方式の限界を調べ、別のデザイン方法と比べた改善案を出します' }, { role: 'ceo', text: 'デザイナーに改善を割り当てます。改善版ができたら社長に確認をお願いします' }], newTasks: [{ title: 'Instagram画像の改善案と改善版の制作', assignee: 'designer', priority: 'high', dueDays: 2, doneWhen: '今の画像の評価と、改善版の投稿セット1件を社長に提出' }], taskUpdates: [] })
+      : body.messages[0].content.includes('あなたはデザイナーとコピーライターです')
+      ? aiReply({ summary: '表紙の見出しが抽象的で似ており、商品画像を並べた通販カタログに近い。切り口を変えた見出しと表紙の型で改善版を作る', diagnosis: ['表紙で興味を引けるか', 'キャッチコピーが毎回似ていないか', '商品が十分に大きく見えるか', '商品画像の品質', '文字量と読みやすさ', 'レイアウトの単調さ', 'アカウントの独自性', '保存したくなる情報があるか'].map((point, i) => ({ point, score: [2, 2, 3, 3, 4, 2, 2, 2][i], finding: '投稿セットの情報から見ると改善の余地がある' })), changes: ['表紙の見出しを、価格比較・意外性など具体的な切り口にする', '表紙の型を企画ごとに変え、毎回同じ見た目にしない', '2枚目に比べ方の要点をまとめ、保存したくなる情報にする'], copyVariants: [{ angle: '価格比較', title: '6,000円と1,900円、何が違う？' }, { angle: '意外性', title: 'このTシャツ、実は○○' }, { angle: '問題提起', title: '無地T、毎回同じ失敗してない？' }, { angle: '価格比較', title: '重複した切り口' }], coverStyle: 'premium_vs_alternative', tool: { id: 'canva_manual', problem: '今の作り方では文字組みと写真の表現に限界がある', expected: 'テンプレートで雑誌のような文字組みにできる', alternative: '今のアプリの表紙の型を増やす（無料）' }, nextStep: '改善版の見出しのどれが良いか選んでください' })
+      : body.messages[0].content.includes('発注された業務の作業計画')
+      ? aiReply({ summary: 'ROOM登録の確認手順', steps: ['採用済みの商品を一覧にする', '社長に登録状況を聞く'], needOwner: 'ROOMに登録した商品を教えてください', nextStep: '登録状況の返信' })
+      : body.messages[0].content.includes('1つの投稿で3〜8商品を紹介する企画')
       ? (body.messages[1].content.includes('A0:')
         // 社長が採用した商品があれば、それを中心に（A0・A1を使い、残りの枠をAIが探す）
         ? aiReply({ pattern: 'discovery', title: '社長の採用品から、大人の小物', target: '30代男性の自分用と贈り物', reason: '社長が採用した商品を中心にした企画', appeal: '知らなかった出会いのある小物', adopted: [{ id: 0, role: '本命', feature: '採用時の説明に書かれた特徴', why: '社長が採用した商品' }].concat(body.messages[1].content.includes('A1:') ? [{ id: 1, role: '相棒', feature: '採用時の説明に書かれた特徴', why: '本命と同じ場面で使える' }] : []), slots: [{ role: '手頃な代替', keyword: 'ハンドクリーム ギフト' }, { role: '変わり種', keyword: '真鍮 ペン' }] })
@@ -255,6 +277,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/brand-note') return brandNoteHandler(req, res, env);
   if (url.pathname === '/api/buyer') return buyerHandler(req, res, env);
   if (url.pathname === '/api/pitch') return pitchHandler(req, res, env);
+  if (url.pathname === '/api/company') return companyHandler(req, res, env);
   if (url.pathname === '/api/thief') return thiefHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }

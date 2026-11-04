@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-03.4';
+  var APP_VERSION = '2026-11-04.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -581,7 +581,7 @@
   function showView() {
     // #manage:ig_waiting のように、開くタブも指定できる
     var parts = location.hash.split(':');
-    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : parts[0] === '#thief' ? 'thief' : parts[0] === '#discover' ? 'discover' : 'pitch'; // 何も指定がなければ「社長、これどうすか？」から
+    var view = parts[0] === '#manage' ? 'manage' : parts[0] === '#compose' ? 'compose' : parts[0] === '#room' ? 'room' : parts[0] === '#assets' ? 'assets' : parts[0] === '#jobs' ? 'jobs' : parts[0] === '#furusato' ? 'furusato' : parts[0] === '#buyer' ? 'buyer' : parts[0] === '#pitch' ? 'pitch' : parts[0] === '#thief' ? 'thief' : parts[0] === '#company' ? 'company' : parts[0] === '#discover' ? 'discover' : 'pitch'; // 何も指定がなければ「社長、これどうすか？」から
     roomView.hidden = view !== 'room';
     if (view === 'room') renderRoom(parts[1] || draft.postId);
     assetsView.hidden = view !== 'assets';
@@ -599,6 +599,9 @@
     var pv = document.getElementById('view-pitch');
     if (pv) pv.hidden = view !== 'pitch';
     if (view === 'pitch' && window.PitchView) window.PitchView.render();
+    var cv = document.getElementById('view-company');
+    if (cv) cv.hidden = view !== 'company';
+    if (view === 'company' && window.CompanyView) window.CompanyView.render(document.getElementById('company-body'));
     var tv = document.getElementById('view-thief');
     if (tv) tv.hidden = view !== 'thief';
     if (view === 'thief' && window.ThiefView) window.ThiefView.render();
@@ -6035,6 +6038,7 @@
   //   Web調査便：Claude Code のサブエージェント（product-buyer → planning-lead）が Web で調べた結果（data/buyer-picks.json）。社長が頼んだときに更新
   Jobs.register('buyer', { tasks: singleTask('api/buyer'), count: function (r) { return (r.picks || []).length; } });
   Jobs.register('pitch', { tasks: singleTask('api/pitch'), count: function (r) { return r.set ? (r.set.items || []).length : (r.items || []).length; } });
+  Jobs.register('company', { tasks: singleTask('api/company'), count: function (r) { return r.meeting ? (r.meeting.proposals || []).length : (r.newTasks || []).length; } });
   Jobs.register('thief', { tasks: singleTask('api/thief'), count: function (r) { return (r.items || []).length; } });
   JOB_TYPE_JA.buyer = 'バイヤー発掘便';
   var buyerEl = document.getElementById('buyer-body');
