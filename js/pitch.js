@@ -33,7 +33,8 @@
     render();
     // 社長が登録した参考アカウントの調査（テーマ・視聴者に届く切り口）も、商品探しに使う
     var refs = window.ThiefView && window.ThiefView.insights ? window.ThiefView.insights() : [];
-    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste(), refs: refs }, extra || {});
+    // 通常のプレゼン（scout）は、直近のプレゼンの分類を渡して、同じジャンルが続かないように探してもらう
+    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste(), refs: refs }, action === 'scout' ? { recent: S.recent(30) } : {}, extra || {});
     return K.jobCall('pitch', payload, { label: '社長、これどうすか？：' + label, genre: '' }).then(function (r) {
       busy = '';
       if (r.status !== 200) { lastNotice = (r.data && r.data.error) || '探せませんでした'; render(); return; }
@@ -263,6 +264,15 @@
   function renderTaste(list) {
     list.appendChild(el('p', 'editor-note', 'バイヤーの今の読み取り：' + (S.tasteNote() || 'まだありません（判断が増えると更新されます）')));
     list.appendChild(el('p', 'hint', '「黒が好き」「高級品が好き」のように決めつけず、採用・不採用の理由から読み取ります。理由を一言でも書くと、次の発掘の精度が上がります。'));
+    var gs = S.genreStats();
+    if (gs.recent.length) {
+      list.appendChild(el('p', 'field-label', '直近のプレゼンのジャンル（出した順）'));
+      list.appendChild(el('p', 'hint', gs.recent.join(' → ')));
+      list.appendChild(el('p', 'field-label', 'ジャンルごとの採用率（商品の選び方の改善に使います。採用の多いジャンルばかり出すことはしません）'));
+      var ug = el('ul', 'angle-list');
+      Object.keys(gs.byMajor).forEach(function (g) { var b = gs.byMajor[g]; ug.appendChild(el('li', null, g + '：出した' + b.shown + '件・判断' + b.decided + '件・採用' + b.adopt + '件' + (b.decided ? '（' + Math.round(b.adopt * 100 / b.decided) + '%）' : ''))); });
+      list.appendChild(ug);
+    }
     var t = S.taste().history;
     if (!t.length) { list.appendChild(el('p', 'manage-empty', 'まだ判断した商品はありません。')); return; }
     var ul = el('ul', 'angle-list');
