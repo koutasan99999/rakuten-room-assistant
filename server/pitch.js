@@ -1,10 +1,11 @@
 // 「社長、これどうすか？」のAPI：画面のボタンで呼ぶ（自動では呼ばない）。
-// action: expand（この商品から広げる）／set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
+// action: roomtext（ROOM紹介文とハッシュタグ）／expand（この商品から広げる）／set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { readTaste, readExclude, readRefs, scout, seed, verify, featurePlan } from '../lib/pitch.js';
 import { generateIntros } from '../lib/explore.js';
 import { buildSet, replaceItem, alternatives, readHistory, readAdopted, PATTERNS } from '../lib/postset.js';
 import { expand, readBase, readPath } from '../lib/expand.js';
+import { generateRoomHashtags } from '../lib/room-hashtags.js';
 import { maskSecrets, AiError } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -48,6 +49,21 @@ export default async function handler(req, res, env = process.env) {
       if (!base.name) return send(res, 400, { error: '起点の商品がありません' });
       const ex = readExclude(body.exclude);
       return send(res, 200, await expand({ base, mode: str(body.mode, 20), path: readPath(body.path), exclude: new Set([...ex.codes, ...ex.names]), want: Number(body.want) || 0, env, referer, startedAt }));
+    }
+    // 楽天ROOMの紹介文とハッシュタグ（投稿セットの1商品。企画のテーマに合わせた切り口で）
+    if (action === 'roomtext') {
+      const it = body.item && typeof body.item === 'object' ? body.item : {};
+      const set = body.set && typeof body.set === 'object' ? body.set : {};
+      const item = { name: str(it.name, 200), price: Number(it.price) || 0, role: str(it.role, 20), brand: str(it.brand, 30), reason: str([it.feature, it.why].filter(Boolean).join('。'), 200), caption: str(it.caption, 300) };
+      if (!item.name) return send(res, 400, { error: '商品がありません' });
+      const theme = str(set.title, 60);
+      const rules = `\n追加の決まり（楽天ROOMの1商品の投稿）:\n- 紹介文は150〜200字。絵文字は使わない\n- 企画「${theme}」（${str(set.patternLabel, 40)}${set.target ? `・${str(set.target, 40)}` : ''}）の中での、この商品の役割（${item.role || 'なし'}）に合った切り口にする\n- 商品データで確認できない性能・仕様は書かない。必要なら買う前の注意点を1つ書く`;
+      const [ir, hr] = await Promise.all([
+        generateIntros({ title: theme, items: [item], env, deadline: startedAt + 45000, extraRules: rules }),
+        generateRoomHashtags({ campaign: { campaignTheme: theme || item.name, campaignType: str(set.patternLabel, 30), targetAudience: str(set.target, 60), priceRange: '' }, items: [{ productName: item.name, productCategory: '', productUseCase: item.role, roomDescription: item.reason, brand: item.brand }], env, deadline: startedAt + 45000 })
+      ]);
+      const tags = [...new Set([...((hr.products && hr.products[0] && hr.products[0].tags) || []), ...(hr.common || [])])].slice(0, 10);
+      return send(res, 200, { intro: (ir.intros[0] || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ''), tags, notice: [ir.fallback ? 'AIで紹介文を作れなかったため、簡易的な紹介文にしました' : '', hr.fallback ? 'ハッシュタグは企画のテーマと商品名から簡易的に作りました' : ''].filter(Boolean).join('。') });
     }
     if (action === 'alternatives') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;

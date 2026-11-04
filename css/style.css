@@ -931,3 +931,19 @@ div.xp-thumb { display: flex; align-items: center; justify-content: center; colo
 .co-vimgs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
 .co-vimgs img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
 p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
+/* 楽天ROOMへの登録（投稿セットの商品ごと） */
+.room-toggle { width: 100%; min-height: 46px; margin: 8px 0 4px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-weight: 700; font-size: 14px; text-align: left; padding: 8px 12px; }
+.room-toggle.room-ready { border-color: #e8a33d; background: #fff8ec; }
+.room-toggle.room-registered { border-color: #1f6f43; background: #eef7f1; color: #1f6f43; }
+.room-toggle.open { border-width: 2px; }
+.room-panel { background: #fafaf7; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+.room-steps { margin: 0 0 8px; }
+.room-copy { width: 100%; min-height: 52px; font-size: 16px; }
+.room-intro { font-size: 14px; line-height: 1.7; margin: 10px 0 4px; white-space: pre-wrap; }
+.room-tags { font-size: 13px; color: #2f5b7c; margin: 4px 0; word-break: break-all; }
+.room-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+.room-grid .status-btn { min-height: 42px; }
+.room-open { display: block; text-align: center; width: 100%; box-sizing: border-box; min-height: 48px; line-height: 44px; text-decoration: none; margin-top: 4px; }
+.room-done { width: 100%; min-height: 48px; margin-top: 8px; }
+.room-text { width: 100%; box-sizing: border-box; margin: 8px 0 4px; }
+.room-panel input.input { width: 100%; box-sizing: border-box; margin-bottom: 6px; }

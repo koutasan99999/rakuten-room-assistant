@@ -22,7 +22,8 @@
   function btn(text, cls, fn) { var b = el('button', cls, text); b.type = 'button'; b.addEventListener('click', fn); return b; }
   function linkBtn(text, url) { var a = el('a', 'link-btn', text); a.href = url; a.target = '_blank'; a.rel = 'noopener'; return a; }
   function cleanName(n) { return String(n || '').replace(/[【\[].*?[】\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || n; }
-  function allRoom(set) { return (set.items || []).every(function (it) { return it.room === 'registered'; }); }
+  // 全商品がROOMに登録済みか（別の投稿セットで登録した同じ商品も、商品ごとの記録で数える）
+  function allRoom(set) { return (set.items || []).every(function (it) { return it.room === 'registered' || (window.RoomTextStore && window.RoomTextStore.status(it, it) === 'registered'); }); }
   function styleOf(set) { return set.coverStyle || COVER_BY_PATTERN[set.pattern] || 'unique_pick'; }
   function stamp(iso) { try { return new Date(iso).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 
@@ -340,6 +341,83 @@
     return box;
   }
 
+  // ---- 楽天ROOMへの登録（商品ごと） ----
+  var R = window.RoomTextStore;
+  var ROOM_STATUS = { none: '未登録', ready: '文章準備済み', registered: 'ROOM登録済み（社長の申告）' };
+  var roomOpen = {};   // set.id:番号 → 開いている
+  var roomBusy = {};   // 商品の key → 作っている
+  var roomEdit = {};   // 商品の key → 編集中
+  function tagsText(tags) { return (tags || []).map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; }).join(' '); }
+  function makeRoomText(set, it, again) {
+    var k = R.keyOf(it);
+    if (roomBusy[k]) return;
+    roomBusy[k] = true;
+    paint();
+    K.postJson('api/pitch', { action: 'roomtext', set: { title: set.titleEdit || set.title, patternLabel: set.patternLabel || '', target: set.target || '' }, item: { name: it.name, price: it.price, role: it.role, brand: it.brand, feature: it.feature, why: it.why, caption: it.caption } }).then(function (r) {
+      delete roomBusy[k];
+      if (r.status !== 200 || !r.data.intro) { K.showToast((r.data && r.data.error) || '紹介文を作れませんでした'); paint(); return; }
+      R.saveGenerated(it, r.data.intro, r.data.tags || [], set.titleEdit || set.title);
+      if (r.data.notice) K.showToast(r.data.notice);
+      else if (again) K.showToast('作り直しました（前の文章は履歴に残しています）');
+      paint();
+    });
+  }
+  function copy(text, msg) { K.copyText(text).then(function () { K.showToast(msg); }, function () { K.showToast('コピーできませんでした'); }); }
+  function roomPanel(set, i, it) {
+    var k = R.keyOf(it);
+    var x = R.get(it);
+    var box = el('div', 'room-panel');
+    if (!x || !x.intro) {
+      if (!roomBusy[k]) setTimeout(function () { makeRoomText(set, it, false); }, 0); // 開いたときに、まだなければ作る（1商品ずつ）
+      box.appendChild(el('p', 'hint pitch-busy', 'ROOMの紹介文とハッシュタグを作っています…（20〜40秒）'));
+      return box;
+    }
+    if (roomBusy[k]) box.appendChild(el('p', 'hint pitch-busy', '作り直しています…'));
+    var steps = el('p', 'hint room-steps', '① コピー → ② 楽天ROOMを開いて貼り付けて登録 → ③ アプリに戻って「ROOMに登録した」');
+    box.appendChild(steps);
+    var full = x.intro + (x.tags && x.tags.length ? '\n\n' + tagsText(x.tags) : '');
+    box.appendChild(btn('紹介文＋ハッシュタグをコピー', 'btn btn-primary room-copy', function () { copy(full, 'コピーしました。楽天ROOMで貼り付けてください'); }));
+    if (roomEdit[k]) {
+      var ta = el('textarea', 'input room-text');
+      ta.rows = 8; ta.value = x.intro;
+      var tg = el('input', 'input');
+      tg.value = tagsText(x.tags); tg.placeholder = '#タグ を空白区切りで';
+      box.appendChild(ta); box.appendChild(tg);
+      var er = el('div', 'pitch-row');
+      er.appendChild(btn('保存する', 'btn btn-primary co-sbtn', function () { R.saveEdit(it, ta.value.trim(), tg.value.split(/[\s　]+/).filter(Boolean).map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; })); delete roomEdit[k]; K.showToast('保存しました'); paint(); }));
+      er.appendChild(btn('やめる', 'status-btn', function () { delete roomEdit[k]; paint(); }));
+      box.appendChild(er);
+    } else {
+      box.appendChild(el('p', 'room-intro', x.intro));
+      box.appendChild(el('p', 'room-tags', tagsText(x.tags) || '（ハッシュタグなし）'));
+      box.appendChild(el('p', 'hint', x.intro.length + '字' + (x.editedAt ? '｜社長が編集（' + stamp(x.editedAt) + '）' : x.generatedAt ? '｜AIが作成（' + stamp(x.generatedAt) + '）' : '｜' + (x.from || '')) + ((x.history || []).length ? '｜前の文章 ' + x.history.length + '件を保存' : '')));
+    }
+    var r1 = el('div', 'room-grid');
+    r1.appendChild(btn('紹介文だけコピー', 'status-btn', function () { copy(x.intro, '紹介文をコピーしました'); }));
+    r1.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { copy(tagsText(x.tags), 'ハッシュタグをコピーしました'); }));
+    r1.appendChild(btn('文章を編集する', 'status-btn', function () { roomEdit[k] = true; paint(); }));
+    r1.appendChild(btn('文章を作り直す', 'status-btn', function () { if (window.confirm('紹介文とハッシュタグを作り直しますか？（今の文章は履歴に残ります）')) makeRoomText(set, it, true); }));
+    box.appendChild(r1);
+    // ROOMを開く：商品番号を指定した楽天ROOMの登録（コレ！）画面のURL。開けない場合に備えて商品ページも置く
+    if (it.code) {
+      var a = linkBtn('楽天ROOMで登録する', K.roomUrl(it.code));
+      a.className = 'btn btn-secondary room-open';
+      box.appendChild(a);
+      box.appendChild(el('p', 'hint', '楽天ROOMの、この商品の登録画面を開きます（ログインが必要です）。開かない場合は「楽天の商品ページ」から、ROOMに追加してください。'));
+    } else box.appendChild(el('p', 'hint pitch-warn', '商品番号がないため、ROOMの登録画面を直接開けません。「楽天の商品ページ」からROOMに追加してください。'));
+    var reg = R.status(it, it) === 'registered';
+    box.appendChild(btn(reg ? 'ROOM登録を取り消す（記録だけ）' : 'ROOMに登録した', reg ? 'status-btn' : 'btn btn-discover room-done', function () {
+      var cur = D.get(set.id);
+      cur.items[i].room = reg ? 'unregistered' : 'registered';
+      D.save(cur);
+      R.setRegistered(it, !reg);
+      K.showToast(reg ? '登録の記録を取り消しました' : '登録済みとして記録しました（社長の申告）');
+      paint();
+    }));
+    box.appendChild(el('p', 'hint', '「ROOM登録済み」は社長が押した記録です。楽天ROOM側の登録をアプリが自動で確認したものではありません。'));
+    return box;
+  }
+
   // ---- 詳細 ----
   function detail(set) {
     var wrap = el('div');
@@ -380,13 +458,17 @@
       if (it.adoptedReason) info.appendChild(el('p', 'hint', '社長の採用理由：' + it.adoptedReason));
       if (it.feature) info.appendChild(el('p', 'hint', '特徴：' + it.feature));
       if (it.why) info.appendChild(el('p', 'hint', '入れた理由：' + it.why));
-      info.appendChild(el('p', 'hint', '公式：' + (it.officialUrl ? it.officialNote : it.officialNote || '未取得') + '｜楽天ROOM：' + (it.room === 'registered' ? '登録済み' : '未登録') + '｜確認：楽天の商品データ（商品名・価格・画像）'));
+      info.appendChild(el('p', 'hint', '公式：' + (it.officialUrl ? it.officialNote : it.officialNote || '未取得') + '｜確認：楽天の商品データ（商品名・価格・画像）'));
       top.appendChild(info);
       row.appendChild(top);
+      // 楽天ROOMへの登録（紹介文・ハッシュタグ・コピー・ROOMを開く・登録した）
+      var rst = R ? R.status(it, it) : 'none';
+      var rk = set.id + ':' + i;
+      var rb = btn('楽天ROOMに登録する｜' + ROOM_STATUS[rst], 'room-toggle room-' + rst + (roomOpen[rk] ? ' open' : ''), function () { roomOpen[rk] = !roomOpen[rk]; paint(); });
+      row.appendChild(rb);
+      if (roomOpen[rk]) row.appendChild(roomPanel(set, i, it));
       var acts = el('div', 'pitch-row');
       acts.appendChild(linkBtn('楽天の商品ページ', it.url));
-      if (it.code) acts.appendChild(linkBtn('ROOMで投稿画面を開く', K.roomUrl(it.code)));
-      acts.appendChild(btn(it.room === 'registered' ? 'ROOM登録を取り消す' : 'ROOMに登録した', 'status-btn', function () { var cur = D.get(set.id); cur.items[i].room = cur.items[i].room === 'registered' ? 'unregistered' : 'registered'; D.save(cur); paint(); }));
       var alt = set.alt && set.alt.index === i ? set.alt : null;
       if (window.ExploreView) acts.appendChild(btn('この商品から広げる', 'status-btn', function () { window.ExploreView.open(it, 'set'); }));
       if (!alt) acts.appendChild(btn('この商品を差し替える', 'status-btn', function () { D.save(Object.assign({}, D.get(set.id), { alt: { index: i, code: it.code || '', state: 'asking', reason: '' } })); paint(); }));

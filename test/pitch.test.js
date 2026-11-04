@@ -250,3 +250,22 @@ test('差し替えの候補：理由から検索語を決め、まだ投稿に�
   assert.deepEqual(r.data.candidates.map((c) => [c.name, c.source, c.role]), [['採用した名刺入れ', 'adopted', '本命'], ['上質なキーケース', 'ai', '本命']]);
   assert.equal(r.data.candidates[0].priceNote, '');
 });
+
+test('ROOMの紹介文とハッシュタグ：企画のテーマと役割をAIに渡し（150〜200字・絵文字なし・確認できない仕様は書かない）、絵文字は落とし、タグを返す', async () => {
+  let introSys = '';
+  let introUser = '';
+  mock = installFetchMock({
+    openai: (body) => {
+      const sys = body.messages[0].content;
+      if (sys.includes('ハッシュタグを決める担当')) return aiReply({ common: [{ tag: '#キーケース', score: 90 }, { tag: '#メンズ小物', score: 85 }], products: [{ id: 0, tags: [{ tag: '#本革', score: 80 }] }] });
+      if (sys.includes('紹介文を書く担当')) { introSys = sys; introUser = body.messages[1].content; return aiReply({ items: [{ id: 0, intro: '鍵をまとめる小物は、毎日手に取るのに後回しにしがちです。これは本革で、使うほど色が深まる素材だと説明に書かれています。カードも1枚入るので、鍵と一緒に持ち歩けます。贈り物にするなら、革の色を相手の財布に合わせると選びやすいです。色は写真と違って見えることがあるので、商品ページで確認してください。😊' }] }); }
+      return aiReply({ items: [] });
+    }
+  });
+  const r = await call({ action: 'roomtext', set: { title: '5,000円で贈る大人の小物', patternLabel: 'ギフト特集', target: '30代男性' }, item: { name: '本革 キーケース', price: 4980, role: '本命', feature: '本革', why: '毎日使う' } });
+  assert.equal(r.status, 200);
+  assert.ok(introSys.includes('150〜200字') && introSys.includes('絵文字は使わない') && introSys.includes('5,000円で贈る大人の小物') && introSys.includes('本命'), introSys.slice(-300));
+  assert.ok(introUser.includes('本革 キーケース'));
+  assert.ok(!/😊/.test(r.data.intro));
+  assert.ok(r.data.tags.length >= 1 && r.data.tags.every((t) => t.startsWith('#')), JSON.stringify(r.data.tags));
+});
