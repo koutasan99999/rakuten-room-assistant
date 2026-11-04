@@ -116,17 +116,21 @@ if (process.env.MOCK) {
         const mode = (u.match(/探し方: (\w+)/) || [])[1];
         const Q = { cheaper: [['無地 Tシャツ 厚手', 'Tシャツ']], brand: [['Tシャツ', 'Tシャツ'], ['キャップ', 'キャップ']], same_price: [['BEAMS ポケット Tシャツ', 'Tシャツ']],
           coord: [['カーゴパンツ メンズ', 'カーゴパンツ'], ['白 スニーカー メンズ', 'スニーカー'], ['ショルダーバッグ メンズ', 'バッグ'], ['キャップ メンズ', 'キャップ']],
-          accessory: [['サングラス メンズ', 'サングラス'], ['レザーベルト', 'ベルト'], ['ソックス 3足', 'ソックス']], omakase: [['腕時計 シンプル', '時計'], ['トートバッグ キャンバス', 'バッグ'], ['ソックス 柄', 'ソックス']] }[mode] || [['Tシャツ', 'Tシャツ']];
+          // おまかせ（ミックス）：軸を混ぜる
+          omakase: [['Tシャツ 定番', 'Tシャツ', 'brand'], ['キャップ', 'キャップ', 'brand'], ['無地 Tシャツ 厚手', 'Tシャツ', 'cheaper'], ['ポケット Tシャツ', 'Tシャツ', 'same_price'], ['カーゴパンツ メンズ', 'パンツ', 'coord']],
+          accessory: [['サングラス メンズ', 'サングラス'], ['レザーベルト', 'ベルト'], ['ソックス 3足', 'ソックス']] }[mode] || [['Tシャツ', 'Tシャツ']];
         // スニーカーを起点にしたコーデは、バッグ・時計を探す
         const q = mode === 'coord' && /スニーカー/.test(u.split('\n')[1] || '') ? [['トートバッグ メンズ', 'バッグ'], ['腕時計 メンズ', '時計'], ['ソックス メンズ', 'ソックス']] : Q;
-        return aiReply({ queries: q.map(([keyword, label]) => ({ keyword, label, why: '起点と同じ場面で使える' })), looks: mode === 'coord' ? [{ name: '休日のきれいめカジュアル', concept: '白と黒でまとめ、太めのボトムで今っぽく', labels: q.slice(0, 2).map((x) => x[1]) }, { name: '街歩きのラフスタイル', concept: '小物で色を足して、軽く見せる', labels: q.slice(2).map((x) => x[1]) }] : [] });
+        const qq = q;
+        return aiReply({ queries: qq.map(([keyword, label, axis]) => ({ keyword, label, axis, why: '起点と同じ場面で使える' })), looks: mode === 'coord' ? [{ name: '休日のきれいめカジュアル', concept: '白と黒でまとめ、太めのボトムで今っぽく', labels: q.slice(0, 2).map((x) => x[1]) }, { name: '街歩きのラフスタイル', concept: '小物で色を足して、軽く見せる', labels: q.slice(2).map((x) => x[1]) }] : [] });
       })()
       : body.messages[0].content.includes('起点の商品から広げて見つけた楽天の候補')
       ? (() => {
         const ids = [...body.messages[1].content.matchAll(/^ {2}(\d+-\d+): /gm)].map((m) => m[1]);
         const groups = [...new Set(ids.map((x) => x.split('-')[0]))];
         const pick = [];
-        for (let j = 0; pick.length < 7 && j < 6; j++) groups.forEach((g) => { const id = `${g}-${j * 2}`; if (ids.includes(id) && pick.length < 7) pick.push(id); });
+        const want = Number((body.messages[1].content.match(/最大(\d+)点/) || [])[1]) || 7;
+        for (let j = 0; pick.length < want && j < 6; j++) groups.forEach((g) => { const id = `${g}-${j * 2}`; if (ids.includes(id) && pick.length < want) pick.push(id); });
         return aiReply({ picks: pick.map((id) => ({ id, relation: '起点と同じ休日の服装に合わせやすい', similar: '無地で落ち着いた色', differ: '生地の厚さとシルエットが違う', feature: '綿100%と説明に書かれている', look: Number(id.split('-')[0]) < 2 ? 0 : 1 })) });
       })()
       : body.messages[0].content.includes('楽天市場で商品を探す検索語を1つ決めます')

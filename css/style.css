@@ -877,3 +877,24 @@ div.xp-photo { display: flex; align-items: center; justify-content: center; colo
 .tag.xp-low { background: #e9efe5; color: #3d5233; border-color: #c9d6c0; }
 .old-menu { margin: 8px 0; }
 .xp-current .xp-photo { height: 190px; }
+/* 探索結果の一覧（短いカードを2列で。くわしくは畳む） */
+.xp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.xp-mini { padding: 8px; margin: 0; display: flex; flex-direction: column; min-width: 0; }
+.xp-thumb { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #fff; border-radius: 8px; display: block; margin-bottom: 6px; }
+div.xp-thumb { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+.xp-mini .chips { gap: 4px; margin-bottom: 4px; }
+.xp-mini .tag { font-size: 10px; padding: 1px 6px; }
+.tag.xp-axis { background: #fff5f5; color: var(--red); border-color: #f1c9c9; }
+.tag.xp-new { background: #e8a33d; color: #fff; border-color: #e8a33d; }
+.xp-name { font-size: 13px; font-weight: 700; line-height: 1.35; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.xp-brand { font-size: 11px; color: var(--muted); margin: 2px 0 0; }
+.xp-price { font-size: 15px; font-weight: 800; margin: 2px 0; }
+.xp-rel { font-size: 12px; color: #444; line-height: 1.4; margin: 0 0 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.xp-more summary { font-size: 12px; color: var(--muted); cursor: pointer; padding: 2px 0; }
+.xp-more dl { font-size: 12px; }
+.xp-mini-acts { display: grid; gap: 6px; margin-top: auto; padding-top: 6px; }
+.xp-sbtn { min-height: 40px; font-size: 13px; padding: 6px 4px; width: 100%; }
+.xp-filter { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px; }
+.xp-chip { flex-shrink: 0; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+.xp-chip.active { border-color: var(--red); background: var(--red); color: #fff; }
+.xp-reset { margin-top: 10px; font-size: 12px; }
