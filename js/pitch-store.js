@@ -109,6 +109,20 @@
     setTasteNote: function (t) { var s = read(); if (t) { s.tasteNote = String(t).slice(0, 200); write(s); } },
     seeded: function () { return read().seeded; },
     markSeeded: function () { var s = read(); s.seeded = true; write(s); },
+    // 通常のプレゼンの履歴（出した順。深掘り＝「この商品から広げる」で入った商品・もっと見せては含めない）。次のジャンル選びに使う
+    recent: function (n) {
+      var it = read().items;
+      return Object.keys(it).map(function (k) { return it[k]; }).filter(function (x) { return x.origin === 'scout' || x.origin === 'seed'; })
+        .sort(byOrder).slice(-(n || 30)).map(function (x) { return { name: String(x.name).slice(0, 80), code: x.code || '', major: x.major || '', sub: x.sub || '', status: x.status }; });
+    },
+    // ジャンルの記録：出した分類（次に出す分類の判断に使う）と、分類ごとの採用率（選定の質の改善に使う。出す分類の偏りには使わない）
+    genreStats: function () {
+      var it = read().items;
+      var list = Object.keys(it).map(function (k) { return it[k]; }).filter(function (x) { return (x.origin === 'scout' || x.origin === 'seed') && x.genre; }).sort(byOrder);
+      var by = {};
+      list.forEach(function (x) { var g = x.genre.split('／')[0]; var b = by[g] = by[g] || { shown: 0, decided: 0, adopt: 0 }; b.shown++; if (x.status !== 'new') b.decided++; if (x.status === 'adopt') b.adopt++; });
+      return { recent: list.slice(-10).map(function (x) { return x.genre; }), byMajor: by };
+    },
     // 同じ商品の記録（商品番号か、商品名の先頭が同じ）
     find: function (p) {
       var it = read().items;

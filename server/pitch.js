@@ -29,7 +29,7 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'scout' || action === 'more') {
       const base = action === 'more' ? readProduct(body.base) : null;
       if (base && !base.name) return send(res, 400, { error: '元の商品がありません' });
-      return send(res, 200, await scout({ taste: readTaste(body.taste), refs: readRefs(body.refs), exclude: readExclude(body.exclude), base, env, referer, startedAt }));
+      return send(res, 200, await scout({ taste: readTaste(body.taste), refs: readRefs(body.refs), exclude: readExclude(body.exclude), base, recent: action === 'scout' && Array.isArray(body.recent) ? body.recent : null, env, referer, startedAt }));
     }
     // 投稿セット（1企画・3〜6商品）の自動制作と、1商品の差し替え
     if (action === 'set') {

@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import handler from '../server/discover.js';
 import companyHandler from '../server/company.js';
+import { MAJORS as PITCH_MAJORS } from '../lib/pitch-genres.js';
+const PITCH_KWS = new Set(PITCH_MAJORS.flatMap((m) => m.subs.flatMap((s) => s[3])).concat(['自転車 ベル 真鍮', 'サイクル ボトルケージ']));
 import exploreHandler from '../server/explore.js';
 import introsHandler from '../server/intros.js';
 import instagramHandler from '../server/instagram.js';
@@ -85,6 +87,12 @@ if (process.env.MOCK) {
       }
       // 服・靴・小物（「この商品から広げる」の確認用）：ブランド名入りの商品名。価格の上下限・ブランド指定を守る
       const fk = url.searchParams.get('keyword') || '';
+      // 「社長、これどうすか？」のジャンル別の検索（分類の用意した言葉）：言葉どおりの商品名で返す
+      if (PITCH_KWS.has(fk) && !url.searchParams.get('itemCode')) {
+        const vars = ['定番', '限定カラー', '新作', 'ナチュラル', 'ブラック', '職人仕上げ', 'コンパクト', '大きめ'];
+        const items = Array.from({ length: 8 }, (_, i) => ({ itemCode: `pk:${fk.replace(/\s/g, '')}-${i}`, itemName: `${fk} ${vars[i]} モデル${i + 1}`, itemPrice: 1980 + i * 1700, itemUrl: `https://item.rakuten.co.jp/pk${i % 3}/${encodeURIComponent(fk)}${i}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/pk/${i}.jpg?_ex=128x128`], shopName: `セレクト${i % 4}`, itemCaption: `${vars[i]}の${fk}。素材と作りにこだわった商品。`, reviewCount: 10 + i * 9, reviewAverage: 4.3, postageFlag: i % 2 }));
+        return json(200, { items, pageCount: 1 });
+      }
       if (/Tシャツ|パンツ|スニーカー|バッグ|サングラス|キャップ|時計|ベルト|ソックス/.test(fk) && !url.searchParams.get('itemCode')) {
         const brands = ['BEAMS', 'UNITED ARROWS', 'URBAN RESEARCH', 'nano universe', 'Champion', 'Hanes', 'CHUMS', 'KANGOL'];
         const fixed = brands.find((b) => fk.toUpperCase().startsWith(b.toUpperCase()));
@@ -172,10 +180,22 @@ if (process.env.MOCK) {
       ? aiReply({ comments: ['白スニーカーで一気に軽く見えますね', 'このグレー、季節を問わず使えそうです'] })
       : body.messages[0].content.includes('スクリーンショットから「紹介されている商品」')
       ? aiReply({ handle: 'ken_good_item', products: [{ name: 'つぶしやすいスプーンマッシャー K829DGY', brand: 'マーナ', model: 'K829DGY', aliases: ['marna'], evidence: '画像の上に商品名が書かれている' }, { name: 'ワイヤレス HDMI 送信機', brand: '', model: '', aliases: [], evidence: 'キャプションに書かれている' }] })
+      : body.messages[0].content.includes('いろいろなジャンルから「知らなかった」')
+      ? (() => {
+        // 指定された分類ごとに、用意した言葉の1つを返す（ときどき一覧にない新しい分類も1つ）
+        const u = body.messages[1].content;
+        const t = [...u.matchAll(/^(\w+)（[^）]*）: sub の候補 .*（優先: (\w+)）$/gm)].map((m) => [m[1], m[2]]);
+        const queries = t.map(([major, sub]) => { const m = PITCH_MAJORS.find((x) => x.id === major); const s = m.subs.find((x) => x[0] === sub) || m.subs[0]; return { major, sub: s[0], keyword: s[3][Math.floor(Math.random() * s[3].length)], angle: s[1] + 'の発見' }; });
+        if (Math.random() < 0.3) queries.push({ major: 'new:自転車・移動', sub: 'new:自転車の小物', keyword: '自転車 ベル 真鍮', angle: '街乗りの小さな楽しみ' });
+        return aiReply({ queries, taste: 'まだ判断できない' });
+      })()
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長（オーナー）')
       ? aiReply({ queries: [{ category: '服', keyword: 'BEAMS Tシャツ', angle: '定番ブランドの無地T' }, { category: '服', keyword: 'オープンカラーシャツ 柄', angle: '落ち着いた柄シャツ' }, { category: '香り', keyword: 'ルームフレグランス ウッド', angle: '部屋の香り' }, { category: 'ガジェット', keyword: 'アルミ スマホスタンド', angle: '机で絵になる' }], taste: 'まだ判断できない（履歴が少ない）' })
       : body.messages[0].content.includes('セレクトショップのバイヤーです。社長に')
-      ? aiReply({ picks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
+      ? aiReply({ picks: (body.messages[1].content.includes('［')
+        // ジャンルの違う候補から選ぶ（大分類が違うものを、最大の数まで）
+        ? (() => { const seen = new Set(); const n = Number((body.messages[1].content.match(/最大(\d+)個/) || [])[1]) || 4; return [...body.messages[1].content.matchAll(/^(\d+): ［([^／]+)／/gm)].filter((m) => !seen.has(m[2]) && seen.add(m[2])).slice(0, n).map((m) => Number(m[1])); })()
+        : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((id) => ({ id, point: '説明に素材と作りの工夫が書かれている', brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
       : body.messages[0].content.includes('特集企画とカルーセル')
       ? aiReply({ title: '休日の机を少し良くする', target: '在宅の時間が長い30代男性', slides: ['1 表紙：休日の机、少し良くしたい人へ', '2 この商品のいいところ', '3 素材と見た目', '4 弱点も正直に', '5 楽天ROOMにまとめました'], caption: '【PR】楽天アフィリエイトを利用しています\n休日の机を、少し良くしたい人へ。', hashtags: ['#デスク周り', '#ガジェット', '#30代メンズ', '#ギフト', '#インテリア'] })
       : body.messages[0].content.includes('の商品バイヤーです')
