@@ -408,6 +408,25 @@
           ctx.drawImage(d.image, r.x, r.y, r.w, r.h);
         }
         ctx.restore();
+      } else if (d.noPhoto) {
+        // 写真の代わり：番号と「ここがポイント」を大きく（写真は楽天の商品ページで見てもらう）
+        ctx.save();
+        roundRect(ctx, ax, ay, aw, ah, 36);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+        ctx.fillStyle = P.accent;
+        ctx.font = font(150, 900);
+        ctx.fillText(String(d.no || d.page - 1), ax + 60, ay + 190);
+        ctx.font = font(34, 800);
+        ctx.fillText('POINT', ax + 64, ay + 250);
+        ctx.fillStyle = C.text;
+        var pt = fitText(ctx, d.point || d.memo || '', { size: 60, minSize: 40, weight: 800, maxWidth: aw - 120, maxLines: 4 });
+        ctx.font = font(pt.size, 800);
+        drawLines(ctx, pt.lines, ax + 60, ay + 250 + pt.size + 40, pt.size * 1.35);
+        ctx.fillStyle = C.sub;
+        ctx.font = font(28, 600);
+        ctx.fillText('写真は楽天の商品ページで', ax + 60, ay + ah - 44);
+        ctx.restore();
       }
 
       var y = ay + ah + 46;
@@ -587,6 +606,34 @@
 
   // post.layoutSizes: 1スライドに何商品のせるか（ユーザーが変えた配置。無ければ自動）。
   // 商品が少なければ今までどおり1商品1枚、多ければ2〜4商品のスライドを組み合わせて、カルーセルの上限枚数に収める
+  // 商品写真を使わない版の表紙：写真の代わりに、今回紹介する商品（番号・名前・価格）を下半分に並べる
+  function drawCoverList(canvas, items) {
+    var ctx = canvas.getContext('2d');
+    var list = (items || []).slice(0, 5);
+    if (!list.length) return;
+    var x = 60, y = 780, w = SIZE.width - 120 - 230, rowH = Math.min(90, Math.floor(360 / list.length));
+    ctx.save();
+    roundRect(ctx, x, y, w, rowH * list.length + 90, 28);
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fill();
+    ctx.fillStyle = C.sub;
+    ctx.font = font(30, 700);
+    ctx.fillText('今回の' + (items.length) + 'つ', x + 36, y + 56);
+    list.forEach(function (it, i) {
+      var yy = y + 90 + i * rowH + rowH * 0.6;
+      ctx.fillStyle = C.text;
+      ctx.font = font(40, 900);
+      ctx.fillText(String(i + 1), x + 36, yy);
+      var nm = fitText(ctx, it.shortName || '', { size: 38, minSize: 26, weight: 700, maxWidth: w - 300, maxLines: 1 });
+      ctx.font = font(nm.size, 700);
+      ctx.fillText(nm.lines[0] || '', x + 92, yy);
+      ctx.font = font(34, 800);
+      var pr = '¥' + priceText(it.price);
+      ctx.fillText(pr, x + w - 36 - ctx.measureText(pr).width, yy);
+    });
+    ctx.restore();
+  }
+
   function renderPost(post) {
     // コーデの投稿（js/ig-coord.js）：完成コーデの画像や3コーデ比較を差し込む
     if (post.coord && window.IgRender.renderCoordPost && !post.coordInner) return window.IgRender.renderCoordPost(post);
@@ -596,14 +643,17 @@
     var plan = window.CarouselLayout
       ? window.CarouselLayout.plan(post.items.length, { summary: hasSummary, sizes: post.layoutSizes, maxSlides: post.maxSlides })
       : null;
-    var groups = plan
+    // 商品写真を使わない版（楽天の商品画像の利用条件が未確認のとき）：1枚に1商品で、写真の代わりに特徴を大きく見せる
+    var groups = post.noPhoto ? post.items.map(function (it, i) { return [i]; }) : plan
       ? plan.slides.filter(function (s) { return s.kind === 'items'; }).map(function (s) { return s.items; })
       : post.items.map(function (it, i) { return [i]; });
     // extraSlides: 表紙のあとに差し込むスライドの数（コーデの投稿で使う）。ページ番号をその分ずらす
     var offset = (hasSummary ? 1 : 0) + (post.extraSlides || 0);
     var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var slides = [{ fileName: '01_cover.png', canvas: render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? heroImages(post.items) : post.coverHero ? coverImages(post.items).slice(0, 1) : coverImages(post.items), items: post.items }) }];
+    var coverCanvas = render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? heroImages(post.items) : post.coverHero ? coverImages(post.items).slice(0, 1) : coverImages(post.items), items: post.items });
+    if (post.noPhoto) drawCoverList(coverCanvas, post.items);
+    var slides = [{ fileName: '01_cover.png', canvas: coverCanvas }];
     if (hasSummary) {
       slides.push({
         fileName: '02_summary.png',
@@ -624,7 +674,8 @@
           fileName: name, items: idx,
           canvas: render('item', {
             category: post.category, page: page, total: total, image: it.image, shortName: it.shortName,
-            subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear, palette: palette
+            subline: it.subline, memo: it.memo, price: it.price, role: it.role, bear: post.bear, palette: palette,
+            noPhoto: !!post.noPhoto, no: first + 1, point: it.point || it.subline || ''
           })
         });
       } else {

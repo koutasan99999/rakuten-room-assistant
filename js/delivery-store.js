@@ -59,6 +59,6 @@
       window.DeliveryStore.all().forEach(function (x) { (x.items || []).forEach(function (it) { if (it.code) codes.push(it.code); }); });
       return { codes: codes.slice(0, 600), names: [] };
     },
-    pendingCount: function () { return window.DeliveryStore.all().filter(function (x) { return x.status === 'new'; }).length; }
+    pendingCount: function () { return window.DeliveryStore.all().filter(function (x) { return x.status === 'new' && !x.supersededBy; }).length; }
   };
 })();

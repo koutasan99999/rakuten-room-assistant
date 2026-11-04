@@ -115,8 +115,15 @@ if (process.env.MOCK) {
         return aiReply({
           summary: '公開の記録がなく、改善の効果を測れていない。今日は公開と画像の改善を優先する',
           statements: [['sns', 'Instagramの公開を確認できていません。公開されないと反応を測れません'], ['designer', '表紙の型を変えた改善版を作れます'], ['copywriter', '見出しが似てきています。切り口を変えます'], ['buyer', '採用商品の未使用分を次のセットに回します'], ['sales', 'ROOMの登録状況が未確認です'], ['editor', '今週は新規企画より、既存セットの公開を優先したい'], ['ceo', '公開の確認と画像の改善を今日の優先にします'], ['sns', 'コメントしました']].map(([role, text]) => ({ role, text, facts: ids.slice(0, 2) })),
-          issues: [{ title: '画像が通販カタログのように見える', cause: '楽天の商品画像を並べた構成', facts: ids.slice(0, 1), owner: 'designer' }, { title: '根拠のない問題', cause: 'x', facts: [], owner: 'ceo' }],
-          proposals: [{ role: 'editor', title: '社長、今週は新しい発掘より、既存の投稿セットの公開を優先させてください', facts: ids.slice(0, 2), impact: '公開がないと何が反応されるか分かりません', request: '承認か却下で答えてください', kind: 'decision' }, { role: 'sns', title: '根拠のない提言', facts: [], impact: 'x', request: 'y', kind: 'decision' }],
+          issues: [{ key: 'design', title: '画像が通販カタログのように見える', cause: '楽天の商品画像を並べた構成', facts: ids.slice(0, 1), owner: 'designer', selfActions: '改善版の試作を割り当てた', remaining: '改善版の提出', progress: u.includes('続いている問題') ? '前回から：改善版を試作中' : '' }, { key: 'other', title: '根拠のない問題', cause: 'x', facts: [], owner: 'ceo' }],
+          proposals: [
+            // 社長にしか決められない理由がない → 社員の仕事に回る
+            { role: 'editor', title: '社長、今週は新しい発掘より、既存の投稿セットの公開を優先させてください', facts: ids.slice(0, 2), impact: '公開がないと何が反応されるか分かりません', request: '既存の投稿セットの完成を優先する', kind: 'decision', cause: 'discovery' },
+            // 投稿公開の件は、経営責任者が1件にまとめる
+            { role: 'sns', title: '社長、Instagramに投稿してください', facts: ids.slice(0, 2), impact: '公開がないと測れない', request: '投稿してURLを記録', kind: 'approve', ownerReason: 'external', cause: 'publish', recommend: '推奨案から投稿' },
+            { role: 'ceo', title: '社長、ブランド方針を「30代男性の小物」に絞ってよいですか', facts: ids.slice(0, 1), impact: '企画の軸が定まる', request: '承認か却下', kind: 'decision', ownerReason: 'policy', cause: 'other', recommend: '絞る（保存されやすい企画が作りやすい）' },
+            { role: 'sns', title: '根拠のない提言', facts: [], impact: 'x', request: 'y', kind: 'decision', ownerReason: 'policy' }],
+          staffTasks: [{ title: '過去の却下理由を分析して、次の企画に反映', assignee: 'editor', priority: 'mid', dueDays: 2, doneWhen: '却下理由の分類と次の企画の方針を提出', output: '分析メモ' }],
           taskUpdates: tasks.map((id) => ({ id, note: '担当が作業中。社長の確認を待っている', status: 'doing' })),
           newTasks: [], plan: ['採用済みの投稿セット1件の表紙を、価格比較の切り口で作り直す', 'ROOM登録の確認を社長に依頼する'], improvements: [{ problem: '表紙の見出しが似ている', idea: '切り口を毎回変える（価格比較・意外性・問題提起）' }]
         });
@@ -124,7 +131,7 @@ if (process.env.MOCK) {
       : body.messages[0].content.includes('社長が会議室で返信しました')
       ? aiReply({ messages: [{ role: 'designer', text: '承知しました。今の制作方式の限界を調べ、別のデザイン方法と比べた改善案を出します' }, { role: 'ceo', text: 'デザイナーに改善を割り当てます。改善版ができたら社長に確認をお願いします' }], newTasks: [{ title: 'Instagram画像の改善案と改善版の制作', assignee: 'designer', priority: 'high', dueDays: 2, doneWhen: '今の画像の評価と、改善版の投稿セット1件を社長に提出' }], taskUpdates: [] })
       : body.messages[0].content.includes('あなたはデザイナーとコピーライターです')
-      ? aiReply({ summary: '表紙の見出しが抽象的で似ており、商品画像を並べた通販カタログに近い。切り口を変えた見出しと表紙の型で改善版を作る', diagnosis: ['表紙で興味を引けるか', 'キャッチコピーが毎回似ていないか', '商品が十分に大きく見えるか', '商品画像の品質', '文字量と読みやすさ', 'レイアウトの単調さ', 'アカウントの独自性', '保存したくなる情報があるか'].map((point, i) => ({ point, score: [2, 2, 3, 3, 4, 2, 2, 2][i], finding: '投稿セットの情報から見ると改善の余地がある' })), changes: ['表紙の見出しを、価格比較・意外性など具体的な切り口にする', '表紙の型を企画ごとに変え、毎回同じ見た目にしない', '2枚目に比べ方の要点をまとめ、保存したくなる情報にする'], copyVariants: [{ angle: '価格比較', title: '6,000円と1,900円、何が違う？' }, { angle: '意外性', title: 'このTシャツ、実は○○' }, { angle: '問題提起', title: '無地T、毎回同じ失敗してない？' }, { angle: '価格比較', title: '重複した切り口' }], coverStyle: 'premium_vs_alternative', tool: { id: 'canva_manual', problem: '今の作り方では文字組みと写真の表現に限界がある', expected: 'テンプレートで雑誌のような文字組みにできる', alternative: '今のアプリの表紙の型を増やす（無料）' }, nextStep: '改善版の見出しのどれが良いか選んでください' })
+      ? aiReply({ summary: '表紙の見出しが抽象的で似ており、商品画像を並べた通販カタログに近い。切り口を変えた見出しと表紙の型で改善版を作る', diagnosis: ['表紙で興味を引けるか', 'キャッチコピーが毎回似ていないか', '商品が十分に大きく見えるか', '商品画像の品質', '文字量と読みやすさ', 'レイアウトの単調さ', 'アカウントの独自性', '保存したくなる情報があるか'].map((point, i) => ({ point, score: [2, 2, 3, 3, 4, 2, 2, 2][i], finding: '投稿セットの情報から見ると改善の余地がある' })), changes: ['表紙の見出しを、価格比較・意外性など具体的な切り口にする', '表紙の型を企画ごとに変え、毎回同じ見た目にしない', '2枚目に比べ方の要点をまとめ、保存したくなる情報にする'], copyVariants: [{ angle: '価格比較', title: '3,000円と5,000円、何が違う？', coverStyle: 'premium_vs_alternative', photo: true, why: '価格差で比べたくなる' }, { angle: '問題提起', title: '贈り物、毎回同じで迷ってない？', coverStyle: 'gift_select', photo: true, why: '悩みから入って保存されやすい' }, { angle: '発見', title: '知らなかった、大人の小物3選', coverStyle: 'trend_pick', photo: true, why: '発見の切り口で広がりやすい' }, { angle: '価格比較', title: '重複した切り口' }], recommend: { index: 2, why: '商品写真なしで権利の問題がなく、すぐ公開できる' }, coverStyle: 'premium_vs_alternative', tool: { id: 'canva_manual', problem: '今の作り方では文字組みと写真の表現に限界がある', expected: 'テンプレートで雑誌のような文字組みにできる', alternative: '今のアプリの表紙の型を増やす（無料）' }, nextStep: '改善版の見出しのどれが良いか選んでください' })
       : body.messages[0].content.includes('発注された業務の作業計画')
       ? aiReply({ summary: 'ROOM登録の確認手順', steps: ['採用済みの商品を一覧にする', '社長に登録状況を聞く'], needOwner: 'ROOMに登録した商品を教えてください', nextStep: '登録状況の返信' })
       : body.messages[0].content.includes('1つの投稿で3〜8商品を紹介する企画')

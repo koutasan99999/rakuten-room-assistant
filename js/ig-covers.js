@@ -72,6 +72,13 @@
         return w + ctx.measureText(p.t).width;
       }, 0);
     }
+    // 改行のない長い見出しは、2行に分ける（「、」などの区切りの近くで。小さく縮めすぎたり、はみ出して切れたりしないように）
+    if (lines.length === 1 && widthOf(lines[0], o.size * 0.8) > o.maxWidth) {
+      var l0 = lines[0]; var mid = Math.round(l0.length / 2); var cut = -1;
+      for (var k = 0; k <= mid; k++) { [mid + k, mid - k].forEach(function (j) { if (cut === -1 && j > 1 && j < l0.length - 1 && /[、。！？!?・,\s]/.test(l0[j - 1])) cut = j; }); }
+      if (cut === -1) cut = mid;
+      lines = [l0.slice(0, cut).trim(), l0.slice(cut).trim()].filter(Boolean);
+    }
     while (size > o.minSize && lines.some(function (l) { return widthOf(l, size) > o.maxWidth; })) size -= 4;
     var lh = size * (o.lineHeight || 1.2);
     var y = o.y;

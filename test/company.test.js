@@ -21,7 +21,9 @@ test('経営会議：事実の番号を渡し、根拠のない提言・問題�
   mock = installFetchMock({ openai: (body) => { user = body.messages[1].content; return aiReply({
     summary: '公開が0件', statements: [{ role: 'sns', text: '公開の記録が0件です', facts: ['F2'] }, { role: 'sns', text: '二人目のSNS', facts: [] }, { role: 'buyer', text: 'コメントしました', facts: ['F1'] }, { role: 'designer', text: '投稿セットを制作しました', facts: ['F3'] }, { role: 'nobody', text: 'x' }],
     issues: [{ title: '公開がない', cause: '記録0件', facts: ['F2', 'F9'], owner: 'sns' }, { title: '根拠なし', cause: 'x', facts: [] }],
-    proposals: [{ role: 'sns', title: '社長、公開を確認できていません', facts: ['F1', 'F2'], impact: '効果を測れない', request: '投稿URLを記録してください', kind: 'confirm' }, { role: 'ceo', title: '根拠のない批判', facts: ['F99'], impact: 'x', request: 'y' }, { role: 'ceo', title: '影響なし', facts: ['F1'], impact: '', request: 'y' }],
+    proposals: [{ role: 'sns', title: '社長、公開を確認できていません', facts: ['F1', 'F2'], impact: '効果を測れない', request: '投稿URLを記録してください', kind: 'confirm' },
+      { role: 'sns', title: '社長、Instagramへの投稿を承認してください', facts: ['F2'], impact: '公開できない', request: '承認', kind: 'approve', ownerReason: 'external', cause: 'publish', recommend: 'A案で投稿' },
+      { role: 'ceo', title: '根拠のない批判', facts: ['F99'], impact: 'x', request: 'y', ownerReason: 'policy' }, { role: 'ceo', title: '影響なし', facts: ['F1'], impact: '', request: 'y', ownerReason: 'cost' }],
     taskUpdates: [{ id: 't1', note: '改善案を作成中', status: 'done' }, { id: 'tX', note: '知らない業務', status: 'doing' }],
     newTasks: [{ title: 'ROOM登録の確認', assignee: 'sales', priority: 'high', dueDays: 2, doneWhen: '登録状況を記録' }, { title: '担当なし', assignee: 'x', dueDays: 1, doneWhen: 'y' }],
     plan: ['表紙を作り直す'], improvements: [{ problem: '見出しが似ている', idea: '切り口を変える' }]
@@ -32,9 +34,11 @@ test('経営会議：事実の番号を渡し、根拠のない提言・問題�
   assert.ok(user.includes('F2（instagram）: Instagramに公開した記録：0件') && user.includes('画像が微妙') && user.includes('t1: 画像の改善'), user);
   assert.deepEqual(m.statements.map((s) => s.role), ['sns', 'designer']); // 記録のない「コメントしました」は落とし、記録（activity）がある「制作しました」は残す
   assert.deepEqual(m.issues.map((i) => [i.title, i.facts]), [['公開がない', ['F2']]]);
-  assert.deepEqual(m.proposals.map((p) => p.title), ['社長、公開を確認できていません']);
+  // 社長にしか決められない理由（ownerReason）があるものだけが社長への判断依頼。ないものは社員の仕事に回す
+  assert.deepEqual(m.proposals.map((p) => [p.title, p.ownerReason, p.cause, p.recommend]), [['社長、Instagramへの投稿を承認してください', 'external', 'publish', 'A案で投稿']]);
+  assert.ok(m.staffTasks.some((t) => t.title === '公開を確認できていません' && t.assignee === 'sns' && t.doneWhen === '投稿URLを記録してください'), JSON.stringify(m.staffTasks));
   assert.deepEqual(m.taskUpdates, [{ id: 't1', note: '改善案を作成中', status: '' }]); // 完了にはできない
-  assert.deepEqual(m.newTasks, [{ title: 'ROOM登録の確認', assignee: 'sales', priority: 'high', due: '2026-11-06', doneWhen: '登録状況を記録' }]);
+  assert.deepEqual(m.newTasks, [{ title: 'ROOM登録の確認', assignee: 'sales', priority: 'high', due: '2026-11-06', doneWhen: '登録状況を記録', output: '' }]);
 });
 
 test('会議室の返信：社員の応答と業務を作る。改善案：観点ごとの評価・切り口の重ならない見出し・ツールの料金は確認済みの一覧から', async () => {
@@ -55,6 +59,8 @@ test('会議室の返信：社員の応答と業務を作る。改善案：観�
   assert.equal(d.diagnosis.length, 4);
   assert.ok(d.diagnosis.every((x) => x.score === 5));
   assert.deepEqual(d.copyVariants.map((v) => v.angle + v.title), ['価格比較A', '問題提起D']);
+  assert.deepEqual(d.copyVariants.map((v) => v.photo), [true, false]); // 少なくとも1案は商品写真なし（利用条件が未確認のため）
+  assert.equal(d.recommend.index, 1); // 推奨の指定がなければ、すぐ公開できる写真なしの案
   assert.equal(d.coverStyle, 'trend_pick'); // 小さく並べる型は使わない
   const canva = TOOL_CATALOG.find((t) => t.id === 'canva_manual');
   assert.equal(d.tool.cost, canva.cost); // AIの書いた料金ではなく、確認済みの一覧の内容

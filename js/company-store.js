@@ -13,7 +13,7 @@
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     s = s && typeof s === 'object' ? s : {};
     ['meetings', 'room', 'ownerNotes', 'improvements', 'igActivity'].forEach(function (k) { s[k] = Array.isArray(s[k]) ? s[k] : []; });
-    ['proposals', 'tasks'].forEach(function (k) { s[k] = s[k] && typeof s[k] === 'object' ? s[k] : {}; });
+    ['proposals', 'tasks', 'issueTrack'].forEach(function (k) { s[k] = s[k] && typeof s[k] === 'object' ? s[k] : {}; });
     s.seq = Number(s.seq) || 0;
     return s;
   }
@@ -73,6 +73,8 @@
       write(s);
       return x;
     },
+    // 経営責任者の整理：統合した提言（merged）・明日以降に回した判断依頼（queued）。消さずに状態だけ変える
+    setProposalStatus: function (pid, status, note) { var s = read(); var x = s.proposals[pid]; if (!x) return; x.status = status; if (note) x.note = note; x.updatedAt = now(); write(s); },
     replyProposal: function (pid, who, text) { var s = read(); var x = s.proposals[pid]; if (!x) return; x.replies.push({ at: now(), who: who, text: text }); write(s); },
     // ---- 業務 ----
     addTask: function (t) {
@@ -83,6 +85,27 @@
       return x;
     },
     task: function (tid) { return read().tasks[tid] || null; },
+    // 同じ目的の未完了の業務（key で探す。会議のたびに同じ業務を増やさない）
+    taskByKey: function (key) { var s = read(); return Object.keys(s.tasks).map(function (k) { return s.tasks[k]; }).filter(function (t) { return t.key === key && !TASK_DONE[t.status]; })[0] || null; },
+    updateTask: function (tid, patch) { var s = read(); var t = s.tasks[tid]; if (!t) return null; Object.assign(t, patch, { updatedAt: now() }); write(s); return t; },
+    // ---- 問題の追跡（同じ根本原因の問題を日をまたいで1つとして追う：何日目か・日ごとの進捗） ----
+    issueTrack: function () { return read().issueTrack; },
+    trackIssue: function (key, title, date, progress) {
+      var s = read();
+      var x = s.issueTrack[key] || { key: key, firstSeen: date, days: 0, log: [] };
+      if (x.lastDate !== date) { x.days += 1; x.lastDate = date; }
+      x.title = title;
+      x.resolved = false;
+      x.log = x.log.filter(function (l) { return l.date !== date; }).concat([{ date: date, progress: progress || '' }]).slice(-30);
+      s.issueTrack[key] = x;
+      write(s);
+      return x;
+    },
+    resolveIssues: function (activeKeys, date) {
+      var s = read();
+      Object.keys(s.issueTrack).forEach(function (k) { var x = s.issueTrack[k]; if (activeKeys.indexOf(k) === -1 && !x.resolved) { x.resolved = true; x.resolvedAt = date; } });
+      write(s);
+    },
     tasks: function (open) { var s = read(); return Object.keys(s.tasks).map(function (k) { return s.tasks[k]; }).filter(function (t) { return !open || !TASK_DONE[t.status]; }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; }); },
     progress: function (tid, text, by, status) {
       var s = read(); var t = s.tasks[tid]; if (!t) return null;
