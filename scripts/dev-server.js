@@ -154,12 +154,13 @@ if (process.env.MOCK) {
         const Q = { cheaper: [['無地 Tシャツ 厚手', 'Tシャツ']], brand: [['Tシャツ', 'Tシャツ'], ['キャップ', 'キャップ']], same_price: [['BEAMS ポケット Tシャツ', 'Tシャツ']],
           coord: [['カーゴパンツ メンズ', 'カーゴパンツ'], ['白 スニーカー メンズ', 'スニーカー'], ['ショルダーバッグ メンズ', 'バッグ'], ['キャップ メンズ', 'キャップ']],
           // おまかせ（ミックス）：軸を混ぜる
-          omakase: [['Tシャツ 定番', 'Tシャツ', 'brand'], ['キャップ', 'キャップ', 'brand'], ['無地 Tシャツ 厚手', 'Tシャツ', 'cheaper'], ['ポケット Tシャツ', 'Tシャツ', 'same_price'], ['カーゴパンツ メンズ', 'パンツ', 'coord']],
+          // テーマで広げる：比較候補1語＋関連用品・利用シーン・意外な関連（投稿企画つき）
+          omakase: [['ウインドスクリーン アルミ', 'ウインドスクリーン', 'similar', 0], ['LEDランタン 充電式', 'ランタン', 'related', 0], ['焚き火台 コンパクト', '焚き火台', 'scene', 1], ['真空断熱 タンブラー', 'タンブラー', 'related', 1], ['防災セット 1人用', '防災セット', 'unexpected', 2]],
           accessory: [['サングラス メンズ', 'サングラス'], ['レザーベルト', 'ベルト'], ['ソックス 3足', 'ソックス']] }[mode] || [['Tシャツ', 'Tシャツ']];
         // スニーカーを起点にしたコーデは、バッグ・時計を探す
         const q = mode === 'coord' && /スニーカー/.test(u.split('\n')[1] || '') ? [['トートバッグ メンズ', 'バッグ'], ['腕時計 メンズ', '時計'], ['ソックス メンズ', 'ソックス']] : Q;
         const qq = q;
-        return aiReply({ queries: qq.map(([keyword, label, axis]) => ({ keyword, label, axis, why: '起点と同じ場面で使える' })), looks: mode === 'coord' ? [{ name: '休日のきれいめカジュアル', concept: '白と黒でまとめ、太めのボトムで今っぽく', labels: q.slice(0, 2).map((x) => x[1]) }, { name: '街歩きのラフスタイル', concept: '小物で色を足して、軽く見せる', labels: q.slice(2).map((x) => x[1]) }] : [] });
+        return aiReply({ themes: mode === 'omakase' ? [{ title: 'キャンプ初心者セット', angle: '最初にそろえる道具を、迷わない数に絞る' }, { title: '秋冬キャンプ用品', angle: '寒い季節に快適さを足す道具' }, { title: '防災にも使えるキャンプ用品', angle: '普段使いと備えを兼ねる' }] : [], queries: qq.map(([keyword, label, axis, theme]) => ({ keyword, label, axis, theme, why: '起点と同じ場面で使える' })), looks: mode === 'coord' ? [{ name: '休日のきれいめカジュアル', concept: '白と黒でまとめ、太めのボトムで今っぽく', labels: q.slice(0, 2).map((x) => x[1]) }, { name: '街歩きのラフスタイル', concept: '小物で色を足して、軽く見せる', labels: q.slice(2).map((x) => x[1]) }] : [] });
       })()
       : body.messages[0].content.includes('起点の商品から広げて見つけた楽天の候補')
       ? (() => {
@@ -168,7 +169,7 @@ if (process.env.MOCK) {
         const pick = [];
         const want = Number((body.messages[1].content.match(/最大(\d+)点/) || [])[1]) || 7;
         for (let j = 0; pick.length < want && j < 6; j++) groups.forEach((g) => { const id = `${g}-${j * 2}`; if (ids.includes(id) && pick.length < want) pick.push(id); });
-        return aiReply({ picks: pick.map((id) => ({ id, relation: '起点と同じ休日の服装に合わせやすい', similar: '無地で落ち着いた色', differ: '生地の厚さとシルエットが違う', feature: '綿100%と説明に書かれている', look: Number(id.split('-')[0]) < 2 ? 0 : 1 })) });
+        return aiReply({ picks: pick.map((id) => ({ id, relation: '起点と同じ休日の服装に合わせやすい', similar: '無地で落ち着いた色', differ: '生地の厚さとシルエットが違う', feature: '綿100%と説明に書かれている', value: Number(id.split('-')[0]) === 0 ? '起点より価格帯が上で、比べる意味がある（楽天ランキング1位）' : '同じ場面で使えて、デザインに独自性がある', look: Number(id.split('-')[0]) < 2 ? 0 : 1, theme: Number(id.split('-')[0]) % 3 })) });
       })()
       : body.messages[0].content.includes('楽天市場で商品を探す検索語を1つ決めます')
       ? aiReply({ keyword: '本革 キーケース 日本製' })
