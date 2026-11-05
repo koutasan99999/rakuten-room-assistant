@@ -34,7 +34,7 @@
     // 社長が登録した参考アカウントの調査（テーマ・視聴者に届く切り口）も、商品探しに使う
     var refs = window.ThiefView && window.ThiefView.insights ? window.ThiefView.insights() : [];
     // 通常のプレゼン（scout）は、直近のプレゼンの分類を渡して、同じジャンルが続かないように探してもらう
-    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste(), refs: refs }, action === 'scout' ? { recent: S.recent(30) } : {}, extra || {});
+    var payload = Object.assign({ action: action, exclude: S.exclude(), taste: S.taste(), refs: refs }, action === 'scout' ? { recent: S.recent(30), count: pitchCount() } : {}, extra || {});
     return K.jobCall('pitch', payload, { label: '社長、これどうすか？：' + label, genre: '' }).then(function (r) {
       busy = '';
       if (r.status !== 200) { lastNotice = (r.data && r.data.error) || '探せませんでした'; render(); return; }
@@ -47,6 +47,9 @@
     });
   }
 
+  // 1回に出す企画の数（標準8件・5〜10件で変えられる）
+  var COUNT_KEY = 'room-pitch-count';
+  function pitchCount() { var n = 8; try { n = Number(localStorage.getItem(COUNT_KEY)) || 8; } catch (e) {} return Math.max(5, Math.min(10, n)); }
   function makeIntro(p) {
     return K.postJson('api/pitch', { action: 'intro', product: p }).then(function (r) {
       if (r.status !== 200 || !r.data.intro) { K.showToast('紹介文を作れませんでした。採用リストで作り直せます'); return; }
@@ -89,14 +92,17 @@
     if (p.category) chips.appendChild(el('span', 'tag', p.category));
     if (p.brand) chips.appendChild(el('span', 'role', p.brand));
     card.appendChild(chips);
-    card.appendChild(el('h3', 'cand-name', cleanName(p.name)));
+    if (p.planTitle) card.appendChild(el('p', 'pitch-plan-title', '企画：' + p.planTitle));
+    if (p.score) card.appendChild(el('p', 'pitch-score', 'AI社員の推奨度 ' + '★★★★★'.slice(0, p.score) + '☆☆☆☆☆'.slice(0, 5 - p.score) + (p.scoreWhy ? '｜' + p.scoreWhy : '')));
+    card.appendChild(el('h3', 'cand-name', 'おすすめ商品：' + cleanName(p.name)));
     var meta = el('p', 'cand-meta');
     meta.appendChild(el('strong', 'cand-price', priceLine(p)));
     meta.appendChild(el('span', 'cand-shop', (p.brand ? 'ブランド：' + p.brand + '｜' : 'ブランド：商品名から不明｜') + (p.shop || '')));
     card.appendChild(meta);
     var dl = el('dl', 'radar-facts');
     var feat = p.feature || (p.caption ? String(p.caption).replace(/\s+/g, ' ').slice(0, 90) + '…（楽天の商品説明より）' : '');
-    [['商品の特徴', feat], ['AI社員が発掘した理由', p.pitch], ['眼科医くまに合う理由', p.fit], ['買う前の弱点・注意点', p.caution]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
+    var vf = p.verified ? '価格 ' + (p.verified.price ? K.formatPrice(p.verified.price) : '未取得') + '・楽天の商品ページあり・レビュー ' + (p.verified.reviewCount ? p.verified.reviewCount + '件（平均' + (p.verified.reviewAverage || '-') + '）' : 'なし') + '（楽天の商品データで確認' + (p.verified.at ? '・' + new Date(p.verified.at).toLocaleDateString('ja-JP') : '') + '）' : '';
+    [['企画の面白さ・独自性', p.pitch], ['商品の特徴', feat], ['想定ターゲット', p.who], ['収益につながる仮説', p.revenue ? p.revenue + '（仮説）' : ''], ['確認済みの情報', vf], ['眼科医くまに合う理由', p.fit], ['買う前の弱点・注意点', p.caution]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     card.appendChild(dl);
     if (p.sourcePost || p.sourceHandle) card.appendChild(el('p', 'hint', '商品ドロボー：@' + (p.sourceHandle || '不明') + (p.matchNote ? '｜' + p.matchNote : '')));
     var links = el('div', 'pitch-row');
@@ -132,6 +138,13 @@
       return;
     }
     list.appendChild(el('p', 'manage-empty', '今あるプレゼンは全部見ました。'));
+    var cnt = el('label', 'pitch-count-sel');
+    cnt.appendChild(document.createTextNode('1回に出す企画の数 '));
+    var sel = el('select', 'select');
+    [5, 6, 7, 8, 9, 10].forEach(function (n) { var o = el('option', null, n + '件'); o.value = String(n); if (n === pitchCount()) o.selected = true; sel.appendChild(o); });
+    sel.addEventListener('change', function () { try { localStorage.setItem(COUNT_KEY, sel.value); } catch (e) {} });
+    cnt.appendChild(sel);
+    list.appendChild(cnt);
     list.appendChild(btn('次の商品を探してもらう', 'btn btn-discover', function () { fetchItems('scout', {}, '新しく探す'); }));
   }
 

@@ -1,0 +1,261 @@
+// Instagram広報部：フォロー候補・コメント候補・実施状況を1つの画面で。
+// 調べた事実：Instagramの公式API（今のアプリの「Instagramログイン」の方式）では、ハッシュタグ検索・他のアカウントの調査・第三者へのフォローやコメントは提供されていない。
+// そのため、アプリが自動でするのは「探す場所の用意・分類・優先順位・重複の防止・コメント案・履歴」まで。フォローとコメントは社長がInstagramで行い、ここに記録する。
+(function () {
+  'use strict';
+
+  var K = window.AppKit;
+  var R = window.PrStore;
+  if (!K || !R) return;
+  var el = K.el;
+  // 優先ジャンルと、毎日の「探す場所」に使うハッシュタグ（日ごとに入れ替える）
+  var GENRES = [
+    ['useful', '便利グッズ・生活雑貨', ['便利グッズ', '暮らしの道具', '生活雑貨', '暮らしを整える', '買ってよかったもの']],
+    ['gadget', 'ガジェット', ['ガジェット', 'デスクツアー', 'デスク周り', 'ガジェット好き']],
+    ['outdoor', 'キャンプ・アウトドア', ['キャンプギア', 'キャンプ道具', 'ソロキャンプ', 'アウトドアギア']],
+    ['interior', 'インテリア', ['インテリア', '部屋づくり', 'インテリア雑貨', '一人暮らしインテリア']],
+    ['fashion', 'ファッション', ['メンズファッション', '大人カジュアル', '30代コーデ', 'シンプルコーデ']],
+    ['gift', 'ギフト・プレゼント', ['プレゼント選び', 'ギフト', '誕生日プレゼント', '贈り物']],
+    ['brand', 'ブランド・メーカー公式', []]
+  ];
+  var GNAME = {}; GENRES.forEach(function (g) { GNAME[g[0]] = g[1]; });
+  var tabA = 'candidate'; var tabP = 'todo'; var genreF = '';
+  var busy = {};
+  var container = null;
+
+  function btn(text, cls, fn) { var b = el('button', cls, text); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function linkBtn(text, url, cls) { var a = el('a', cls || 'link-btn', text); a.href = url; a.target = '_blank'; a.rel = 'noopener'; return a; }
+  function today() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); }
+  function isToday(iso) { return iso && new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(0, 10) === today(); }
+  function within(iso, d) { return iso && Date.now() - new Date(iso).getTime() < d * 86400000; }
+  function stamp(iso) { try { return new Date(iso).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+  function stars(n) { return '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n); }
+  function companyLog(a) { if (window.CompanyStore) window.CompanyStore.addActivity(a); }
+
+  // ---- 今日の探す場所（自動で用意）：ジャンルごとのハッシュタグを日替わりで2つ＋採用した商品のブランドの検索 ----
+  function places() {
+    var day = Math.floor(Date.now() / 86400000);
+    var out = [];
+    GENRES.forEach(function (g, gi) {
+      g[2].forEach(function (t, i) { if ((i + day + gi) % g[2].length < 2) out.push({ genre: g[0], label: '#' + t, url: 'https://www.instagram.com/explore/tags/' + encodeURIComponent(t) + '/' }); });
+    });
+    var brands = {};
+    (window.PitchStore ? window.PitchStore.list('adopt') : []).forEach(function (p) { if (p.brand) brands[p.brand] = true; });
+    Object.keys(brands).slice(0, 5).forEach(function (b) { out.push({ genre: 'brand', label: b + '（公式アカウントを探す）', url: 'https://www.google.com/search?q=' + encodeURIComponent('site:instagram.com ' + b + ' 公式') }); });
+    return out;
+  }
+
+  // ---- 登録済みの参考アカウントを、フォロー候補に入れる（自動。重複は入れない） ----
+  function importRefs() {
+    var n = 0;
+    if (window.ThiefStore) window.ThiefStore.accounts().forEach(function (a) { if (a.handle && !R.account(R.normHandle(a.handle))) { var themes = a.research && a.research.themes ? a.research.themes.join('・') : ''; if (!R.addAccount({ handle: a.handle, genre: '', reason: '社長が登録した参考アカウント' + (themes ? '（テーマ：' + themes + '）' : ''), priority: 2, source: '参考アカウント' }).dup) n++; } });
+    return fetch('data/reference-accounts.json').then(function (r) { return r.ok ? r.json() : null; }, function () { return null; }).then(function (d) {
+      Object.keys((d && d.accounts) || {}).forEach(function (h) { var x = d.accounts[h]; if (x && x.status !== 'not_found' && !R.account(R.normHandle(h))) { var unknown = /見つから|未確認/.test(x.summary || '');
+          // 調べても情報が見つからなかったアカウントは、内容を推測で書かない
+          var res = R.addAccount({ handle: h, genre: '', reason: unknown ? '社長が登録した参考アカウント（Web上の情報は見つからず、内容は未確認）' : '参考アカウントの調査記録あり（' + (x.checkedAt || '') + '）' + (x.themes ? '：' + x.themes.slice(0, 2).join('・') : ''), priority: unknown ? 1 : 2, source: '参考アカウントの調査' }); if (res.account && !res.dup) n++; } });
+      return n;
+    });
+  }
+
+  // ---- コメント案（投稿の文章から。既存のコメント案の決まり：具体的な1点に触れる・宣伝しない・体験を作らない） ----
+  function makeDrafts(id) {
+    var p = R.posts().filter(function (x) { return x.id === id; })[0];
+    if (!p || !p.caption || busy[id]) return;
+    busy[id] = true; paint();
+    K.postJson('api/thief', { action: 'comment', caption: p.caption }).then(function (r) {
+      delete busy[id];
+      if (r.status === 200 && Array.isArray(r.data.comments)) R.updatePost(id, { drafts: r.data.comments, draftAt: new Date().toISOString(), draftError: '' });
+      else R.updatePost(id, { draftError: (r.data && r.data.error) || 'コメント案を作れませんでした' });
+      paint();
+    });
+  }
+
+  function addFromForm(url, handle, caption, genre, reason) {
+    var u = R.parseUrl(url);
+    if (!u) { K.showToast('InstagramのプロフィールURLか投稿のURLを入れてください'); return false; }
+    if (u.kind === 'account') {
+      var r = R.addAccount({ handle: u.handle, genre: genre, reason: reason || '社長が追加' + (genre ? '（' + GNAME[genre] + '）' : ''), priority: genre === 'brand' ? 3 : 2, official: genre === 'brand', source: '社長が追加' });
+      K.showToast(r.dup ? 'すでに候補にあります（同じアカウントは二重に入れません）' : 'フォロー候補に入れました');
+    } else {
+      var rp = R.addPost({ url: url, handle: handle, caption: caption, genre: genre, reason: reason || '社長が見つけた投稿', source: '社長が追加' });
+      if (rp.error) { K.showToast(rp.error); return false; }
+      if (rp.dup) { K.showToast('この投稿はすでに候補にあります'); return false; }
+      // 投稿者もフォロー候補に入れて、コメントとフォローを同じアカウントでまとめて管理する
+      if (R.normHandle(handle)) R.addAccount({ handle: handle, genre: genre, reason: 'コメント候補の投稿者', priority: 2, source: 'コメント候補から' });
+      K.showToast('コメント候補に入れました' + (caption ? '。コメント案を作ります' : '（投稿の文章を貼ると、コメント案を作れます）'));
+      if (caption) makeDrafts(rp.post.id);
+    }
+    return true;
+  }
+
+  // ---- 画面 ----
+  function card(title) { var d = el('div', 'card'); d.appendChild(el('p', 'co-h', title)); return d; }
+  function dashboard() {
+    var c = card('広報ダッシュボード');
+    var acc = R.accounts(); var posts = R.posts();
+    var tiles = el('div', 'co-tiles');
+    var made = acc.filter(function (a) { return isToday(a.addedAt); }).length + posts.filter(function (p) { return isToday(p.addedAt); }).length;
+    var drafted = posts.filter(function (p) { return isToday(p.draftAt) && p.drafts.length; }).length;
+    var commented7 = posts.filter(function (p) { return p.status === 'commented' && within(p.commentedAt, 7); }).length;
+    var followed7 = acc.filter(function (a) { return a.status === 'followed' && within(a.followedAt, 7); }).length;
+    [['今日の候補', made + '件', '目標10〜30件（候補づくりの目安。送信のノルマではない）'], ['今日のコメント案', drafted + '件', '投稿の文章から作成'], ['コメントした（7日）', commented7 + '件', '社長の申告'], ['フォローした（7日）', followed7 + '件', '社長の申告']].forEach(function (t) {
+      var x = el('div', 'co-tile'); x.appendChild(el('p', 'co-tile-label', t[0])); x.appendChild(el('p', 'co-tile-value', t[1])); x.appendChild(el('p', 'co-tile-sub', t[2])); tiles.appendChild(x);
+    });
+    c.appendChild(tiles);
+    // ジャンル別
+    var rows = GENRES.map(function (g) {
+      var a = acc.filter(function (x) { return x.genre === g[0]; }); var p = posts.filter(function (x) { return x.genre === g[0]; });
+      return g[1] + '：フォロー候補' + a.filter(function (x) { return x.status === 'candidate'; }).length + '・フォロー済み' + a.filter(function (x) { return x.status === 'followed'; }).length + '・コメント済み' + p.filter(function (x) { return x.status === 'commented'; }).length;
+    });
+    var d = el('details', 'co-more'); d.appendChild(el('summary', null, 'ジャンル別の実施状況'));
+    var ul = el('ul', 'co-facts'); rows.forEach(function (r) { ul.appendChild(el('li', null, r)); }); d.appendChild(ul);
+    c.appendChild(d);
+    // Instagramの数字（公式APIで取れるものだけ）
+    var ig = el('div', 'pr-ig');
+    ig.appendChild(el('p', 'hint', 'プロフィールアクセス・フォロワーの増減・リーチ：確認しています…'));
+    c.appendChild(ig);
+    K.postJson('api/ig', { action: 'status' }).then(function (r) {
+      ig.innerHTML = '';
+      if (r.status !== 200 || !r.data.ready) { ig.appendChild(el('p', 'hint', 'プロフィールアクセス・フォロワーの増減・リーチ・ROOMへの流入：未取得（Instagramの公式APIが未設定のため。ROOMへの流入は楽天側で取れるAPIがありません）')); return; }
+      ig.appendChild(btn('Instagramの数字を取得（直近7日）', 'status-btn', function () {
+        ig.appendChild(el('p', 'hint', '取得しています…'));
+        K.postJson('api/ig', { action: 'insights', days: 7 }).then(function (x) {
+          if (x.status !== 200 || !x.data.insights) { ig.appendChild(el('p', 'hint pitch-warn', '取得できませんでした：' + ((x.data && x.data.error) || ''))); return; }
+          var m = x.data.insights.metrics || {};
+          var v = function (k) { return m[k] == null ? '未取得' : typeof m[k] === 'object' ? (m[k].error ? '未取得' : JSON.stringify(m[k]).slice(0, 40)) : m[k]; };
+          ig.appendChild(el('p', 'hint', '直近7日：リーチ ' + v('reach') + '・閲覧 ' + v('views') + '・プロフィールのリンクのタップ ' + v('profile_links_taps') + '・フォロー/解除 ' + v('follows_and_unfollows') + '｜フォロワー ' + ((x.data.account || {}).followers_count != null ? x.data.account.followers_count : '未取得')));
+        });
+      }));
+    });
+    c.appendChild(el('p', 'hint', '注意：数字の増減を、コメントやフォローの効果だと断定しません（投稿・季節・ほかの要因も重なるため）。期間を並べて傾向を見るだけにします。'));
+    return c;
+  }
+
+  function placesCard() {
+    var c = card('今日の探す場所（自動で用意）');
+    c.appendChild(el('p', 'hint', 'アプリは他のアカウント・投稿を自動では集められません（公式APIで提供されていないため）。代わりに、ジャンルごとの探す場所を毎日入れ替えて用意します。開いて良いアカウント・投稿を見つけたら、URLをコピーして下の「候補に入れる」へ。新しい投稿・コメント欄が活発な投稿を優先してください。'));
+    var grid = el('div', 'pr-places');
+    places().forEach(function (p) { var a = linkBtn(p.label, p.url, 'pr-place'); a.appendChild(el('span', 'pr-place-genre', GNAME[p.genre] || '')); grid.appendChild(a); });
+    c.appendChild(grid);
+    return c;
+  }
+
+  // 入力中の内容は、画面を描き直しても消えないように覚えておく
+  var form = { url: '', handle: '', cap: '', genre: '', reason: '' };
+  function bind(input, key) { input.value = form[key]; input.addEventListener('input', function () { form[key] = input.value; }); input.addEventListener('change', function () { form[key] = input.value; }); return input; }
+  function addCard() {
+    var c = card('候補に入れる（URLを貼るだけ）');
+    var url = el('input', 'input'); url.placeholder = 'InstagramのプロフィールURL または 投稿のURL';
+    var handle = el('input', 'input'); handle.placeholder = '投稿のとき：投稿者のアカウント名（@なしでOK）';
+    var cap = el('textarea', 'input'); cap.rows = 3; cap.placeholder = '投稿のとき：投稿の文章を貼る（コメント案を作ります。見ていない内容は書きません）';
+    var gs = el('select', 'select'); var o0 = el('option', null, 'ジャンルを選ぶ'); o0.value = ''; gs.appendChild(o0);
+    GENRES.forEach(function (g) { var o = el('option', null, g[1]); o.value = g[0]; gs.appendChild(o); });
+    var reason = el('input', 'input'); reason.placeholder = '選んだ理由（任意。例：コメント欄が活発・新作の紹介が丁寧）';
+    [[url, 'url'], [handle, 'handle'], [cap, 'cap'], [gs, 'genre'], [reason, 'reason']].forEach(function (x) { c.appendChild(bind(x[0], x[1])); });
+    c.appendChild(btn('候補に入れる', 'btn btn-primary', function () {
+      var ok = addFromForm(form.url, form.handle, form.cap.trim(), form.genre, form.reason.trim());
+      if (ok) { form = { url: '', handle: '', cap: '', genre: form.genre, reason: '' }; paint(); }
+    }));
+    return c;
+  }
+
+  function accountsCard() {
+    var c = card('フォロー候補');
+    var tabs = el('div', 'xp-filter');
+    var acc = R.accounts();
+    [['candidate', '候補'], ['followed', 'フォロー済み'], ['hidden', '興味なし']].forEach(function (t) { tabs.appendChild(btn(t[1] + '（' + acc.filter(function (a) { return a.status === t[0]; }).length + '）', 'xp-chip' + (tabA === t[0] ? ' active' : ''), function () { tabA = t[0]; paint(); })); });
+    c.appendChild(tabs);
+    var gt = el('div', 'xp-filter');
+    gt.appendChild(btn('すべてのジャンル', 'xp-chip' + (!genreF ? ' active' : ''), function () { genreF = ''; paint(); }));
+    GENRES.forEach(function (g) { gt.appendChild(btn(g[1], 'xp-chip' + (genreF === g[0] ? ' active' : ''), function () { genreF = g[0]; paint(); })); });
+    c.appendChild(gt);
+    var list = acc.filter(function (a) { return a.status === tabA && (!genreF || a.genre === genreF); }).sort(function (a, b) { return (b.priority || 0) - (a.priority || 0) || (a.addedAt < b.addedAt ? 1 : -1); });
+    if (!list.length) c.appendChild(el('p', 'hint', tabA === 'candidate' ? '候補はありません。「今日の探す場所」から見つけて、URLを貼ってください。' : 'ありません。'));
+    list.forEach(function (a) {
+      var r = el('div', 'co-issue');
+      r.appendChild(el('p', 'co-title', '@' + a.handle + (a.official ? '（公式）' : '')));
+      r.appendChild(el('p', 'hint', '優先度 ' + stars(a.priority || 1) + '｜ジャンル：' + (GNAME[a.genre] || '未分類') + '｜' + a.source + '｜' + stamp(a.addedAt) + ' 追加'));
+      if (a.reason) r.appendChild(el('p', 'hint', 'おすすめ理由：' + a.reason));
+      var rc = R.recentContact(a.handle, 7);
+      if (rc) r.appendChild(el('p', 'hint pitch-warn', '直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済み（' + stamp(rc.at) + '）。続けての営業は控えめに'));
+      r.appendChild(el('p', 'hint', '状態：' + { candidate: '未フォロー', followed: 'フォロー済み（社長の申告）', hidden: '興味なし' }[a.status] + '｜フォロワー数などは未確認（公式APIで取れないため）'));
+      var row = el('div', 'pitch-row');
+      row.appendChild(linkBtn('Instagramで開く', a.url, 'btn btn-secondary co-sbtn'));
+      if (a.status === 'candidate') {
+        row.appendChild(btn('フォローした', 'btn btn-primary co-sbtn', function () { R.setAccount(a.handle, 'followed'); companyLog({ type: 'follow', label: 'フォロー（社長が実施）', account: a.handle, url: a.url, status: 'sent', by: 'owner' }); paint(); }));
+        row.appendChild(btn('興味なし', 'status-btn', function () { R.setAccount(a.handle, 'hidden'); paint(); }));
+      } else row.appendChild(btn('候補に戻す', 'status-btn', function () { R.setAccount(a.handle, 'candidate'); paint(); }));
+      var gsel = el('select', 'select pr-gsel'); var o = el('option', null, 'ジャンルを変える'); o.value = ''; gsel.appendChild(o);
+      GENRES.forEach(function (g) { var x = el('option', null, g[1]); x.value = g[0]; if (g[0] === a.genre) x.selected = true; gsel.appendChild(x); });
+      gsel.addEventListener('change', function () { if (gsel.value) { R.updateAccount(a.handle, { genre: gsel.value, official: gsel.value === 'brand' || a.official, priority: gsel.value === 'brand' ? 3 : a.priority }); paint(); } });
+      row.appendChild(gsel);
+      r.appendChild(row);
+      c.appendChild(r);
+    });
+    return c;
+  }
+
+  function postsCard() {
+    var c = card('コメント候補');
+    var posts = R.posts();
+    var tabs = el('div', 'xp-filter');
+    [['todo', '未対応'], ['commented', 'コメント済み'], ['skipped', '見送り']].forEach(function (t) { tabs.appendChild(btn(t[1] + '（' + posts.filter(function (p) { return p.status === t[0]; }).length + '）', 'xp-chip' + (tabP === t[0] ? ' active' : ''), function () { tabP = t[0]; paint(); })); });
+    c.appendChild(tabs);
+    var list = posts.filter(function (p) { return p.status === tabP && (!genreF || p.genre === genreF); }).sort(function (a, b) { return a.addedAt < b.addedAt ? 1 : -1; });
+    if (!list.length) c.appendChild(el('p', 'hint', 'ありません。'));
+    list.forEach(function (p) {
+      var r = el('div', 'co-issue');
+      r.appendChild(el('p', 'co-title', (p.handle ? '@' + p.handle : '投稿者：未入力') + '｜' + (GNAME[p.genre] || '未分類')));
+      if (p.summary) r.appendChild(el('p', 'hint', '投稿の内容：' + p.summary + (p.caption.length > 80 ? '…' : '')));
+      r.appendChild(el('p', 'hint', '選んだ理由：' + (p.reason || '—') + '｜' + stamp(p.addedAt) + ' 追加｜いいね数・コメント数は未確認'));
+      var rc = R.recentContact(p.handle, 7);
+      if (rc && p.status === 'todo') r.appendChild(el('p', 'hint pitch-warn', 'このアカウントには直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済みです（' + stamp(rc.at) + '）。続けてのコメントは控えましょう'));
+      if (busy[p.id]) r.appendChild(el('p', 'hint pitch-busy', 'コメント案を作っています…'));
+      (p.drafts || []).forEach(function (d, i) {
+        var dr = el('div', 'pr-draft');
+        dr.appendChild(el('p', 'pr-draft-text', '案' + (i + 1) + '：' + d));
+        dr.appendChild(btn('コピー', 'status-btn co-sbtn', function () { K.copyText(d).then(function () { K.showToast('コピーしました。Instagramで内容を確かめてから送ってください'); }, function () { K.showToast('コピーできませんでした'); }); }));
+        r.appendChild(dr);
+      });
+      if (p.draftError) r.appendChild(el('p', 'hint pitch-warn', p.draftError));
+      var row = el('div', 'pitch-row');
+      row.appendChild(linkBtn('Instagramで開く', p.url, 'btn btn-secondary co-sbtn'));
+      if (p.status === 'todo') {
+        row.appendChild(btn('コメントした', 'btn btn-primary co-sbtn', function () {
+          var t = window.prompt('実際に送ったコメント（記録用。送った文面に直してください）', (p.drafts || [])[0] || '');
+          if (t == null) return;
+          R.setPost(p.id, 'commented', t.trim());
+          companyLog({ type: 'comment', label: 'コメント（社長が送信）', account: p.handle, url: p.url, text: t.trim(), status: 'sent', by: 'owner' });
+          paint();
+        }));
+        row.appendChild(btn('見送り', 'status-btn', function () { R.setPost(p.id, 'skipped'); paint(); }));
+        if (p.caption) row.appendChild(btn((p.drafts || []).length ? 'コメント案を作り直す' : 'コメント案を作る', 'status-btn', function () { makeDrafts(p.id); }));
+      } else if (p.status === 'commented') r.appendChild(el('p', 'hint', stamp(p.commentedAt) + ' コメント（社長の申告）：' + (p.commentedText || '')));
+      r.appendChild(row);
+      c.appendChild(r);
+    });
+    c.appendChild(el('p', 'hint', 'コメントの自動送信はしません（公式APIでは他のアカウントの投稿へのコメントが提供されていません）。自分の投稿へのコメントの返信は、公式APIで可能なので、Instagramの設定のあとに検討します（未実装）。'));
+    return c;
+  }
+
+  function paint() {
+    if (!container || !container.isConnected) return;
+    var y = window.scrollY;
+    container.innerHTML = '';
+    container.appendChild(dashboard());
+    container.appendChild(placesCard());
+    container.appendChild(addCard());
+    container.appendChild(accountsCard());
+    container.appendChild(postsCard());
+    window.scrollTo(0, y);
+  }
+  var imported = false;
+  function render(target) {
+    container = target;
+    paint();
+    if (!imported) { imported = true; importRefs().then(function (n) { if (n) { K.showToast('登録済みの参考アカウント' + n + '件をフォロー候補に入れました'); paint(); } }); }
+  }
+  window.PrView = { render: render, places: places, GENRES: GENRES };
+  var v = document.getElementById('pr-body');
+  if (location.hash.indexOf('#pr') === 0 && v) render(v);
+})();

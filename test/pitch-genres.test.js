@@ -49,7 +49,7 @@ test('次の商品を探す：直近と違う6分類で探し、ジャンルの�
     rakuten: (url) => {
       const kw = url.searchParams.get('keyword');
       asked.push(kw);
-      return json(200, { items: [0, 1, 2].map((i) => ({ itemCode: `${kw}:${i}`, itemName: `${kw} モデル${i}`, itemPrice: 3000 + i * 1000, itemUrl: `https://item.rakuten.co.jp/s/${encodeURIComponent(kw)}${i}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: '説明', reviewCount: 3 })) });
+      return json(200, { items: [0, 1, 2].map((i) => ({ itemCode: `${kw}:${i}`, itemName: `${kw} ${['A型', '大型', '限定版'][i]} モデル${i}`, itemPrice: 3000 + i * 1000, itemUrl: `https://item.rakuten.co.jp/s/${encodeURIComponent(kw)}${i}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: '説明', reviewCount: 3 })) });
     },
     openai: (body) => {
       const sys = body.messages[0].content;
