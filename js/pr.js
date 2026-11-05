@@ -131,9 +131,104 @@
     return c;
   }
 
+
+  // ---- 自動発掘（AIが探す）：公式サイトのリンク・公式APIの投稿から、実在を確かめたものだけを候補に入れる ----
+  var autoState = { status: null, running: '', last: null, missing: [], siteBrand: '', siteUrl: '' };
+  function adoptedBrands() {
+    var b = {};
+    (window.PitchStore ? window.PitchStore.list('adopt') : []).forEach(function (p) { if (p.brand) b[p.brand] = true; });
+    return Object.keys(b).slice(0, 40);
+  }
+  function loadStatus() {
+    if (autoState.status) return;
+    autoState.status = { loading: true };
+    K.postJson('api/pr', { action: 'status' }).then(function (r) { autoState.status = r.status === 200 ? r.data : { error: true }; paint(); });
+  }
+  function runSites() {
+    if (autoState.running) return;
+    autoState.running = 'sites'; paint();
+    K.postJson('api/pr', { action: 'sites', brands: adoptedBrands(), registered: R.sites() }).then(function (r) {
+      autoState.running = '';
+      if (r.status !== 200) { autoState.last = { error: (r.data && r.data.error) || '公式サイトを調べられませんでした' }; paint(); return; }
+      var added = 0; var found = 0;
+      (r.data.results || []).forEach(function (x) {
+        (x.handles || []).forEach(function (h) {
+          found++;
+          var res = R.addAccount({ handle: h, genre: 'brand', official: true, priority: 3, auto: true, source: '公式サイトのリンク（自動）', reason: x.brand + 'の公式サイトがリンクしているアカウント', evidence: x.pageUrl || x.url, checkedAt: x.checkedAt });
+          if (res.account && !res.dup) added++;
+        });
+      });
+      autoState.last = { kind: 'sites', at: new Date().toISOString(), added: added, found: found, results: r.data.results || [] };
+      autoState.missing = r.data.missing || [];
+      companyLog({ type: 'pr-discover', label: '公式サイトからInstagramのアカウントを自動で探した（新しく' + added + '件）', status: 'done', by: 'ai' });
+      K.showToast(added ? '実在を確かめたアカウントを' + added + '件、フォロー候補に入れました' : '新しいアカウントは見つかりませんでした');
+      paint();
+    });
+  }
+  function runRecent() {
+    if (autoState.running) return;
+    var handles = R.accounts().filter(function (a) { return a.status !== 'hidden'; }).sort(function (a, b) { return (b.priority || 0) - (a.priority || 0) || ((a.recentAt || '') < (b.recentAt || '') ? -1 : 1); }).slice(0, 8).map(function (a) { return a.handle; });
+    if (!handles.length) { K.showToast('先にフォロー候補を入れてください'); return; }
+    autoState.running = 'recent'; paint();
+    K.postJson('api/pr', { action: 'recent', handles: handles, hours: 72 }).then(function (r) {
+      autoState.running = '';
+      if (r.status !== 200 || !r.data.ready) { autoState.last = { error: (r.data && (r.data.notice || r.data.error)) || '最近の投稿を取れませんでした' }; paint(); return; }
+      var newIds = [];
+      handles.forEach(function (h) { R.updateAccount(h, { recentAt: r.data.checkedAt }); });
+      (r.data.accounts || []).forEach(function (a) {
+        if (a.followers != null) R.updateAccount(a.handle, { followers: a.followers });
+        a.posts.forEach(function (m) {
+          var acc = R.account(a.handle) || {};
+          var res = R.addPost({ url: m.url, handle: a.handle, caption: m.caption, genre: acc.genre || '', reason: '直近72時間の投稿' + (m.comments != null ? '・コメント' + m.comments + '件' : ''), source: 'Instagram公式API（自動）', auto: true, postedAt: m.timestamp, comments: m.comments, checkedAt: r.data.checkedAt });
+          if (res.post && !res.dup) newIds.push(res.post.id);
+        });
+      });
+      autoState.last = { kind: 'recent', at: r.data.checkedAt, added: newIds.length, errors: r.data.errors || [] };
+      // コメント案は、新しい候補のうち5件まで自動で作る（AIの費用：1件あたり推定0.5円）
+      newIds.slice(0, 5).forEach(function (id) { makeDrafts(id); });
+      K.showToast(newIds.length ? 'コメント候補を' + newIds.length + '件入れました' : '直近72時間の新しい投稿はありませんでした');
+      paint();
+    });
+  }
+  function autoCard() {
+    loadStatus();
+    var c = card('自動で探す（社長がInstagramを探さなくてよい方法）');
+    var st = autoState.status || {};
+    var acc = R.accounts(); var posts = R.posts();
+    var tiles = el('div', 'co-tiles');
+    [['自動で見つけた実在アカウント', acc.filter(function (a) { return a.auto; }).length + '件', '公式サイトのリンクで確認'], ['自動で作ったコメント候補', posts.filter(function (p) { return p.auto; }).length + '件', '公式APIで取得'], ['社長の手操作（1件あたり）', st.recent ? '2回' : '4〜5回', st.recent ? '開く→送信（候補探し・URLのコピーは不要）' : '探す→URLコピー→貼る→開く→送信']].forEach(function (t) {
+      var x = el('div', 'co-tile'); x.appendChild(el('p', 'co-tile-label', t[0])); x.appendChild(el('p', 'co-tile-value', t[1])); x.appendChild(el('p', 'co-tile-sub', t[2])); tiles.appendChild(x);
+    });
+    c.appendChild(tiles);
+    // 1. 公式サイト
+    c.appendChild(el('p', 'co-title', '1. 採用した商品のブランドの公式サイトから探す（費用0円）'));
+    c.appendChild(el('p', 'hint', '公式サイトがリンクしているInstagramだけを候補に入れます（リンクが無ければ入れません。Instagramのページは開きません）。対象：採用した商品のブランド ' + adoptedBrands().length + '件＋登録した公式サイト ' + Object.keys(R.sites()).length + '件'));
+    c.appendChild(btn(autoState.running === 'sites' ? '公式サイトを調べています…' : '公式サイトから探す', 'btn btn-primary', runSites));
+    if (autoState.missing.length) c.appendChild(el('p', 'hint', '公式サイトのURLが分からず調べなかったブランド：' + autoState.missing.slice(0, 10).join('・') + '（URLを1回登録すると、次から自動で調べます）'));
+    var sb = el('input', 'input'); sb.placeholder = 'ブランド名（例：Harley of Scotland）'; sb.value = autoState.siteBrand; sb.addEventListener('input', function () { autoState.siteBrand = sb.value; });
+    var su = el('input', 'input'); su.placeholder = '公式サイトのURL（https://…）'; su.value = autoState.siteUrl; su.addEventListener('input', function () { autoState.siteUrl = su.value; });
+    var reg = el('details', 'co-more'); reg.appendChild(el('summary', null, '公式サイトを登録する（ブランドごとに1回だけ）'));
+    reg.appendChild(sb); reg.appendChild(su);
+    reg.appendChild(btn('登録する', 'status-btn', function () { if (R.setSite(autoState.siteBrand, autoState.siteUrl)) { autoState.siteBrand = ''; autoState.siteUrl = ''; K.showToast('登録しました。「公式サイトから探す」で調べます'); paint(); } else K.showToast('ブランド名と https:// で始まるURLを入れてください'); }));
+    c.appendChild(reg);
+    // 2. 公式API
+    c.appendChild(el('p', 'co-title', '2. 候補アカウントの最近の投稿を集めて、コメント案まで作る（費用0円＋AI 1件約0.5円）'));
+    if (st.recent) c.appendChild(btn(autoState.running === 'recent' ? '最近の投稿を集めています…' : '最近の投稿を集める（直近72時間）', 'btn btn-primary', runRecent));
+    else c.appendChild(el('p', 'hint', st.loading ? '確認しています…' : '未設定：Instagramの公式API「Facebookログイン方式」の設定が必要です（無料。社長の作業は初回の1回だけ。手順は報告書を参照）。設定すると、ビジネス／クリエイターのアカウントの直近の投稿（URL・本文・コメント数）を自動で集め、コメント案まで作ります。個人のアカウントの投稿は、公式APIでは取れません。'));
+    if (autoState.last) {
+      var L = autoState.last;
+      if (L.error) c.appendChild(el('p', 'hint pitch-warn', L.error));
+      else if (L.kind === 'sites') {
+        c.appendChild(el('p', 'hint', stamp(L.at) + '：公式サイト ' + L.results.length + '件を調べ、アカウント ' + L.found + '件を確認（新しく候補に ' + L.added + '件）'));
+        L.results.filter(function (x) { return x.error; }).forEach(function (x) { c.appendChild(el('p', 'hint', x.brand + '：' + x.error)); });
+      } else c.appendChild(el('p', 'hint', stamp(L.at) + '：新しいコメント候補 ' + L.added + '件' + (L.errors.length ? '（取れなかったアカウント ' + L.errors.length + '件：個人アカウント・存在しない名前など）' : '')));
+    }
+    return c;
+  }
+
   function placesCard() {
     var c = card('今日の探す場所（自動で用意）');
-    c.appendChild(el('p', 'hint', 'アプリは他のアカウント・投稿を自動では集められません（公式APIで提供されていないため）。代わりに、ジャンルごとの探す場所を毎日入れ替えて用意します。開いて良いアカウント・投稿を見つけたら、URLをコピーして下の「候補に入れる」へ。新しい投稿・コメント欄が活発な投稿を優先してください。'));
+    c.appendChild(el('p', 'hint', '上の「自動で探す」で足りないとき用です（個人のアカウントや、ハッシュタグの投稿は、今の設定では自動で集められないため）。ジャンルごとの探す場所を毎日入れ替えて用意します。開いて良いアカウント・投稿を見つけたら、URLをコピーして下の「候補に入れる」へ。新しい投稿・コメント欄が活発な投稿を優先してください。'));
     var grid = el('div', 'pr-places');
     places().forEach(function (p) { var a = linkBtn(p.label, p.url, 'pr-place'); a.appendChild(el('span', 'pr-place-genre', GNAME[p.genre] || '')); grid.appendChild(a); });
     c.appendChild(grid);
@@ -176,9 +271,10 @@
       r.appendChild(el('p', 'co-title', '@' + a.handle + (a.official ? '（公式）' : '')));
       r.appendChild(el('p', 'hint', '優先度 ' + stars(a.priority || 1) + '｜ジャンル：' + (GNAME[a.genre] || '未分類') + '｜' + a.source + '｜' + stamp(a.addedAt) + ' 追加'));
       if (a.reason) r.appendChild(el('p', 'hint', 'おすすめ理由：' + a.reason));
+      if (a.evidence) r.appendChild(el('p', 'hint', '根拠：' + a.evidence + (a.checkedAt ? '（' + stamp(a.checkedAt) + ' 確認）' : '')));
       var rc = R.recentContact(a.handle, 7);
       if (rc) r.appendChild(el('p', 'hint pitch-warn', '直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済み（' + stamp(rc.at) + '）。続けての営業は控えめに'));
-      r.appendChild(el('p', 'hint', '状態：' + { candidate: '未フォロー', followed: 'フォロー済み（社長の申告）', hidden: '興味なし' }[a.status] + '｜フォロワー数などは未確認（公式APIで取れないため）'));
+      r.appendChild(el('p', 'hint', '状態：' + { candidate: '未フォロー', followed: 'フォロー済み（社長の申告）', hidden: '興味なし' }[a.status] + (a.followers != null ? '｜フォロワー ' + a.followers + '（公式API）' : '｜フォロワー数は未確認')));
       var row = el('div', 'pitch-row');
       row.appendChild(linkBtn('Instagramで開く', a.url, 'btn btn-secondary co-sbtn'));
       if (a.status === 'candidate') {
@@ -207,7 +303,7 @@
       var r = el('div', 'co-issue');
       r.appendChild(el('p', 'co-title', (p.handle ? '@' + p.handle : '投稿者：未入力') + '｜' + (GNAME[p.genre] || '未分類')));
       if (p.summary) r.appendChild(el('p', 'hint', '投稿の内容：' + p.summary + (p.caption.length > 80 ? '…' : '')));
-      r.appendChild(el('p', 'hint', '選んだ理由：' + (p.reason || '—') + '｜' + stamp(p.addedAt) + ' 追加｜いいね数・コメント数は未確認'));
+      r.appendChild(el('p', 'hint', '選んだ理由：' + (p.reason || '—') + '｜' + (p.postedAt ? '投稿 ' + stamp(p.postedAt) + '｜' : '') + stamp(p.addedAt) + ' 追加｜' + p.source));
       var rc = R.recentContact(p.handle, 7);
       if (rc && p.status === 'todo') r.appendChild(el('p', 'hint pitch-warn', 'このアカウントには直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済みです（' + stamp(rc.at) + '）。続けてのコメントは控えましょう'));
       if (busy[p.id]) r.appendChild(el('p', 'hint pitch-busy', 'コメント案を作っています…'));
@@ -243,6 +339,7 @@
     var y = window.scrollY;
     container.innerHTML = '';
     container.appendChild(dashboard());
+    container.appendChild(autoCard());
     container.appendChild(placesCard());
     container.appendChild(addCard());
     container.appendChild(accountsCard());
