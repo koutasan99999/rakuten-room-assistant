@@ -7,7 +7,7 @@
 - 静的な画面（index.html・js/・css/）＋ Vercel の1つの関数（api/[route].js が server/*.js に振り分け。Hobby は関数12個まで）。
 - 外部API：楽天市場の商品検索（1秒1回）、OpenAI（lib/ai.js の runWithModels）、Instagram 公式API（lib/ig-graph.js。トークン未設定）。
 - 保存：会社のデータはすべて社長のiPhoneの localStorage（サーバーには保存場所がない）。主なキー：
-  room-pitch（プレゼン・採用）／room-explore（広げる）／room-delivery（投稿セット）／room-texts（ROOM紹介文）／room-company（経営会議・業務）／room-ai-usage（AIの利用量と予算）。
+  room-pitch（プレゼン・採用）／room-explore（広げる）／room-delivery（投稿セット）／room-texts（ROOM紹介文）／room-company（経営会議・業務）／room-ai-usage（AIの利用量と予算）／room-pr（Instagram広報部：フォロー候補・コメント候補）。
   既存のデータを消す・初期化する変更はしない。キーを変えるときは読み替え（互換）を入れる。
 - 定時実行：vercel.json の cron（Hobby は1日1回）。サーバーに会社のデータがないため、会議や制作は「アプリを開いたとき」に動く。
 
@@ -15,6 +15,7 @@
 - 社長、これどうすか？（プレゼン・広げる・採用済み・投稿セット）：js/pitch.js・js/explore.js・js/delivery.js、lib/pitch.js・lib/pitch-genres.js・lib/expand.js・lib/postset.js
 - 経営報告（ダッシュボード・会議・提言・業務）：js/company.js・lib/company.js（事実はコードが集め、AIは番号で根拠を示すだけ）
 - AIの費用：js/app.js の AiUsage（呼ぶ前に予算を確認。推定1回0.5円）
+- Instagram広報部（#pr）：js/pr.js・js/pr-store.js。今の「Instagramログイン」方式の公式APIでは、ハッシュタグ検索・他のアカウントの調査・第三者へのフォロー/コメントはできない。自動化は探す場所の用意・分類・優先度・重複防止・コメント案・履歴まで
 
 ## 守ること（社長の方針）
 - 確認できない情報は作らない（価格・在庫・ランキング・レビュー・効果）。分からないものは「未確認」「未取得」と表示する。

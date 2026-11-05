@@ -499,6 +499,12 @@
     if (busy) head.appendChild(el('p', 'hint pitch-busy', busy + '…（20〜60秒）'));
     if (tm) head.appendChild(el('p', 'hint', stamp(tm.at) + ' 会議' + { ok: '済み', partial: '済み（AIの会議は失敗。工程の確認と割り当てだけ）', failed: '失敗' }[tm.status] + (tm.error ? '：' + tm.error : '') + (tm.summary ? '｜' + tm.summary : '')));
     else if (!busy) head.appendChild(el('p', 'hint', '今日の会議はまだです。'));
+    if (tm || C.lastMeeting()) {
+      var mr = el('div', 'co-minutes');
+      mr.appendChild(btn('議事録をコピー（全文）', 'btn btn-primary co-sbtn', function () { copyMinutes(true); }));
+      mr.appendChild(btn('議事録をコピー（省略版）', 'status-btn', function () { copyMinutes(false); }));
+      head.appendChild(mr);
+    }
     if (!busy) head.appendChild(btn(tm ? 'もう一度会議を開く' : '今すぐ会議を開く', 'link-btn', function () { runMeeting(true); }));
     container.appendChild(head);
     container.appendChild(dashboard());
@@ -684,6 +690,58 @@
     return box;
   }
 
+  // ---- 議事録（Markdown）：ChatGPTなどに貼れる形。全文版は会議の記録をそのまま載せる（AIで要約しない） ----
+  function minutesMarkdown(m, full) {
+    if (!m) return '';
+    var L = [];
+    var issues = (m.issues || []).concat(m.ruleIssues || []);
+    var props = C.proposals().filter(function (p) { return p.meetingId === m.id || p.date === m.date; });
+    var tasks = C.tasks().filter(function (t) { return t.from && t.from.id === m.id || (t.createdAt || '').slice(0, 10) === m.date; });
+    L.push('# 眼科医くま 経営会議 議事録（' + m.date + '）');
+    L.push('');
+    L.push('- 日時：' + new Date(m.at).toLocaleString('ja-JP'));
+    L.push('- 状態：' + ({ ok: '開催', partial: '一部（AIの会議は失敗。工程の確認と割り当てのみ）', failed: '失敗' }[m.status] || m.status) + (m.error ? '（' + m.error + '）' : ''));
+    L.push('- 参加AI社員：' + Object.keys(ROLES).filter(function (k) { return k !== 'owner'; }).map(function (k) { return ROLES[k]; }).join('、'));
+    if (m.summary) L.push('- 要点：' + m.summary);
+    if (full && (m.facts || []).length) { L.push(''); L.push('## 会議で使った事実（記録から集めたもの）'); m.facts.forEach(function (f) { L.push('- ' + f.id + '（' + f.area + '）：' + f.text); }); }
+    if ((m.statements || []).length) { L.push(''); L.push('## 各部署の報告'); m.statements.forEach(function (st) { L.push('- **' + ROLES[st.role] + '**：' + st.text + (full && st.facts && st.facts.length ? '（根拠：' + st.facts.join('・') + '）' : '')); }); }
+    L.push(''); L.push('## 議論（問題と原因）');
+    if (!issues.length) L.push('- なし');
+    issues.forEach(function (i) {
+      L.push('- **' + i.title + '**' + (i.days > 1 ? '（' + i.days + '日目）' : ''));
+      if (i.cause) L.push('  - 原因：' + i.cause);
+      if (full && (i.selfActions || []).length) L.push('  - 社員が行った対策：' + i.selfActions.join('／'));
+      if (i.progress) L.push('  - ' + i.progress);
+      if (i.remaining) L.push('  - 残っている課題：' + i.remaining);
+    });
+    L.push(''); L.push('## 決定事項');
+    var decided = props.filter(function (p) { return p.status === 'approved' || p.status === 'rejected'; });
+    if (!decided.length && !tasks.length) L.push('- なし');
+    decided.forEach(function (p) { L.push('- 社長の判断（' + PSTATUS[p.status] + '）：' + p.title); });
+    tasks.forEach(function (t) { L.push('- 業務を割り当て：' + t.title + '（' + ROLES[t.assignee] + '・期限' + (t.due || 'なし') + '）' + (full ? '｜完了条件：' + t.doneWhen : '')); });
+    L.push(''); L.push('## 次のアクション');
+    var next = C.tasks(true);
+    if (!next.length && !(m.plan || []).length) L.push('- なし');
+    (m.plan || []).forEach(function (x) { L.push('- ' + x); });
+    next.slice(0, full ? 30 : 6).forEach(function (t) { L.push('- [' + STATUS[t.status] + '] ' + ROLES[t.assignee] + '：' + t.title + (full && t.output ? '（予定の成果物：' + t.output + '）' : '')); });
+    L.push(''); L.push('## 未解決の課題（社長の判断待ち）');
+    var open = C.proposals().filter(function (p) { return p.status === 'open' || p.status === 'hold' || p.status === 'queued'; });
+    if (!open.length) L.push('- なし');
+    open.forEach(function (p) { L.push('- ' + p.title + (full ? '｜求める対応：' + p.request + (p.recommend ? '｜推奨：' + p.recommend : '') + '｜根拠：' + (p.facts || []).join('／') : '')); });
+    if (full) {
+      var room = C.room().filter(function (r) { return (r.at || '').slice(0, 10) === m.date; });
+      if (room.length) { L.push(''); L.push('## 会議室のやりとり'); room.forEach(function (r) { L.push('- ' + new Date(r.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + ' ' + (ROLES[r.who] || r.who) + '：' + r.text); }); }
+    }
+    L.push('');
+    L.push('（' + (full ? '全文版：会議の記録をそのまま書き出しています' : '省略版：事実の一覧・根拠・会議室のやりとりを省いています。全文は全文版で') + '）');
+    return L.join('\n');
+  }
+  function copyMinutes(full) {
+    var m = C.todayMeeting() || C.lastMeeting();
+    if (!m) { K.showToast('まだ会議の記録がありません'); return; }
+    K.copyText(minutesMarkdown(m, full)).then(function () { K.showToast('議事録（' + (full ? '全文' : '省略版') + '）をコピーしました'); }, function () { K.showToast('コピーできませんでした。もう一度押してください'); });
+  }
+
   function autoRun() { if (C.consented() && !C.todayMeeting() && !busy) runMeeting(false); }
   function render(target) { container = target; paint(); }
   function badge() {
@@ -693,7 +751,7 @@
     b.textContent = n ? String(n) : '';
   }
 
-  window.CompanyView = { render: render, runMeeting: runMeeting, ownerReply: ownerReply, doWork: doWork, collectFacts: collectFacts, pipeline: pipeline, badge: badge };
+  window.CompanyView = { minutesMarkdown: minutesMarkdown, render: render, runMeeting: runMeeting, ownerReply: ownerReply, doWork: doWork, collectFacts: collectFacts, pipeline: pipeline, badge: badge };
   var v = document.getElementById('company-body');
   if (location.hash.indexOf('#company') === 0 && v) render(v);
   setTimeout(function () { autoRun(); badge(); refreshJobs(); igStatus().then(function () { paint(); }); }, 1500);
