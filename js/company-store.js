@@ -13,7 +13,7 @@
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     s = s && typeof s === 'object' ? s : {};
     ['meetings', 'room', 'ownerNotes', 'improvements', 'igActivity'].forEach(function (k) { s[k] = Array.isArray(s[k]) ? s[k] : []; });
-    ['proposals', 'tasks', 'issueTrack'].forEach(function (k) { s[k] = s[k] && typeof s[k] === 'object' ? s[k] : {}; });
+    ['proposals', 'tasks', 'issueTrack', 'revenue'].forEach(function (k) { s[k] = s[k] && typeof s[k] === 'object' ? s[k] : {}; });
     s.seq = Number(s.seq) || 0;
     return s;
   }
@@ -140,6 +140,9 @@
     addImprovement: function (m) { var s = read(); var dup = s.improvements.filter(function (x) { return x.problem === m.problem && x.idea === m.idea; })[0]; if (dup) return dup; var x = Object.assign({ id: id(s, 'i'), at: now(), status: 'proposed', result: '' }, m); s.improvements.unshift(x); write(s); return x; },
     setImprovement: function (iid, patch) { var s = read(); var x = s.improvements.filter(function (m) { return m.id === iid; })[0]; if (x) { Object.assign(x, patch, { updatedAt: now() }); write(s); } return x; },
     improvements: function () { return read().improvements; },
+    // ---- 売上（楽天アフィリエイトの報酬。APIで取れないため、社長が成果報告の画面を見て記録する） ----
+    setRevenue: function (month, amount, note) { var s = read(); s.revenue[month] = { amount: Math.max(0, Math.round(Number(amount) || 0)), note: note || '', at: now(), by: 'owner' }; write(s); },
+    revenue: function () { return read().revenue; },
     // ---- Instagramでの活動（実際に行ったもの・社長が記録したものだけ。案は status: draft） ----
     addActivity: function (a) { var s = read(); var x = Object.assign({ id: id(s, 'a'), at: now() }, a); s.igActivity.unshift(x); write(s); return x; },
     activity: function () { return read().igActivity; }

@@ -501,6 +501,7 @@
     else if (!busy) head.appendChild(el('p', 'hint', '今日の会議はまだです。'));
     if (!busy) head.appendChild(btn(tm ? 'もう一度会議を開く' : '今すぐ会議を開く', 'link-btn', function () { runMeeting(true); }));
     container.appendChild(head);
+    container.appendChild(dashboard());
     var m = tm || C.lastMeeting();
 
     // 1. 今日、社員が完了した仕事（成果物・実行した操作の記録）
@@ -607,6 +608,82 @@
     container.appendChild(s10);
   }
 
+  // ---- 経営ダッシュボード：成果（売上・公開・ROOM）・準備状況・自動運用の状態・コスト・問題を1枚で ----
+  var igCache = null; var igAt = 0;
+  function igStatus() {
+    if (Date.now() - igAt < 10 * 60000) return Promise.resolve(igCache);
+    igAt = Date.now();
+    return K.postJson('api/ig', { action: 'status' }).then(function (r) { igCache = r.status === 200 ? r.data : null; return igCache; }, function () { return null; });
+  }
+  var failedJobs = [];
+  function refreshJobs() { if (window.SearchJobs) window.SearchJobs.list().then(function (js) { failedJobs = js.filter(function (j) { return j.status === 'failed' && within(new Date(j.finishedAt || j.updatedAt || 0).toISOString(), 1); }); }, function () {}); }
+  function tile(label, value, sub, cls) { var t = el('div', 'co-tile' + (cls ? ' ' + cls : '')); t.appendChild(el('p', 'co-tile-label', label)); t.appendChild(el('p', 'co-tile-value', value)); if (sub) t.appendChild(el('p', 'co-tile-sub', sub)); return t; }
+  var STATE = { auto: '自動', manual: '手動', off: '未接続', none: '未実装' };
+  function dashboard() {
+    var box = el('div', 'card co-dash');
+    box.appendChild(el('p', 'co-h', '経営ダッシュボード'));
+    var month = C.today().slice(0, 7);
+    var rev = C.revenue()[month];
+    var col = collectFacts(null);
+    var pipe = col.st.pipe;
+    var A = window.AiUsage;
+    var cost = A ? A.month() : { yen: 0, calls: 0 };
+    var caps = A ? A.caps() : { capYen: 0 };
+    var P = window.PitchStore;
+    var presented7 = P ? P.recent(500).length : 0;
+    var grid = el('div', 'co-tiles');
+    grid.appendChild(tile('今月の報酬', rev ? rev.amount.toLocaleString('ja-JP') + '円' : '未取得', '目標 30,000円' + (rev ? '（' + Math.round(rev.amount * 100 / 30000) + '%・社長の記録）' : '（社長の記録が必要）'), rev && rev.amount >= 30000 ? 'co-good' : ''));
+    grid.appendChild(tile('Instagram公開', col.st.posted + '件', '記録のある公開（自動取得は未接続）'));
+    grid.appendChild(tile('ROOM登録', col.st.roomDone + '件', '採用' + col.st.adopted + '件のうち（社長の申告）'));
+    grid.appendChild(tile('公開できる投稿', col.st.ready + '件', '社員の工程を通過した投稿セット'));
+    grid.appendChild(tile('プレゼンした商品', presented7 + '件', '通常のプレゼンの累計'));
+    grid.appendChild(tile('AIの費用（今月）', '約' + cost.yen + '円', cost.calls + '回・上限' + caps.capYen + '円（推定）', cost.yen > caps.capYen * 0.8 ? 'co-warn' : ''));
+    box.appendChild(grid);
+    // 投稿の準備状況（工程ごと）
+    var stages = Object.keys(STAGES).filter(function (k) { return (pipe[k] || []).length; }).map(function (k) { return STAGES[k].label + ' ' + pipe[k].length + '件'; });
+    box.appendChild(el('p', 'hint', '投稿の準備状況：' + (stages.join('／') || '投稿セットなし')));
+    // 自動運用の状態（実行中・完了・失敗・未実装を分けて）
+    var ig = igCache;
+    var rows = [
+      ['商品の発掘（プレゼン）', 'manual', '「次の商品を探してもらう」を押したとき（ジャンルの偏りはコードで防止）'],
+      ['投稿企画・投稿セットの制作', 'auto', 'アプリを開いているとき、確認待ちが3件より少なければ自動で作る（初回の了承が必要）'],
+      ['経営会議・提言・改善案', 'auto', 'その日に初めてアプリを開いたとき、1日1回' + (C.todayMeeting() ? '（今日：' + { ok: '完了', partial: '一部完了', failed: '失敗' }[C.todayMeeting().status] + '）' : '（今日：まだ）')],
+      ['楽天ROOMへの登録', 'manual', '紹介文とハッシュタグは自動。登録は社長がROOMで行う（ROOMは機械的な投稿を禁止しているため自動化しない）'],
+      ['Instagramへの投稿', ig && ig.ready ? (ig.publishEnabled ? 'auto' : 'manual') : 'off', ig && ig.ready ? (ig.publishEnabled ? '公式APIで1日1回（予定表の投稿のみ。投稿セットの画像の公開には画像の置き場所が必要）' : '公式APIは設定済み・自動投稿はオフ') : '公式APIのトークンが未設定（Vercelに設定が必要）。今は社長が投稿し、URLを記録'],
+      ['投稿結果の収集（リーチ・保存）', ig && ig.ready ? 'manual' : 'off', ig && ig.ready ? '公式APIで取得できる（画面への取り込みは未実装）' : 'Instagramの公式APIが未設定のため未取得'],
+      ['ROOMへの流入・クリック・報酬', 'none', '楽天アフィリエイトの成果を取れるAPIがないため未取得。報酬は社長が月ごとに記録'],
+      ['アプリを開かない時間の定時実行', 'none', '会社のデータがiPhoneの中にあり、サーバーから見えない。サーバー側の保存場所が必要（社長の承認が必要）']
+    ];
+    var ul = el('div', 'co-auto');
+    rows.forEach(function (r) { var line = el('p', 'co-auto-row'); line.appendChild(el('span', 'tag co-state co-state-' + r[1], STATE[r[1]])); line.appendChild(el('span', 'co-auto-name', r[0])); line.appendChild(el('span', 'co-auto-note', r[2])); ul.appendChild(line); });
+    box.appendChild(ul);
+    // 問題・エラー（直近24時間の失敗したジョブと会議）
+    var errs = failedJobs.map(function (j) { return '失敗：' + j.label + '（' + (j.error || '理由不明') + '）'; });
+    var tm = C.todayMeeting();
+    if (tm && tm.status === 'failed') errs.unshift('失敗：今日の経営会議（' + tm.error + '）');
+    box.appendChild(el('p', errs.length ? 'hint pitch-warn' : 'hint', '問題・エラー（直近24時間）：' + (errs.length ? errs.slice(0, 4).join('／') : 'なし')));
+    var row = el('div', 'pitch-row');
+    row.appendChild(btn(rev ? '今月の報酬を直す' : '今月の報酬を記録する', 'status-btn', function () {
+      var v = window.prompt('楽天アフィリエイトの今月の成果報酬（円。成果報告の画面の数字）', rev ? String(rev.amount) : '');
+      if (v == null || v.trim() === '' || isNaN(Number(v.replace(/[,円]/g, '')))) return;
+      C.setRevenue(month, Number(v.replace(/[,円]/g, '')), '楽天アフィリエイトの成果報告（社長の記録）');
+      paint();
+    }));
+    row.appendChild(btn('AIの予算の上限を変える', 'status-btn', function () {
+      var v = window.prompt('今月のAIの予算の上限（円・推定。超えるとAIを使う処理を止めます）', String(caps.capYen));
+      if (v == null || !(Number(v) > 0)) return;
+      A.setCaps(Number(v), 0);
+      paint();
+    }));
+    box.appendChild(row);
+    var d = el('details', 'co-more');
+    d.appendChild(el('summary', null, 'AIの費用の内訳（今月・推定）'));
+    d.appendChild(factList(Object.keys(cost.byType || {}).sort(function (a, b) { return cost.byType[b] - cost.byType[a]; }).map(function (k) { return k + '：' + cost.byType[k] + '回（約' + Math.round(cost.byType[k] * (A ? A.YEN_PER_CALL : 0.5) * 10) / 10 + '円）'; })));
+    d.appendChild(el('p', 'hint', '1回約' + (A ? A.YEN_PER_CALL : 0.5) + '円の推定です（OpenAIの単価は第三者の情報）。実際の請求額はOpenAIの管理画面で確認してください。'));
+    box.appendChild(d);
+    return box;
+  }
+
   function autoRun() { if (C.consented() && !C.todayMeeting() && !busy) runMeeting(false); }
   function render(target) { container = target; paint(); }
   function badge() {
@@ -619,6 +696,6 @@
   window.CompanyView = { render: render, runMeeting: runMeeting, ownerReply: ownerReply, doWork: doWork, collectFacts: collectFacts, pipeline: pipeline, badge: badge };
   var v = document.getElementById('company-body');
   if (location.hash.indexOf('#company') === 0 && v) render(v);
-  setTimeout(function () { autoRun(); badge(); }, 1500);
+  setTimeout(function () { autoRun(); badge(); refreshJobs(); igStatus().then(function () { paint(); }); }, 1500);
   setInterval(badge, 5000);
 })();
