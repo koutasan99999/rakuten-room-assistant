@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-05.4';
+  var APP_VERSION = '2026-11-05.5';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1218,7 +1218,50 @@
   }
 
   // 合言葉つきでAPIを呼ぶ（合言葉が違えば1回だけ入れ直してもらう）
+  // ---- AIの利用量と予算（推定）：AIを呼ぶAPIの呼び出しを数え、月の予算の上限を超えたら呼ばずに止める ----
+  // 1回のAIの呼び出しは約0.5円と推定（gpt-5.4-nano の単価は第三者の情報：入力0.25ドル/100万・出力2ドル/100万、1ドル160円、1回あたり入力約3千・出力約1千トークン）。
+  // 実際の請求額はOpenAIの管理画面でしか分からないので、画面では「推定」と表示する。画像の生成は別の料金（ここでは数えるが単価は未確認）
+  var AI_KEY = 'room-ai-usage';
+  var YEN_PER_CALL = 0.5;
+  function aiCalls(path, body) {
+    var a = (body && body.action) || '';
+    var p = String(path).replace(/^.*api\//, '');
+    var table = {
+      pitch: { scout: 2, more: 2, seed: 1, intro: 2, feature: 1, set: 3, replace: 1, alternatives: 2, expand: 2, roomtext: 3, verify: 0 },
+      company: { meeting: 1, reply: 1, work: 1 },
+      instagram: 1, intros: 2, 'room-hashtags': 1, ideas: 1, 'seed-ideas': 1, 'release-ideas': 1, 'brand-note': 1, explore: 2, buyer: 2, thief: 1, coord: 1, 'plan-titles': 1, assets: 1
+    };
+    var t = table[p];
+    if (t == null) return 0;
+    if (typeof t === 'number') return t;
+    return t[a] != null ? t[a] : 1;
+  }
+  function aiRead() { var s; try { s = JSON.parse(localStorage.getItem(AI_KEY)); } catch (e) {} s = s && typeof s === 'object' ? s : {}; s.days = s.days || {}; s.capYen = Number(s.capYen) || 1000; s.dayCap = Number(s.dayCap) || 200; return s; }
+  function aiWrite(s) { try { localStorage.setItem(AI_KEY, JSON.stringify(s)); } catch (e) {} }
+  function aiToday() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); }
+  var AiUsage = {
+    YEN_PER_CALL: YEN_PER_CALL,
+    calls: aiCalls,
+    month: function (m) { var s = aiRead(); m = m || aiToday().slice(0, 7); var out = { calls: 0, yen: 0, byType: {} }; Object.keys(s.days).forEach(function (d) { if (d.indexOf(m) === 0) { var x = s.days[d]; out.calls += x.calls; out.yen += x.yen; Object.keys(x.byType || {}).forEach(function (k) { out.byType[k] = (out.byType[k] || 0) + x.byType[k]; }); } }); out.yen = Math.round(out.yen * 10) / 10; return out; },
+    day: function () { var s = aiRead(); return s.days[aiToday()] || { calls: 0, yen: 0, byType: {} }; },
+    caps: function () { var s = aiRead(); return { capYen: s.capYen, dayCap: s.dayCap }; },
+    setCaps: function (capYen, dayCap) { var s = aiRead(); if (capYen > 0) s.capYen = capYen; if (dayCap > 0) s.dayCap = dayCap; aiWrite(s); },
+    // 呼ぶ前の確認：月の予算・1日の回数の上限を超えるなら止める（理由を返す）
+    blocked: function (n) { if (!n) return ''; var c = AiUsage.caps(); if (AiUsage.month().yen + n * YEN_PER_CALL > c.capYen) return '今月のAIの予算の上限（推定' + c.capYen + '円）に達したため、AIを使う処理を止めています。「経営報告」の運用コストで上限を変えられます'; if (AiUsage.day().calls + n > c.dayCap) return '今日のAIの呼び出し回数の上限（' + c.dayCap + '回）に達したため止めています（明日また動きます）'; return ''; },
+    record: function (path, body) { var n = aiCalls(path, body); if (!n) return; var s = aiRead(); var d = aiToday(); var x = s.days[d] = s.days[d] || { calls: 0, yen: 0, byType: {} }; var k = String(path).replace(/^.*api\//, '') + (body && body.action ? ':' + body.action : ''); x.calls += n; x.yen += n * YEN_PER_CALL; x.byType[k] = (x.byType[k] || 0) + n; Object.keys(s.days).sort().slice(0, -120).forEach(function (old) { delete s.days[old]; }); aiWrite(s); }
+  };
+  window.AiUsage = AiUsage;
+
+  // AIを使うAPIは、予算の上限を確かめてから呼び、呼んだ回数を記録する
   function postJson(path, body, retried) {
+    if (!retried) {
+      var stop = AiUsage.blocked(aiCalls(path, body));
+      if (stop) return Promise.resolve({ status: 429, data: { error: stop, budget: true } });
+      AiUsage.record(path, body);
+    }
+    return rawPostJson(path, body, retried);
+  }
+  function rawPostJson(path, body, retried) {
     return fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Passcode': getPass() },
@@ -1227,7 +1270,7 @@
       return res.json().catch(function () { return {}; }).then(function (data) {
         if (res.status === 401 && data.needPasscode && !retried) {
           var input = window.prompt('合言葉を入力してください');
-          if (input) { setPass(input.trim()); resetBtn.hidden = false; return postJson(path, body, true); }
+          if (input) { setPass(input.trim()); resetBtn.hidden = false; return rawPostJson(path, body, true); }
         }
         return { status: res.status, data: data };
       });
@@ -5032,7 +5075,18 @@
   }
   function waitJob(job) { return new Promise(function (resolve) { Jobs.whenDone(job, resolve); }); }
   // 検索ジョブとして呼ぶ。合言葉が必要なら1度だけ聞いて、失敗した部分をやり直す
+  // 検索ジョブ（時間のかかるAPI）も、AIを使うものは予算を確かめてから始める
+  var JOB_PATH = { pitch: 'api/pitch', company: 'api/company', buyer: 'api/buyer', thief: 'api/thief', explore: 'api/explore', explore_more: 'api/explore', coord: 'api/coord' };
   function jobCall(type, body, info) {
+    var jp = JOB_PATH[type];
+    if (jp) {
+      var stop = AiUsage.blocked(aiCalls(jp, body));
+      if (stop) return Promise.resolve({ status: 429, data: { error: stop, budget: true } });
+      AiUsage.record(jp, body);
+    }
+    return rawJobCall(type, body, info);
+  }
+  function rawJobCall(type, body, info) {
     // 「今後非表示」にした商品は、サーバーの検索でも除いてもらう（表示済みの扱い）
     if (type === 'related' && body && Array.isArray(body.shown)) body = Object.assign({}, body, { shown: body.shown.concat(window.HiddenProducts.refs(60)) });
     if ((type === 'explore' || type === 'explore_more') && body) {

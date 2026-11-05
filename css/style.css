@@ -959,3 +959,20 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 .xp-post { width: 100%; min-height: 52px; font-size: 17px; }
 .xp-post:disabled { background: #c9c3bd; border-color: #c9c3bd; color: #fff; }
 .xp-postbar .hint { margin: 4px 0 0; font-size: 11px; }
+/* 経営ダッシュボード */
+.co-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 10px; }
+.co-tile { background: #fafaf7; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.co-tile.co-good { border-color: #1f6f43; background: #eef7f1; }
+.co-tile.co-warn { border-color: #e8a33d; background: #fff8ec; }
+.co-tile-label { font-size: 11px; color: var(--muted); margin: 0; }
+.co-tile-value { font-size: 20px; font-weight: 800; margin: 2px 0; }
+.co-tile-sub { font-size: 11px; color: var(--muted); margin: 0; line-height: 1.4; }
+.co-auto { margin: 6px 0; }
+.co-auto-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; margin: 0; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.co-auto-name { font-weight: 700; }
+.co-auto-note { grid-column: 2; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.co-state { font-size: 11px; }
+.co-state-auto { background: #1f6f43; color: #fff; border-color: #1f6f43; }
+.co-state-manual { background: #eef2f7; color: #3b4a5c; }
+.co-state-off { background: #fff8ec; color: #8a5a00; border-color: #e8a33d; }
+.co-state-none { background: #f3eded; color: #7a2b2b; border-color: #d8b9b9; }
