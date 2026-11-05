@@ -9,7 +9,7 @@
   if (!K || !X || !S) return;
   var el = K.el;
   var MODES = [
-    ['omakase', 'AIにおまかせ\n（ミックス）'],
+    ['omakase', 'テーマで広げる\n（おまかせ）'],
     ['cheaper', '似たデザインで\nもっと安い'],
     ['brand', '同じブランドの\n別商品'],
     ['same_price', '同じ価格帯の\n他ブランド'],
@@ -108,11 +108,12 @@
     if (p.brand) c.appendChild(el('p', 'xp-brand', p.brand));
     c.appendChild(el('p', 'xp-price', p.price ? K.formatPrice(p.price) : '価格は未取得'));
     if (p.relation) c.appendChild(el('p', 'xp-rel', p.relation));
+    if (p.value) c.appendChild(el('p', 'xp-value', '紹介する価値：' + p.value));
     var d = el('details', 'xp-more');
     d.appendChild(el('summary', null, 'くわしく'));
     var dl = el('dl', 'radar-facts');
-    var rows = [['似ている点', p.similar], ['違う点', p.differ], ['特徴', p.feature], ['価格帯', TIER[p.tier]], ['コーデ案', p.lookName ? p.lookName + (p.lookConcept ? '（' + p.lookConcept + '）' : '') : ''],
-      ['レビュー', p.reviewCount ? '楽天のレビュー ' + p.reviewCount.toLocaleString('ja-JP') + '件（平均' + (p.reviewAverage || '-') + '）' + (p.byReviews ? '｜レビューの多い順で確認' : '') : ''],
+    var rows = [['投稿企画', p.themeTitle ? p.themeTitle + (p.themeAngle ? '（' + p.themeAngle + '）' : '') : ''], ['似ている点', p.similar], ['違う点', p.differ], ['特徴', p.feature], ['価格帯', TIER[p.tier]], ['コーデ案', p.lookName ? p.lookName + (p.lookConcept ? '（' + p.lookConcept + '）' : '') : ''],
+      ['レビュー', p.reviewCount ? '楽天のレビュー ' + p.reviewCount.toLocaleString('ja-JP') + '件（平均' + (p.reviewAverage || '-') + '）' + (p.byReviews ? '｜レビューの多い順で確認' : '') : '楽天のレビュー：なし・未確認'], ['ランキング', '未確認（この探索では楽天のランキングを確認していません）'],
       ['価格の詳細', priceLine(p) + (p.shop ? '｜' + p.shop : '')], ['探索元', LABEL[p.mode] ? '「' + cleanName(node.product.name).slice(0, 20) + '」から「' + LABEL[p.mode] + '」で（' + p.batchNo + '回目の探索）' : '']];
     rows.forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     d.appendChild(dl);
@@ -120,7 +121,8 @@
     c.appendChild(d);
     var acts = el('div', 'xp-mini-acts');
     acts.appendChild(btn(adoptedState(p) ? '採用済み' : 'いいじゃん！', 'btn btn-primary xp-sbtn', function () { adopt(p, node, p.mode); }));
-    acts.appendChild(btn('ここから広げる', 'btn btn-secondary xp-sbtn', function () { X.branch(node.id, p, p.mode); window.scrollTo(0, 0); paint(); }));
+    // 枝葉の商品からは広げない（広げるのは起点の商品だけ）。詳細の確認と、楽天の商品ページ
+    acts.appendChild(btn('詳細確認', 'btn btn-secondary xp-sbtn', function () { d.open = !d.open; if (d.open) d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }));
     c.appendChild(acts);
     return c;
   }
@@ -131,12 +133,13 @@
     var pool = X.pool(node.id);
     var items = pool ? pool.items : [];
     var b = busy[node.id];
-    if (b) box.appendChild(el('p', 'hint pitch-busy', '「' + LABEL[b.mode] + '」で' + (b.kind === 'append' ? 'もう' + MORE_WANT + '件、今の結果に追加する商品' : '楽天の実在の商品') + 'を探しています…（30〜60秒。別のアプリを開いても続きます）'));
+    var busyNote = b ? el('p', 'hint pitch-busy xp-loading', '「' + LABEL[b.mode] + '」で' + (b.kind === 'append' ? 'もう' + MORE_WANT + '件、今の結果の下に追加する商品' : '楽天の実在の商品') + 'を探しています…（30〜60秒。別のアプリを開いても続きます）') : null;
     if (!items.length) {
+      if (busyNote) box.appendChild(busyNote);
       var last = pool && pool.batches.length ? pool.batches[pool.batches.length - 1] : null;
       if (last && last.error) box.appendChild(el('p', 'hint pitch-warn', '前回の探索に失敗しました：' + last.error));
-      if (!b) box.appendChild(btn('AIにおまかせで広げる（ミックス・9件前後）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'new'); }));
-      box.appendChild(el('p', 'hint', 'おまかせは、同ブランド・同系統、安い代替、同価格帯の他ブランド、コーデ・関連小物を混ぜて探します。下の個別の探し方で、1つの方向だけ探すこともできます。'));
+      if (!b) box.appendChild(btn('テーマで広げる（おまかせ・9件前後）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'new'); }));
+      box.appendChild(el('p', 'hint', 'テーマで広げるは、この商品の用途・利用シーン・関連ジャンルから、投稿企画（例：キャンプ初心者セット）を考えて、関連用品・別ジャンル・意外な商品を探します。同じ種類の比較候補は3件まで。似た商品と比べたいときは、下の「同じブランドの別商品」「同じ価格帯の他ブランド」を使ってください。'));
       return box;
     }
     var latest = pool.batches.filter(function (x) { return !x.error; }).slice(-1)[0] || {};
@@ -145,23 +148,39 @@
     var errs = pool.batches.filter(function (x) { return x.error; });
     if (errs.length && errs[errs.length - 1] === pool.batches[pool.batches.length - 1]) box.appendChild(el('p', 'hint pitch-warn', '直近の探索に失敗しました：' + errs[errs.length - 1].error + '（今の結果はそのままです）'));
     if (latest.notice) box.appendChild(el('p', 'hint pitch-warn', latest.notice));
+    // 投稿企画の提案（テーマで広げたときにAIが考えた企画）。押すとその企画の商品だけを表示
+    var themes = {};
+    pool.batches.forEach(function (bt) { (bt.themes || []).forEach(function (t) { if (!themes[t.title]) themes[t.title] = { angle: t.angle, n: 0 }; }); });
+    items.forEach(function (it) { if (it.themeTitle && themes[it.themeTitle]) themes[it.themeTitle].n++; });
+    if (Object.keys(themes).length) {
+      var tb = el('div', 'xp-themes');
+      tb.appendChild(el('p', 'field-label', '投稿企画の提案'));
+      Object.keys(themes).forEach(function (t) {
+        var card = btn('', 'xp-theme' + (filterFor[node.id] === 'theme:' + t ? ' active' : ''), function () { filterFor[node.id] = filterFor[node.id] === 'theme:' + t ? '' : 'theme:' + t; paint(); });
+        card.appendChild(el('span', 'xp-theme-title', t + '（' + themes[t].n + '件）'));
+        if (themes[t].angle) card.appendChild(el('span', 'xp-theme-angle', themes[t].angle));
+        tb.appendChild(card);
+      });
+      box.appendChild(tb);
+    }
     // 探索カテゴリーで絞る
     var cats = {};
     items.forEach(function (it) { var a = it.axisLabel || LABEL[it.mode] || 'その他'; cats[a] = (cats[a] || 0) + 1; });
     var f = filterFor[node.id] || '';
-    if (f && !cats[f]) f = '';
+    if (f && !cats[f] && f.indexOf('theme:') !== 0) f = '';
     var fr = el('div', 'xp-filter');
     fr.appendChild(btn('すべて（' + items.length + '）', 'xp-chip' + (!f ? ' active' : ''), function () { filterFor[node.id] = ''; paint(); }));
     Object.keys(cats).forEach(function (a) { fr.appendChild(btn(a + '（' + cats[a] + '）', 'xp-chip' + (f === a ? ' active' : ''), function () { filterFor[node.id] = a; paint(); })); });
     box.appendChild(fr);
-    // 新しく足した分が上（どれが追加か分かるように）。同じ回の中はAIの並び順
-    var list = items.filter(function (it) { return !f || (it.axisLabel || LABEL[it.mode] || 'その他') === f; }).slice().sort(function (x, y) { return (y.batchNo || 0) - (x.batchNo || 0); });
+    // 見つけた順に並べ、新しく足した分は一覧の下に続ける（前の並びと採用の状態はそのまま）
+    var list = items.filter(function (it) { return !f || (f.indexOf('theme:') === 0 ? it.themeTitle === f.slice(6) : (it.axisLabel || LABEL[it.mode] || 'その他') === f); });
     var grid = el('div', 'xp-grid');
     list.forEach(function (it) { grid.appendChild(resultCard(it, node, latest.no)); });
     box.appendChild(grid);
+    if (busyNote) box.appendChild(busyNote); // 追加の探索中も、今の一覧はそのまま。読み込みは一覧の下に出す
     // 追加の操作（今の結果は消さない）
     var more = el('div', 'xp-actions');
-    more.appendChild(btn('さらに' + MORE_WANT + '件探す（おまかせ）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'append'); }));
+    more.appendChild(btn('さらに' + MORE_WANT + '件探す（テーマで・一覧の下に追加）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'append'); }));
     more.appendChild(btn('別の方向でも探す（下の探し方から）', 'btn btn-secondary', function () { var g = container.querySelector('.xp-modes'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
     box.appendChild(more);
     box.appendChild(btn('この商品の探索結果を最初からやり直す', 'link-btn xp-reset', function () {
@@ -171,6 +190,46 @@
       paint();
     }));
     return box;
+  }
+
+  // この探索で採用した商品（起点の商品と、探索結果のうち「いいじゃん！」したもの）を、採用した順に
+  function adoptedHere(node) {
+    var pool = X.pool(node.id);
+    var list = [node.product].concat(pool ? pool.items : []);
+    var seen = {};
+    return list.map(function (p) { var f = S.find(p); return f && f.status === 'adopt' ? { p: p, f: f } : null; })
+      .filter(function (x) { if (!x) return false; var k = x.f.key; if (seen[k]) return false; seen[k] = true; return true; })
+      .sort(function (a, b) { return (a.f.decidedAt || 0) - (b.f.decidedAt || 0); })
+      .map(function (x) { return Object.assign({}, x.f, x.p, { key: x.f.key, decidedAt: x.f.decidedAt, checkedAt: (x.p.batch && (X.pool(node.id).batches.filter(function (b) { return b.id === x.p.batch; })[0] || {}).at) || x.f.fetchedAt || '' }); });
+  }
+  // これで投稿する！：採用した商品で投稿セットを作り、投稿セットの画面で表紙・スライド・キャプション・ROOM紹介文を仕上げる
+  var posting = false;
+  function postBar(node) {
+    var list = adoptedHere(node);
+    var bar = el('div', 'xp-postbar');
+    var max = window.DeliveryView && window.DeliveryView.MAX_SET_ITEMS || 8;
+    var b = btn(posting ? '投稿セットを作っています…' : 'これで投稿する！（採用 ' + list.length + '件）', 'btn btn-primary xp-post', function () {
+      if (!list.length || posting || !window.DeliveryView) return;
+      var themes = {};
+      list.forEach(function (p) { if (p.themeTitle) themes[p.themeTitle] = (themes[p.themeTitle] || 0) + 1; });
+      var top = Object.keys(themes).sort(function (a, c) { return themes[c] - themes[a]; })[0];
+      var title = window.prompt('投稿のタイトル（表紙の見出し。あとで直せます）', top || ('「' + cleanName(node.product.name).slice(0, 12) + '」から見つけた' + Math.min(list.length, max) + '選'));
+      if (title == null) return;
+      posting = true;
+      paint();
+      if (list.length > max) K.showToast('Instagramの枚数の上限のため、採用した順に' + max + '件で作ります');
+      window.DeliveryView.createFromItems({ title: title.trim(), items: list, reason: '「' + cleanName(node.product.name).slice(0, 20) + '」から広げて、社長が採用した商品' }).then(function (set) {
+        posting = false;
+        K.showToast('投稿セットを作りました。画像・キャプション・ROOM紹介文を確認してください');
+        if (window.PitchView && window.PitchView.show) window.PitchView.show('sets');
+        if (set && window.DeliveryView.openSet) window.DeliveryView.openSet(set.id);
+        window.scrollTo(0, 0);
+      }, function () { posting = false; K.showToast('投稿セットを作れませんでした'); paint(); });
+    });
+    if (!list.length) { b.disabled = true; b.textContent = 'これで投稿する！（採用 0件）'; }
+    bar.appendChild(b);
+    bar.appendChild(el('p', 'hint', list.length ? '採用した順：' + list.slice(0, max).map(function (p, i) { return (i + 1) + '. ' + cleanName(p.name).slice(0, 14); }).join('／') + (list.length > max ? '（' + max + '件まで使います）' : '') : '商品の「いいじゃん！」で採用すると、その商品で投稿を作れます。'));
+    return bar;
   }
 
   function nodeView(node) {
@@ -221,6 +280,7 @@
 
     // 探索結果（蓄積）
     wrap.appendChild(resultsBlock(node));
+    wrap.appendChild(postBar(node));
 
     // 個別の探し方（1つの方向を深掘り）。結果があるときは、今の結果に追加する
     var pool = X.pool(node.id);

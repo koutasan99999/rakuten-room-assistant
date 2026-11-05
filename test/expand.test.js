@@ -97,40 +97,42 @@ test('価格帯：同じ分類の中で真ん中の価格と比べる。ほぼ�
   assert.ok(!sameish('BEAMS 定番 Tシャツ', 'CHUMS 定番 Tシャツ'));
 });
 
-test('おまかせ（ミックス）：軸ごとに探し方の決まりを当て、配分の目安を渡し、各商品に探索カテゴリーを付ける。追加（want=3）は3点までで、今の結果の商品は出さない', async () => {
+test('テーマで広げる：投稿企画を返し、比較候補の検索は1語・レビューの多い順。同じ種類の商品は3件まで。確認できない順位は出さず、紹介する価値を付ける。追加（want=3）は今の結果を除く', async () => {
   const asked = [];
   let pickUser = '';
   mock = installFetchMock({
     rakuten: (url) => {
       const k = url.searchParams.get('keyword');
-      asked.push([k, url.searchParams.get('sort'), url.searchParams.get('minPrice'), url.searchParams.get('maxPrice')]);
-      return json(200, { items: [item(`BEAMS ${k} 1`, 3000, `b1:${k}`), item(`BEAMS ${k} 2`, 5000, `b2:${k}`), item(`CHUMS ${k} 3`, 5000, `c3:${k}`), item(`Hanes ${k} 4`, 2000, `h4:${k}`)] });
+      asked.push([k, url.searchParams.get('sort')]);
+      if (k.startsWith('ウインドスクリーン')) return json(200, { items: [1, 2, 3, 4, 5].map((i) => item(`ウインドスクリーン アルミ 型${i}`, 3000 + i * 500, `w:${k}${i}`, { reviews: 500 - i })) });
+      return json(200, { items: [item(`${k} A`, 4000, `a:${k}`), item(`${k} B`, 6000, `b:${k}`)] });
     },
     openai: (body) => {
       if (body.messages[0].content.includes('探すための検索語を決めます')) {
-        return aiReply({ queries: [{ keyword: 'Tシャツ 定番', label: 'Tシャツ', axis: 'brand' }, { keyword: '無地 Tシャツ', label: 'Tシャツ', axis: 'cheaper' }, { keyword: 'BEAMS ポケット Tシャツ', label: 'Tシャツ', axis: 'same_price' }, { keyword: 'カーゴパンツ', label: 'パンツ', axis: 'coord' }, { keyword: '変な軸', label: 'x', axis: 'zzz' }] });
+        return aiReply({ themes: [{ title: 'キャンプ初心者セット', angle: '最初の道具' }, { title: '防災にも使えるキャンプ用品', angle: '備え' }],
+          queries: [{ keyword: 'ウインドスクリーン アルミ', label: '比較', axis: 'similar', theme: 0 }, { keyword: 'ウインドスクリーン 大型', label: '比較2', axis: 'similar', theme: 0 }, { keyword: 'LEDランタン 充電式', label: 'ランタン', axis: 'related', theme: 0 }, { keyword: '防災セット 1人用', label: '防災', axis: 'unexpected', theme: 1 }, { keyword: '焚き火台 コンパクト', label: '焚き火台', axis: 'scene', theme: 0 }] });
       }
       pickUser = body.messages[1].content;
-      return pickAll('起点と比べる軸が違う')(body);
+      const ids = [...pickUser.matchAll(/^ {2}(\d+-\d+): /gm)].map((m) => m[1]);
+      return aiReply({ picks: ids.map((id, i) => ({ id, relation: 'キャンプで一緒に使う', feature: '説明に書かれた特徴', value: i === 0 ? '楽天ランキング1位の定番' : 'レビューが多く、価格帯が違って比べる意味がある', theme: id.startsWith('2') ? 1 : 0 })) });
     }
   });
-  const r = await call({ action: 'expand', base: BASE, mode: 'omakase' });
+  const base = { code: 'ws:0', name: 'ウインドスクリーン アルミ 10枚', price: 3500, url: 'https://item.rakuten.co.jp/ws/0/', image: 'i' };
+  const r = await call({ action: 'expand', base, mode: 'omakase' });
   assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.deepEqual(asked[0], ['BEAMS Tシャツ 定番', '-reviewCount', null, null]);
-  assert.deepEqual(asked[1], ['無地 Tシャツ', null, null, '4500']);
-  assert.deepEqual(asked[2], ['ポケット Tシャツ', null, '4200', '8100']);
-  assert.ok(pickUser.includes('最大10点') && pickUser.includes('同ブランド・同系統3、安い代替2'), pickUser);
-  const cats = new Set(r.data.items.map((x) => x.axisLabel));
-  assert.ok(cats.has('同ブランド・同系統') && cats.has('安い代替') && cats.has('同価格帯の他ブランド') && cats.has('コーデ・組み合わせ'), [...cats].join());
-  assert.ok(r.data.items.filter((x) => x.axis === 'brand').every((x) => /BEAMS/.test(x.name)));
-  assert.ok(r.data.items.filter((x) => x.axis === 'same_price').every((x) => !/BEAMS/.test(x.name)));
-  assert.ok(r.data.items.filter((x) => x.axis === 'cheaper').every((x) => x.price < 6000));
-  assert.ok(r.data.items.length <= 10);
+  assert.deepEqual(r.data.themes.map((t) => t.title), ['キャンプ初心者セット', '防災にも使えるキャンプ用品']);
+  assert.equal(asked.filter(([k]) => k.startsWith('ウインドスクリーン')).length, 1, '比較候補の検索は1語だけ');
+  assert.deepEqual(asked.find(([k]) => k.startsWith('ウインドスクリーン')), ['ウインドスクリーン アルミ', '-reviewCount']);
+  const same = r.data.items.filter((x) => x.name.includes('ウインドスクリーン'));
+  assert.ok(same.length <= 3, '同じ種類は3件まで');
+  assert.ok(r.data.items.some((x) => !x.name.includes('ウインドスクリーン')), '関連用品・別ジャンルにも広げる');
+  assert.ok(r.data.items.every((x) => !/1位/.test(x.value || '')), '確認できない順位は出さない');
+  assert.ok(r.data.items.some((x) => x.value && x.value.includes('比べる意味')));
+  assert.ok(r.data.items.some((x) => x.theme === 1));
+  assert.ok(pickUser.includes('投稿企画（themes）') && pickUser.includes('レビュー'), pickUser.slice(0, 300));
   // 今の結果に追加：3点まで、今の結果の商品は出さない
   const shown = r.data.items.map((x) => x.code);
-  const more = await call({ action: 'expand', base: BASE, mode: 'cheaper', want: 3, exclude: { codes: shown, names: r.data.items.map((x) => x.name) } });
+  const more = await call({ action: 'expand', base, mode: 'omakase', want: 3, exclude: { codes: shown, names: r.data.items.map((x) => x.name) } });
   assert.equal(more.status, 200);
-  assert.ok(more.data.items.length <= 3);
-  assert.ok(more.data.items.every((x) => !shown.includes(x.code)));
-  assert.ok(pickUser.includes('最大3点'));
+  assert.ok(more.data.items.length <= 3 && more.data.items.every((x) => !shown.includes(x.code)));
 });

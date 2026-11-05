@@ -56,10 +56,11 @@
     (r.items || []).forEach(function (it) {
       if (pool.items.some(function (x) { return samePro(x, it); })) { dup++; return; }
       var look = it.look != null && r.looks && r.looks[it.look] ? r.looks[it.look] : null;
-      pool.items.push(Object.assign({}, it, { batch: batchId, batchNo: no, mode: mode, sourceNode: id, addedAt: Date.now(), axis: it.axis || mode, axisLabel: it.axisLabel || '', lookName: look ? look.name : '', lookConcept: look ? look.concept : '' }));
+      var theme = it.theme != null && r.themes && r.themes[it.theme] ? r.themes[it.theme] : null;
+      pool.items.push(Object.assign({}, it, { batch: batchId, batchNo: no, mode: mode, sourceNode: id, addedAt: Date.now(), axis: it.axis || mode, axisLabel: it.axisLabel || '', lookName: look ? look.name : '', lookConcept: look ? look.concept : '', themeTitle: theme ? theme.title : '', themeAngle: theme ? theme.angle : '' }));
       added++;
     });
-    pool.batches.push({ id: batchId, no: no, mode: mode, kind: kind, at: r.at || new Date().toISOString(), added: added, dup: dup, notice: r.notice || '', searched: r.searched || [] });
+    pool.batches.push({ id: batchId, no: no, mode: mode, kind: kind, at: r.at || new Date().toISOString(), added: added, dup: dup, notice: r.notice || '', searched: r.searched || [], themes: r.themes || [] });
     return { added: added, dup: dup };
   }
   function slim(p) {

@@ -613,11 +613,39 @@
     ensureStock();
   }
 
+  // 「広げる」で採用した商品から、投稿セットを作る（これで投稿する！）。採用の順に並べ、商品の情報（商品番号・名前・価格・URL・画像）を引き継ぐ。
+  // 表紙・商品カードの文字とキャプションは既存の仕組み（api/instagram）で作り、ROOM紹介文は投稿セットの各商品から作れる。Instagramへの公開は社長が行う
+  var MAX_SET_ITEMS = 8; // 表紙＋商品＋最後のスライドで10枚まで（Instagramのカルーセルの上限に収める）
+  function createFromItems(opts) {
+    var list = (opts.items || []).slice(0, MAX_SET_ITEMS);
+    var now = new Date().toISOString();
+    var set = {
+      id: 'set-' + Date.now().toString(36), createdAt: now, status: 'new', from: 'explore',
+      pattern: 'discovery', patternLabel: '広げた商品から（社長が採用）', title: String(opts.title || '').slice(0, 30) || '見つけた商品' + list.length + '選',
+      target: opts.target || '', reason: opts.reason || '「この商品から広げる」で社長が採用した商品から作成', appeal: opts.appeal || '',
+      slots: [], adoptedOffered: (opts.items || []).length,
+      items: list.map(function (it, i) {
+        return { role: it.role || it.themeTitle || it.axisLabel || '採用' + (i + 1), name: it.name, brand: it.brand || '', price: it.price, postage: it.postage || '', url: it.url, code: it.code || '', image: it.image || '', shop: it.shop || '', caption: it.caption || '',
+          feature: it.feature || it.value || '', why: it.relation || it.value || '', source: 'adopted', adoptedKey: it.key || it.code || '', adoptOrder: i + 1, priceCheckedAt: it.checkedAt || '', priceNote: it.checkedAt ? '' : '価格は探索したときのもの（投稿前に楽天で確認してください）', room: 'unregistered',
+          officialUrl: '', officialNote: 'メーカー公式の商品ページは未取得' };
+      })
+    };
+    set.issues = localQuality(set);
+    D.save(set);
+    openId = set.id;
+    return finishCopy(Object.assign({}, set)).then(function (done) {
+      D.save(Object.assign({}, D.get(set.id), { copy: done.copy, copyAt: done.copyAt || '', copyError: done.copy ? '' : done.copyError || '' }));
+      paint();
+      return D.get(set.id);
+    });
+  }
+  function openSet(id) { openId = id; paint(); }
+
   // 改善案の比較用：投稿セットに見出し・表紙の型・写真の有無を当てた試作の画像（表紙と1枚目の商品）を描く（保存はしない）
   function previewVariant(set, v) {
     var trial = Object.assign({}, set, { id: set.id + '-trial-' + (v.key || v.title), titleEdit: v.title, coverStyle: v.coverStyle || set.coverStyle, noPhoto: v.photo === false });
     return slidesOf(trial).then(function (out) { return { urls: out.urls.slice(0, 2), files: out.files }; });
   }
 
-  window.DeliveryView = { previewVariant: previewVariant, issuesOf: issuesOf, render: render, onJobDone: onJobDone, adopted: adoptedAll };
+  window.DeliveryView = { createFromItems: createFromItems, openSet: openSet, MAX_SET_ITEMS: MAX_SET_ITEMS, previewVariant: previewVariant, issuesOf: issuesOf, render: render, onJobDone: onJobDone, adopted: adoptedAll };
 })();
