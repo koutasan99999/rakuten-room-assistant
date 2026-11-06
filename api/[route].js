@@ -19,6 +19,7 @@ import intros from '../server/intros.js';
 import pitch from '../server/pitch.js';
 import planTitles from '../server/plan-titles.js';
 import plans from '../server/plans.js';
+import pr from '../server/pr.js';
 import productUrl from '../server/product-url.js';
 import radar from '../server/radar.js';
 import releaseIdeas from '../server/release-ideas.js';
@@ -46,6 +47,7 @@ export const ROUTES = {
   'pitch': pitch,
   'plan-titles': planTitles,
   'plans': plans,
+  'pr': pr,
   'product-url': productUrl,
   'radar': radar,
   'release-ideas': releaseIdeas,

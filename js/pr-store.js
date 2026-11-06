@@ -12,6 +12,8 @@
     s.accounts = s.accounts && typeof s.accounts === 'object' ? s.accounts : {};
     s.posts = s.posts && typeof s.posts === 'object' ? s.posts : {};
     s.log = Array.isArray(s.log) ? s.log : [];
+    // 社長が登録したブランドの公式サイト（ブランド名→URL）。自動発掘で使う
+    s.sites = s.sites && typeof s.sites === 'object' ? s.sites : {};
     return s;
   }
   function write(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; } }
@@ -38,7 +40,7 @@
       var s = read(); var h = normHandle(a.handle);
       if (!h) return { error: 'アカウント名が読み取れません' };
       if (s.accounts[h]) return { account: s.accounts[h], dup: true };
-      var x = { handle: h, url: 'https://www.instagram.com/' + h + '/', genre: a.genre || '', reason: String(a.reason || '').slice(0, 120), priority: a.priority || 2, status: 'candidate', source: a.source || '社長が追加', official: !!a.official, addedAt: now() };
+      var x = { handle: h, url: 'https://www.instagram.com/' + h + '/', genre: a.genre || '', reason: String(a.reason || '').slice(0, 120), priority: a.priority || 2, status: 'candidate', source: a.source || '社長が追加', official: !!a.official, addedAt: now(), auto: !!a.auto, evidence: String(a.evidence || '').slice(0, 300), checkedAt: a.checkedAt || '' };
       s.accounts[h] = x; log(s, 'add-account', x); write(s);
       return { account: x };
     },
@@ -55,7 +57,7 @@
       if (!u || u.kind !== 'post') return { error: '投稿のURL（instagram.com/p/… か /reel/…）を入れてください' };
       if (s.posts[u.code]) return { post: s.posts[u.code], dup: true };
       var h = normHandle(p.handle);
-      var x = { id: u.code, url: u.url, handle: h, caption: String(p.caption || '').slice(0, 1000), summary: String(p.caption || '').replace(/\s+/g, ' ').slice(0, 80), genre: p.genre || '', reason: String(p.reason || '').slice(0, 120), drafts: [], status: 'todo', addedAt: now(), source: p.source || '社長が追加' };
+      var x = { id: u.code, url: u.url, handle: h, caption: String(p.caption || '').slice(0, 1000), summary: String(p.caption || '').replace(/\s+/g, ' ').slice(0, 80), genre: p.genre || '', reason: String(p.reason || '').slice(0, 120), drafts: [], status: 'todo', addedAt: now(), source: p.source || '社長が追加', auto: !!p.auto, postedAt: p.postedAt || '', comments: p.comments == null ? null : Number(p.comments), checkedAt: p.checkedAt || '' };
       s.posts[u.code] = x; log(s, 'add-post', x); write(s);
       return { post: x };
     },
@@ -77,6 +79,12 @@
       var a = s.accounts[h];
       if (a && a.status === 'followed' && a.followedAt && new Date(a.followedAt).getTime() > since) return { type: 'follow', at: a.followedAt };
       return null;
+    },
+    sites: function () { return read().sites; },
+    setSite: function (brand, url) {
+      var s = read(); var b = String(brand || '').trim().slice(0, 40); var u = String(url || '').trim();
+      if (!b || !/^https:\/\/[^\s]+$/.test(u)) return false;
+      s.sites[b] = u.slice(0, 300); write(s); return true;
     },
     log: function () { return read().log; }
   };

@@ -29,6 +29,7 @@ import brandNoteHandler from '../server/brand-note.js';
 import buyerHandler from '../server/buyer.js';
 import pitchHandler from '../server/pitch.js';
 import thiefHandler from '../server/thief.js';
+import prHandler from '../server/pr.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
@@ -307,6 +308,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/pitch') return pitchHandler(req, res, env);
   if (url.pathname === '/api/company') return companyHandler(req, res, env);
   if (url.pathname === '/api/thief') return thiefHandler(req, res, env);
+  if (url.pathname === '/api/pr') return prHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {
