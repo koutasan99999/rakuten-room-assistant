@@ -345,6 +345,49 @@
   var R = window.RoomTextStore;
   var ROOM_STATUS = { none: '未登録', ready: '文章準備済み', registered: 'ROOM登録済み（社長の申告）' };
   var roomOpen = {};   // set.id:番号 → 開いている
+  var addOpen = {};    // set.id → 「商品を追加する」を開いている
+  var addTab = 'adopted';
+  // 追加の候補：採用済みでどの投稿セットにも入っていない商品／広げるで見つけた商品（新しい順）
+  function addCandidates(set) {
+    var inSet = function (p) { return set.items.some(function (x) { return sameItem(x, p); }); };
+    var adopted = adoptedUnused().filter(function (p) { return !inSet(p); });
+    var found = [];
+    var X = window.ExploreStore;
+    if (X) X.roots().forEach(function (n) { [n].concat(X.children(n.id)).forEach(function (m) { var pool = X.pool(m.id); if (pool) pool.items.forEach(function (it) { if (!inSet(it) && !found.some(function (f) { return sameItem(f, it); })) found.push(Object.assign({ fromName: m.product.name }, it, { checkedAt: (pool.batches.filter(function (bt) { return bt.id === it.batch; })[0] || {}).at || '' })); }); }); });
+    found.sort(function (a, b) { return (b.addedAt || 0) - (a.addedAt || 0); });
+    return { adopted: adopted, found: found.slice(0, 40) };
+  }
+  function addPanel(set) {
+    var box = el('div', 'add-panel');
+    var left = MAX_SET_ITEMS - set.items.length;
+    box.appendChild(btn('商品を追加する（' + set.items.length + '/' + MAX_SET_ITEMS + '点）', 'btn btn-secondary add-toggle', function () { addOpen[set.id] = !addOpen[set.id]; paint(); }));
+    if (!addOpen[set.id]) return box;
+    if (left <= 0) { box.appendChild(el('p', 'hint pitch-warn', 'この投稿セットは' + MAX_SET_ITEMS + '点で上限です。入れ替えたいときは「この商品を差し替える」を使ってください。')); return box; }
+    var c = addCandidates(set);
+    var tabs = el('div', 'xp-filter');
+    [['adopted', '採用済み（まだ使っていない）', c.adopted.length], ['found', '広げるで見つけた商品', c.found.length]].forEach(function (t) { tabs.appendChild(btn(t[1] + '（' + t[2] + '）', 'xp-chip' + (addTab === t[0] ? ' active' : ''), function () { addTab = t[0]; paint(); })); });
+    box.appendChild(tabs);
+    var list = addTab === 'adopted' ? c.adopted : c.found;
+    if (!list.length) box.appendChild(el('p', 'hint', addTab === 'adopted' ? '追加できる採用済みの商品はありません（すべて投稿セットに入っています）。' : '広げるで見つけた商品はありません。「広げる」で探すと、ここから追加できます。'));
+    list.forEach(function (p) {
+      var r = el('div', 'cand-top add-row');
+      var im = el('img', 'cand-thumb'); im.src = p.image || ''; im.alt = ''; im.loading = 'lazy'; r.appendChild(im);
+      var info = el('div', 'cand-info');
+      info.appendChild(el('p', 'thief-cand-name', cleanName(p.name)));
+      info.appendChild(el('p', 'cand-meta', (p.price ? K.formatPrice(p.price) : '価格は未取得') + (addTab === 'found' && p.fromName ? '｜「' + cleanName(p.fromName).slice(0, 14) + '」から' : '') + (addTab === 'adopted' && p.reason ? '｜採用理由：' + p.reason : '')));
+      if (p.relation || p.feature) info.appendChild(el('p', 'hint', p.relation || p.feature));
+      info.appendChild(btn('この投稿セットに追加', 'btn btn-primary co-sbtn', function () {
+        // 広げるで見つけた商品は、追加と同時に採用済みにする（ROOM紹介文・採用の記録に残す）
+        if (addTab === 'found' && window.PitchStore && window.PitchStore.adoptFrom) window.PitchStore.adoptFrom(p, '', { origin: 'explore', relation: p.relation || '' });
+        var r2 = addItems(set.id, [p], addTab === 'found' ? '広げる' : '採用済み');
+        K.showToast(r2.added ? '追加しました。表紙・商品カード・キャプションを作り直しています' : r2.error);
+        paint();
+      }));
+      r.appendChild(info);
+      box.appendChild(r);
+    });
+    return box;
+  }
   var roomBusy = {};   // 商品の key → 作っている
   var roomEdit = {};   // 商品の key → 編集中
   function tagsText(tags) { return (tags || []).map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; }).join(' '); }
@@ -476,6 +519,8 @@
       if (alt) row.appendChild(altPanel(set, i, alt));
       b.appendChild(row);
     });
+    // 商品を追加する（採用済みでまだ使っていない商品・広げるで見つけた商品から）
+    if (targetSets().some(function (x) { return x.id === set.id; })) b.appendChild(addPanel(set));
     wrap.appendChild(b);
 
     // C. Instagram用の完成画像
@@ -510,6 +555,13 @@
     ta.value = captionOf(set);
     ta.addEventListener('change', function () { set.captionEdit = ta.value; D.save(set); });
     d.appendChild(ta);
+    (set.captionEditHistory || []).slice(-2).reverse().forEach(function (h) {
+      var kp = el('details', 'co-more');
+      kp.appendChild(el('summary', null, '前に直したキャプションの控え（' + stamp(h.at) + '・' + h.reason + '）'));
+      kp.appendChild(el('p', 'room-intro', h.text));
+      kp.appendChild(btn('控えをコピー', 'status-btn co-sbtn', function () { K.copyText(h.text).then(function () { K.showToast('コピーしました'); }, function () {}); }));
+      d.appendChild(kp);
+    });
     if (!allRoom(set)) d.appendChild(el('p', 'hint', '楽天ROOMに全商品を登録するまでは、「紹介したものは楽天ROOMにまとめています」とは書きません。登録したら、各商品の「ROOMに登録した」を押すと文面と最後のスライドが切り替わります。'));
     d.appendChild(btn('キャプションをコピー', 'btn btn-secondary', function () { K.copyText(ta.value).then(function () { K.showToast('コピーしました'); }, function () {}); }));
     wrap.appendChild(d);
@@ -616,6 +668,35 @@
   // 「広げる」で採用した商品から、投稿セットを作る（これで投稿する！）。採用の順に並べ、商品の情報（商品番号・名前・価格・URL・画像）を引き継ぐ。
   // 表紙・商品カードの文字とキャプションは既存の仕組み（api/instagram）で作り、ROOM紹介文は投稿セットの各商品から作れる。Instagramへの公開は社長が行う
   var MAX_SET_ITEMS = 8; // 表紙＋商品＋最後のスライドで10枚まで（Instagramのカルーセルの上限に収める）
+  // 採用済み・広げるで見つけた商品を、投稿セットの商品の形にする（商品番号・名前・価格・URL・画像を引き継ぐ）
+  function toSetItem(it, i, role) {
+    return { role: role || it.role || it.themeTitle || it.axisLabel || '採用' + (i + 1), name: it.name, brand: it.brand || '', price: it.price, postage: it.postage || '', url: it.url, code: it.code || '', image: it.image || '', shop: it.shop || '', caption: it.caption || '',
+      feature: it.feature || it.value || '', why: it.relation || it.value || it.reason || '', source: 'adopted', adoptedKey: it.key || it.code || '', adoptOrder: i + 1, priceCheckedAt: it.checkedAt || '', priceNote: it.checkedAt ? '' : '価格は見つけたときのもの（投稿前に楽天で確認してください）', room: 'unregistered',
+      officialUrl: '', officialNote: 'メーカー公式の商品ページは未取得' };
+  }
+  function sameItem(a, b) { return a.code && a.code === b.code || a.url && a.url === b.url || cleanName(a.name) === cleanName(b.name); }
+  // 商品を追加できる投稿セット（却下・改善版に置き換えた元・公開済みは除く）
+  function targetSets() { return D.all().filter(function (x) { return x.status !== 'rejected' && !x.supersededBy && !(x.igPost && x.igPost.url); }); }
+  // 今ある投稿セットに商品を足す（同じ商品は足さない・8点まで）。表紙・商品カードの文字とキャプションを、今の商品で作り直す
+  function addItems(setId, items, from) {
+    var cur = D.get(setId);
+    if (!cur) return { added: 0, error: '投稿セットが見つかりません' };
+    var room = MAX_SET_ITEMS - cur.items.length;
+    var fresh = (items || []).filter(function (it, i, arr) { return it && it.name && !cur.items.some(function (x) { return sameItem(x, it); }) && arr.findIndex(function (y) { return y && sameItem(y, it); }) === i; });
+    var dup = (items || []).length - fresh.length;
+    if (room <= 0) return { added: 0, dup: dup, error: 'この投稿セットは' + MAX_SET_ITEMS + '点で上限です（Instagramは1投稿10枚まで）' };
+    var add = fresh.slice(0, room).map(function (it, i) { return toSetItem(it, cur.items.length + i, it.themeTitle || '追加'); });
+    if (!add.length) return { added: 0, dup: dup, error: dup ? 'すでにこの投稿セットに入っています' : '追加できる商品がありません' };
+    // 社長が手で直したキャプションは消さずに控えに残す（新しい商品に合わせたキャプションは作り直す）
+    var kept = (cur.captionEditHistory || []).concat(cur.captionEdit ? [{ text: cur.captionEdit, at: new Date().toISOString(), reason: '商品の追加の前' }] : []).slice(-5);
+    var next = Object.assign({}, cur, { items: cur.items.concat(add), copy: null, copyAt: '', captionEdit: '', captionEditHistory: kept, alt: null });
+    next.issues = localQuality(next);
+    D.save(next);
+    D.decide(setId, null, '商品の追加：' + add.map(function (x) { return cleanName(x.name).slice(0, 20); }).join('、') + (from ? '（' + from + 'から）' : ''), 'revise');
+    remakeCopy(setId);
+    return { added: add.length, dup: dup, over: fresh.length - add.length };
+  }
+
   function createFromItems(opts) {
     var list = (opts.items || []).slice(0, MAX_SET_ITEMS);
     var now = new Date().toISOString();
@@ -624,11 +705,7 @@
       pattern: 'discovery', patternLabel: '広げた商品から（社長が採用）', title: String(opts.title || '').slice(0, 30) || '見つけた商品' + list.length + '選',
       target: opts.target || '', reason: opts.reason || '「この商品から広げる」で社長が採用した商品から作成', appeal: opts.appeal || '',
       slots: [], adoptedOffered: (opts.items || []).length,
-      items: list.map(function (it, i) {
-        return { role: it.role || it.themeTitle || it.axisLabel || '採用' + (i + 1), name: it.name, brand: it.brand || '', price: it.price, postage: it.postage || '', url: it.url, code: it.code || '', image: it.image || '', shop: it.shop || '', caption: it.caption || '',
-          feature: it.feature || it.value || '', why: it.relation || it.value || '', source: 'adopted', adoptedKey: it.key || it.code || '', adoptOrder: i + 1, priceCheckedAt: it.checkedAt || '', priceNote: it.checkedAt ? '' : '価格は探索したときのもの（投稿前に楽天で確認してください）', room: 'unregistered',
-          officialUrl: '', officialNote: 'メーカー公式の商品ページは未取得' };
-      })
+      items: list.map(function (it, i) { return toSetItem(it, i); })
     };
     set.issues = localQuality(set);
     D.save(set);
@@ -647,5 +724,5 @@
     return slidesOf(trial).then(function (out) { return { urls: out.urls.slice(0, 2), files: out.files }; });
   }
 
-  window.DeliveryView = { createFromItems: createFromItems, openSet: openSet, MAX_SET_ITEMS: MAX_SET_ITEMS, previewVariant: previewVariant, issuesOf: issuesOf, render: render, onJobDone: onJobDone, adopted: adoptedAll };
+  window.DeliveryView = { addItems: addItems, targetSets: targetSets, createFromItems: createFromItems, openSet: openSet, MAX_SET_ITEMS: MAX_SET_ITEMS, previewVariant: previewVariant, issuesOf: issuesOf, render: render, onJobDone: onJobDone, adopted: adoptedAll };
 })();

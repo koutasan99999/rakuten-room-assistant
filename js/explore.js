@@ -95,6 +95,28 @@
     return n;
   }
 
+  // 探索結果の商品を、今ある投稿セットに追加する（追加先を選ぶ）
+  var addFor = '';
+  function addChooser(p, node) {
+    var DV = window.DeliveryView;
+    var box = el('div', 'xp-choose');
+    var targets = DV && DV.targetSets ? DV.targetSets() : [];
+    if (!targets.length) { box.appendChild(el('p', 'hint', '追加できる投稿セットがありません。「いいじゃん！」で採用して、下の「これで投稿する！」で新しく作ってください。')); return box; }
+    targets.slice(0, 8).forEach(function (t) {
+      var max = DV.MAX_SET_ITEMS || 8;
+      var b = btn('「' + cleanName(t.titleEdit || t.title).slice(0, 16) + '」（' + t.items.length + '/' + max + '）', 'status-btn xp-target', function () {
+        if (!adoptedState(p)) S.adoptFrom(X.slim(p), '', { origin: 'explore', path: X.pathText(node.id, LABEL) + ' →（' + (LABEL[p.mode] || '') + '）' + cleanName(p.name).slice(0, 24), relation: p.relation || '', exploreNode: node.id });
+        var r = DV.addItems(t.id, [Object.assign({}, p, { checkedAt: ((X.pool(node.id) || { batches: [] }).batches.filter(function (bt) { return bt.id === p.batch; })[0] || {}).at || '' })], '広げる');
+        addFor = '';
+        K.showToast(r.added ? '「' + cleanName(t.titleEdit || t.title).slice(0, 14) + '」に追加しました（表紙・キャプションを作り直しています）' : r.error || '追加できませんでした');
+        paint();
+      });
+      if (t.items.length >= max) b.disabled = true;
+      box.appendChild(b);
+    });
+    return box;
+  }
+
   // ---- 1つの商品カード（探索結果）：一覧で比べやすいよう短く。似ている点・違う点・レビュー・特徴は「くわしく」に畳む ----
   function resultCard(p, node, latestNo) {
     var c = el('article', 'card xp-mini');
@@ -123,6 +145,9 @@
     acts.appendChild(btn(adoptedState(p) ? '採用済み' : 'いいじゃん！', 'btn btn-primary xp-sbtn', function () { adopt(p, node, p.mode); }));
     // 枝葉の商品からは広げない（広げるのは起点の商品だけ）。詳細の確認と、楽天の商品ページ
     acts.appendChild(btn('詳細確認', 'btn btn-secondary xp-sbtn', function () { d.open = !d.open; if (d.open) d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }));
+    // 投稿セットに追加：追加先を選ぶ（追加と同時に採用済みにする）
+    acts.appendChild(btn('投稿セットに追加', 'btn btn-secondary xp-sbtn', function () { addFor = addFor === p.code + p.name ? '' : p.code + p.name; paint(); }));
+    if (addFor === p.code + p.name) c.appendChild(addChooser(p, node));
     c.appendChild(acts);
     return c;
   }
@@ -202,32 +227,60 @@
       .sort(function (a, b) { return (a.f.decidedAt || 0) - (b.f.decidedAt || 0); })
       .map(function (x) { return Object.assign({}, x.f, x.p, { key: x.f.key, decidedAt: x.f.decidedAt, checkedAt: (x.p.batch && (X.pool(node.id).batches.filter(function (b) { return b.id === x.p.batch; })[0] || {}).at) || x.f.fetchedAt || '' }); });
   }
-  // これで投稿する！：採用した商品で投稿セットを作り、投稿セットの画面で表紙・スライド・キャプション・ROOM紹介文を仕上げる
+  // これで投稿する！：採用した商品で、新しい投稿セットを作るか、今ある投稿セットに追加する（投稿セットの画面で画像・キャプション・ROOM紹介文を仕上げる）
   var posting = false;
+  var choosing = {};   // node.id → 追加先を選んでいる
+  function goToSet(set, msg) {
+    K.showToast(msg);
+    if (window.PitchView && window.PitchView.show) window.PitchView.show('sets');
+    if (set && window.DeliveryView.openSet) window.DeliveryView.openSet(set.id);
+    window.scrollTo(0, 0);
+  }
+  function createNew(node, list, max) {
+    var themes = {};
+    list.forEach(function (p) { if (p.themeTitle) themes[p.themeTitle] = (themes[p.themeTitle] || 0) + 1; });
+    var top = Object.keys(themes).sort(function (a, c) { return themes[c] - themes[a]; })[0];
+    var title = window.prompt('投稿のタイトル（表紙の見出し。あとで直せます）', top || ('「' + cleanName(node.product.name).slice(0, 12) + '」から見つけた' + Math.min(list.length, max) + '選'));
+    if (title == null) return;
+    posting = true; choosing[node.id] = false;
+    paint();
+    if (list.length > max) K.showToast('Instagramの枚数の上限のため、採用した順に' + max + '件で作ります');
+    window.DeliveryView.createFromItems({ title: title.trim(), items: list, reason: '「' + cleanName(node.product.name).slice(0, 20) + '」から広げて、社長が採用した商品' }).then(function (set) {
+      posting = false;
+      goToSet(set, '投稿セットを作りました。画像・キャプション・ROOM紹介文を確認してください');
+    }, function () { posting = false; K.showToast('投稿セットを作れませんでした'); paint(); });
+  }
   function postBar(node) {
     var list = adoptedHere(node);
     var bar = el('div', 'xp-postbar');
-    var max = window.DeliveryView && window.DeliveryView.MAX_SET_ITEMS || 8;
+    var DV = window.DeliveryView;
+    var max = DV && DV.MAX_SET_ITEMS || 8;
+    var targets = DV && DV.targetSets ? DV.targetSets() : [];
     var b = btn(posting ? '投稿セットを作っています…' : 'これで投稿する！（採用 ' + list.length + '件）', 'btn btn-primary xp-post', function () {
-      if (!list.length || posting || !window.DeliveryView) return;
-      var themes = {};
-      list.forEach(function (p) { if (p.themeTitle) themes[p.themeTitle] = (themes[p.themeTitle] || 0) + 1; });
-      var top = Object.keys(themes).sort(function (a, c) { return themes[c] - themes[a]; })[0];
-      var title = window.prompt('投稿のタイトル（表紙の見出し。あとで直せます）', top || ('「' + cleanName(node.product.name).slice(0, 12) + '」から見つけた' + Math.min(list.length, max) + '選'));
-      if (title == null) return;
-      posting = true;
+      if (!list.length || posting || !DV) return;
+      if (!targets.length) { createNew(node, list, max); return; }
+      choosing[node.id] = !choosing[node.id];
       paint();
-      if (list.length > max) K.showToast('Instagramの枚数の上限のため、採用した順に' + max + '件で作ります');
-      window.DeliveryView.createFromItems({ title: title.trim(), items: list, reason: '「' + cleanName(node.product.name).slice(0, 20) + '」から広げて、社長が採用した商品' }).then(function (set) {
-        posting = false;
-        K.showToast('投稿セットを作りました。画像・キャプション・ROOM紹介文を確認してください');
-        if (window.PitchView && window.PitchView.show) window.PitchView.show('sets');
-        if (set && window.DeliveryView.openSet) window.DeliveryView.openSet(set.id);
-        window.scrollTo(0, 0);
-      }, function () { posting = false; K.showToast('投稿セットを作れませんでした'); paint(); });
     });
     if (!list.length) { b.disabled = true; b.textContent = 'これで投稿する！（採用 0件）'; }
     bar.appendChild(b);
+    if (choosing[node.id] && list.length) {
+      var ch = el('div', 'xp-choose');
+      ch.appendChild(btn('新しい投稿セットを作る（' + Math.min(list.length, max) + '件）', 'btn btn-secondary co-sbtn', function () { createNew(node, list, max); }));
+      ch.appendChild(el('p', 'hint', '今ある投稿セットに追加する：'));
+      targets.slice(0, 8).forEach(function (t) {
+        var full = t.items.length >= max;
+        var tb = btn('「' + cleanName(t.titleEdit || t.title).slice(0, 18) + '」に追加（' + t.items.length + '/' + max + '点）', 'status-btn xp-target', function () {
+          var r = DV.addItems(t.id, list, '広げる');
+          choosing[node.id] = false;
+          if (!r.added) { K.showToast(r.error || '追加できませんでした'); paint(); return; }
+          goToSet(DV.targetSets().filter(function (x) { return x.id === t.id; })[0] || t, r.added + '件を追加しました' + (r.dup ? '（' + r.dup + '件はすでに入っていました）' : '') + (r.over ? '（' + r.over + '件は上限のため入りませんでした）' : '') + '。表紙・キャプションを作り直しています');
+        });
+        if (full) tb.disabled = true;
+        ch.appendChild(tb);
+      });
+      bar.appendChild(ch);
+    }
     bar.appendChild(el('p', 'hint', list.length ? '採用した順：' + list.slice(0, max).map(function (p, i) { return (i + 1) + '. ' + cleanName(p.name).slice(0, 14); }).join('／') + (list.length > max ? '（' + max + '件まで使います）' : '') : '商品の「いいじゃん！」で採用すると、その商品で投稿を作れます。'));
     return bar;
   }
