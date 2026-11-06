@@ -38,7 +38,7 @@ test('Facebookログイン方式：設定が無ければ使わない。最近の
   let called = '';
   const fetchImpl = async (url) => {
     called = url;
-    return { ok: true, status: 200, json: async () => ({ business_discovery: { username: 'kintojapan', followers_count: 1000, media: { data: [
+    return { ok: true, status: 200, json: async () => ({ business_discovery: { username: 'KintoJapan', followers_count: 1000, media: { data: [
       { permalink: 'https://www.instagram.com/p/AAA/', caption: '新作のマグ', timestamp: '2026-11-05T10:00:00+0000', comments_count: 3 },
       { permalink: 'https://www.instagram.com/p/BBB/', caption: '古い投稿', timestamp: '2026-10-01T10:00:00+0000', comments_count: 1 },
       { permalink: 'https://www.instagram.com/p/CCC/', caption: '', timestamp: '2026-11-05T10:00:00+0000', comments_count: 1 },
@@ -48,6 +48,7 @@ test('Facebookログイン方式：設定が無ければ使わない。最近の
   const b = await businessDiscovery(cfg, '@KintoJapan', { fetchImpl });
   assert.match(decodeURIComponent(called), /graph\.facebook\.com\/v23\.0\/178\?fields=business_discovery\.username\(kintojapan\)/);
   assert.equal(b.followers, 1000);
+  assert.equal(b.handle, 'kintojapan');
   assert.deepEqual(freshPosts(b.media, { now }).map((m) => m.url), ['https://www.instagram.com/p/AAA/']);
 });
 
