@@ -555,6 +555,13 @@
     ta.value = captionOf(set);
     ta.addEventListener('change', function () { set.captionEdit = ta.value; D.save(set); });
     d.appendChild(ta);
+    (set.captionEditHistory || []).slice(-2).reverse().forEach(function (h) {
+      var kp = el('details', 'co-more');
+      kp.appendChild(el('summary', null, '前に直したキャプションの控え（' + stamp(h.at) + '・' + h.reason + '）'));
+      kp.appendChild(el('p', 'room-intro', h.text));
+      kp.appendChild(btn('控えをコピー', 'status-btn co-sbtn', function () { K.copyText(h.text).then(function () { K.showToast('コピーしました'); }, function () {}); }));
+      d.appendChild(kp);
+    });
     if (!allRoom(set)) d.appendChild(el('p', 'hint', '楽天ROOMに全商品を登録するまでは、「紹介したものは楽天ROOMにまとめています」とは書きません。登録したら、各商品の「ROOMに登録した」を押すと文面と最後のスライドが切り替わります。'));
     d.appendChild(btn('キャプションをコピー', 'btn btn-secondary', function () { K.copyText(ta.value).then(function () { K.showToast('コピーしました'); }, function () {}); }));
     wrap.appendChild(d);
@@ -680,7 +687,9 @@
     if (room <= 0) return { added: 0, dup: dup, error: 'この投稿セットは' + MAX_SET_ITEMS + '点で上限です（Instagramは1投稿10枚まで）' };
     var add = fresh.slice(0, room).map(function (it, i) { return toSetItem(it, cur.items.length + i, it.themeTitle || '追加'); });
     if (!add.length) return { added: 0, dup: dup, error: dup ? 'すでにこの投稿セットに入っています' : '追加できる商品がありません' };
-    var next = Object.assign({}, cur, { items: cur.items.concat(add), copy: null, copyAt: '', captionEdit: '', alt: null });
+    // 社長が手で直したキャプションは消さずに控えに残す（新しい商品に合わせたキャプションは作り直す）
+    var kept = (cur.captionEditHistory || []).concat(cur.captionEdit ? [{ text: cur.captionEdit, at: new Date().toISOString(), reason: '商品の追加の前' }] : []).slice(-5);
+    var next = Object.assign({}, cur, { items: cur.items.concat(add), copy: null, copyAt: '', captionEdit: '', captionEditHistory: kept, alt: null });
     next.issues = localQuality(next);
     D.save(next);
     D.decide(setId, null, '商品の追加：' + add.map(function (x) { return cleanName(x.name).slice(0, 20); }).join('、') + (from ? '（' + from + 'から）' : ''), 'revise');
