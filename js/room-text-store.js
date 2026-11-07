@@ -12,26 +12,38 @@
 
   var api = {
     keyOf: keyOf,
+    // 読むだけ（前の紹介文の引き継ぎもしない）
+    peek: function (p) { return read()[keyOf(p)] || null; },
     // 保存済みの文章。なければ、前に「いいじゃん！」で作ったROOM紹介文（PitchStore）を引き継ぐ
     get: function (p) {
       var s = read(); var k = keyOf(p);
       if (s[k]) return s[k];
       var old = window.PitchStore && window.PitchStore.find ? window.PitchStore.find(p) : null;
-      if (old && old.intro) { s[k] = { intro: old.intro, tags: [], generatedAt: '', from: '前に作ったROOM紹介文', history: [], registered: old.room === 'done' ? { at: '', by: 'owner', note: '前の記録' } : null }; write(s); return s[k]; }
+      if (old && old.intro) { s[k] = { intro: old.intro, tags: Array.isArray(old.tags) ? old.tags.slice(0, 10) : [], tagsFrom: Array.isArray(old.tags) && old.tags.length ? '商品のデータ' : '', generatedAt: '', from: '前に作ったROOM紹介文', history: [], registered: old.room === 'done' ? { at: '', by: 'owner', note: '前の記録' } : null }; write(s); return s[k]; }
       return null;
     },
     // 新しく作った文章を保存（前の文章は履歴へ）
     saveGenerated: function (p, intro, tags, theme) {
       var s = read(); var k = keyOf(p); var x = s[k] || { history: [] };
       if (x.intro) x.history = [{ intro: x.intro, tags: x.tags, at: x.editedAt || x.generatedAt }].concat(x.history || []).slice(0, 5);
-      Object.assign(x, { intro: intro, tags: tags, generatedAt: now(), editedAt: '', theme: theme || '', from: 'AI' });
+      Object.assign(x, { intro: intro, tags: tags, tagsAt: now(), tagsFrom: 'AI', tagsCleared: false, generatedAt: now(), editedAt: '', theme: theme || '', from: 'AI' });
       s[k] = x; write(s); return x;
     },
     saveEdit: function (p, intro, tags) {
       var s = read(); var k = keyOf(p); var x = s[k] || { history: [] };
-      Object.assign(x, { intro: intro, tags: tags, editedAt: now() });
+      Object.assign(x, { intro: intro, tags: tags, editedAt: now(), tagsCleared: !tags.length });
       s[k] = x; write(s); return x;
     },
+    // ハッシュタグだけを保存（紹介文は変えない）。前のタグがあれば履歴に残す
+    saveTags: function (p, tags, from) {
+      var s = read(); var k = keyOf(p); var x = s[k];
+      if (!x) return null;
+      if ((x.tags || []).length) x.history = [{ intro: x.intro, tags: x.tags, at: x.tagsAt || x.editedAt || x.generatedAt, note: 'タグの作り直しの前' }].concat(x.history || []).slice(0, 5);
+      Object.assign(x, { tags: tags, tagsAt: now(), tagsFrom: from || '', tagsCleared: false });
+      s[k] = x; write(s); return x;
+    },
+    // 自動で補ってよいか：紹介文はあるがタグが空（社長が自分でタグを消して保存したときは補わない）
+    needsTags: function (p) { var x = api.get(p); return !!(x && x.intro && !(x.tags || []).length && !x.tagsCleared); },
     // 社長の申告で「ROOMに登録した」（取り消しもできる）
     setRegistered: function (p, on) {
       var s = read(); var k = keyOf(p); var x = s[k] || { history: [] };

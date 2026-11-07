@@ -405,6 +405,25 @@
       paint();
     });
   }
+  // ハッシュタグだけ作る（紹介文は変えない）。ai=false：商品のデータから（AIなし・0円）／ai=true：AIで作り直す
+  var tagBusy = {};
+  var tagTried = {};
+  function makeTags(set, it, ai) {
+    var k = R.keyOf(it);
+    if (tagBusy[k]) return;
+    tagBusy[k] = true; tagTried[k] = true;
+    var x0 = R.get(it) || {};
+    K.postJson('api/pitch', { action: ai ? 'tagsai' : 'tags', set: { title: set.titleEdit || set.title, patternLabel: set.patternLabel || '', target: set.target || '' }, item: { name: it.name, role: it.role, brand: it.brand, feature: it.feature, why: it.why, intro: x0.intro || '' } }).then(function (r) {
+      delete tagBusy[k];
+      var tags = r.status === 200 && r.data && Array.isArray(r.data.tags) ? r.data.tags : null;
+      if (!tags) { if (ai) K.showToast((r.data && r.data.error) || 'ハッシュタグを作れませんでした'); paint(); return; }
+      // 関係の高いタグが見つからなければ、今のタグを消さずにそのまま
+      if (!tags.length) { if (ai) K.showToast('関係の高いタグが見つからなかったため、今のタグのままにしました'); paint(); return; }
+      R.saveTags(it, tags, r.data.from || '');
+      if (ai) K.showToast(r.data.notice || 'ハッシュタグを作り直しました（前のタグは履歴に残しています）');
+      paint();
+    });
+  }
   function copy(text, msg) { K.copyText(text).then(function () { K.showToast(msg); }, function () { K.showToast('コピーできませんでした'); }); }
   function roomPanel(set, i, it) {
     var k = R.keyOf(it);
@@ -418,8 +437,15 @@
     if (roomBusy[k]) box.appendChild(el('p', 'hint pitch-busy', '作り直しています…'));
     var steps = el('p', 'hint room-steps', '① コピー → ② 楽天ROOMを開いて貼り付けて登録 → ③ アプリに戻って「ROOMに登録した」');
     box.appendChild(steps);
-    var full = x.intro + (x.tags && x.tags.length ? '\n\n' + tagsText(x.tags) : '');
-    box.appendChild(btn('紹介文＋ハッシュタグをコピー', 'btn btn-primary room-copy', function () { copy(full, 'コピーしました。楽天ROOMで貼り付けてください'); }));
+    // 紹介文はあるのにタグが空（前に作った紹介文を引き継いだ商品など）：商品のデータから作って補う（AIなし・0円）
+    if (R.needsTags(it) && !tagTried[k] && !tagBusy[k]) setTimeout(function () { makeTags(set, it, false); }, 0);
+    if (tagBusy[k]) box.appendChild(el('p', 'hint pitch-busy', 'ハッシュタグを作っています…'));
+    // コピーは押したときの最新の内容で
+    box.appendChild(btn('紹介文＋ハッシュタグをコピー', 'btn btn-primary room-copy', function () {
+      var c = R.get(it) || x;
+      var hasTags = (c.tags || []).length;
+      copy(c.intro + (hasTags ? '\n\n' + tagsText(c.tags) : ''), hasTags ? 'コピーしました。楽天ROOMで貼り付けてください' : '紹介文をコピーしました（ハッシュタグはまだありません）');
+    }));
     if (roomEdit[k]) {
       var ta = el('textarea', 'input room-text');
       ta.rows = 8; ta.value = x.intro;
@@ -432,13 +458,15 @@
       box.appendChild(er);
     } else {
       box.appendChild(el('p', 'room-intro', x.intro));
-      box.appendChild(el('p', 'room-tags', tagsText(x.tags) || '（ハッシュタグなし）'));
+      box.appendChild(el('p', 'room-tags', tagsText(x.tags) || (tagBusy[k] ? '（ハッシュタグを作っています）' : '（関係の高いハッシュタグが見つかりませんでした。無理に付けていません。「ハッシュタグを作り直す」でAIに考えてもらえます）')));
+      if ((x.tags || []).length) box.appendChild(el('p', 'hint', 'ハッシュタグ ' + x.tags.length + '個' + (x.tagsFrom ? '｜' + (x.tagsFrom === 'AI' ? 'AIが作成' : x.tagsFrom === '商品のデータ' ? '商品名・特徴から作成' : x.tagsFrom) : '') + (x.editedAt && !x.tagsAt ? '｜社長が編集' : '')));
       box.appendChild(el('p', 'hint', x.intro.length + '字' + (x.editedAt ? '｜社長が編集（' + stamp(x.editedAt) + '）' : x.generatedAt ? '｜AIが作成（' + stamp(x.generatedAt) + '）' : '｜' + (x.from || '')) + ((x.history || []).length ? '｜前の文章 ' + x.history.length + '件を保存' : '')));
     }
     var r1 = el('div', 'room-grid');
     r1.appendChild(btn('紹介文だけコピー', 'status-btn', function () { copy(x.intro, '紹介文をコピーしました'); }));
-    r1.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { copy(tagsText(x.tags), 'ハッシュタグをコピーしました'); }));
+    r1.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { var c = R.get(it) || x; if (!(c.tags || []).length) { K.showToast('ハッシュタグがまだありません。「ハッシュタグを作り直す」で作れます'); return; } copy(tagsText(c.tags), 'ハッシュタグをコピーしました'); }));
     r1.appendChild(btn('文章を編集する', 'status-btn', function () { roomEdit[k] = true; paint(); }));
+    r1.appendChild(btn('ハッシュタグを作り直す', 'status-btn', function () { if (window.confirm('ハッシュタグだけをAIで作り直しますか？（紹介文は変えません。今のタグは履歴に残ります。AIを1回使います）')) makeTags(set, it, true); }));
     r1.appendChild(btn('文章を作り直す', 'status-btn', function () { if (window.confirm('紹介文とハッシュタグを作り直しますか？（今の文章は履歴に残ります）')) makeRoomText(set, it, true); }));
     box.appendChild(r1);
     // ROOMを開く：商品番号を指定した楽天ROOMの登録（コレ！）画面のURL。開けない場合に備えて商品ページも置く

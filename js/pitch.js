@@ -53,7 +53,22 @@
   function makeIntro(p) {
     return K.postJson('api/pitch', { action: 'intro', product: p }).then(function (r) {
       if (r.status !== 200 || !r.data.intro) { K.showToast('紹介文を作れませんでした。採用リストで作り直せます'); return; }
-      S.update(p.key, { intro: r.data.intro, introNotice: r.data.notice || '' });
+      S.update(p.key, { intro: r.data.intro, introNotice: r.data.notice || '', tags: Array.isArray(r.data.tags) ? r.data.tags : [] });
+      // ROOM紹介文の記録（投稿セットで使う）がすでにあって、タグが空なら、タグだけ入れる（紹介文は変えない）
+      var RT = window.RoomTextStore;
+      if (RT && RT.needsTags(p) && (r.data.tags || []).length) RT.saveTags(p, r.data.tags, '商品のデータ');
+      if (main === 'adopted') render();
+    });
+  }
+  // ハッシュタグだけ（商品のデータから。AIなし・0円）。紹介文は変えない
+  var tagTried = {};
+  var tagFail = {};
+  function makeTags(p) {
+    return K.postJson('api/pitch', { action: 'tags', item: { name: p.name, brand: p.brand, feature: [p.pitch, p.fit].filter(Boolean).join('。') }, set: { title: p.category || '' } }).then(function (r) {
+      if (r.status !== 200 || !r.data || !Array.isArray(r.data.tags)) { tagFail[p.key] = true; if (main === 'adopted') render(); return; }
+      S.update(p.key, { tags: r.data.tags });
+      var RT = window.RoomTextStore;
+      if (RT && RT.needsTags(p) && r.data.tags.length) RT.saveTags(p, r.data.tags, '商品のデータ');
       if (main === 'adopted') render();
     });
   }
@@ -196,11 +211,23 @@
     ta.addEventListener('change', function () { S.update(p.key, { intro: ta.value }); });
     card.appendChild(ta);
     if (p.introNotice) card.appendChild(el('p', 'hint', p.introNotice));
+    // ハッシュタグ（紹介文と一緒に保存。前に作った紹介文でタグが無い商品は、商品のデータから補う：AIなし・0円）
+    if (p.intro && !Array.isArray(p.tags) && !tagTried[p.key]) { tagTried[p.key] = true; setTimeout(function () { makeTags(p); }, 0); }
+    // 投稿セットの方で作り直した・直したタグがあれば、そちらを使う（同じ商品でタグが食い違わないように）
+    var rt = window.RoomTextStore && window.RoomTextStore.peek ? window.RoomTextStore.peek(p) : null;
+    var ptags = rt && (rt.tags || []).length ? rt.tags : Array.isArray(p.tags) ? p.tags : [];
+    card.appendChild(el('p', 'room-tags', ptags.length ? ptags.map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; }).join(' ') : p.intro && !Array.isArray(p.tags) ? (tagFail[p.key] ? '（ハッシュタグを作れませんでした。アプリを読み込み直すと、もう一度作ります）' : '（ハッシュタグを作っています）') : '（関係の高いハッシュタグが見つかりませんでした。無理に付けていません）'));
     var row = el('div', 'pitch-row');
     row.appendChild(btn('紹介文をコピー', 'btn btn-primary', function () {
       S.update(p.key, { intro: ta.value });
       K.copyText(ta.value).then(function () { K.showToast('コピーしました。ROOMの投稿画面に貼り付けてください'); }, function () { K.showToast('コピーできませんでした'); });
     }));
+    ptags = ptags.map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; });
+    if (ptags.length) row.appendChild(btn('紹介文＋ハッシュタグをコピー', 'status-btn', function () {
+      S.update(p.key, { intro: ta.value });
+      K.copyText(ta.value + '\n\n' + ptags.join(' ')).then(function () { K.showToast('コピーしました。ROOMの投稿画面に貼り付けてください'); }, function () { K.showToast('コピーできませんでした'); });
+    }));
+    if (ptags.length) row.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { K.copyText(ptags.join(' ')).then(function () { K.showToast('ハッシュタグをコピーしました'); }, function () { K.showToast('コピーできませんでした'); }); }));
     row.appendChild(btn('作り直す', 'status-btn', function () { ta.value = ''; ta.placeholder = '作っています…'; makeIntro(p); }));
     row.appendChild(btn(p.room === 'done' ? '登録待ちに戻す' : 'ROOMに登録した', 'status-btn', function () { S.update(p.key, { room: p.room === 'done' ? 'waiting' : 'done' }); render(); }));
     card.appendChild(row);

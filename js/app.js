@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-06.3';
+  var APP_VERSION = '2026-11-07.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1230,7 +1230,7 @@
     var a = (body && body.action) || '';
     var p = String(path).replace(/^.*api\//, '');
     var table = {
-      pitch: { scout: 2, more: 2, seed: 1, intro: 2, feature: 1, set: 3, replace: 1, alternatives: 2, expand: 2, roomtext: 3, verify: 0 },
+      pitch: { scout: 2, more: 2, seed: 1, intro: 2, feature: 1, set: 3, replace: 1, alternatives: 2, expand: 2, roomtext: 3, tags: 0, tagsai: 1, verify: 0 },
       company: { meeting: 1, reply: 1, work: 1 },
       instagram: 1, intros: 2, 'room-hashtags': 1, ideas: 1, 'seed-ideas': 1, 'release-ideas': 1, 'brand-note': 1, explore: 2, buyer: 2, thief: 1, coord: 1, 'plan-titles': 1, assets: 1
     };

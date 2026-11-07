@@ -1,11 +1,11 @@
 // 「社長、これどうすか？」のAPI：画面のボタンで呼ぶ（自動では呼ばない）。
-// action: roomtext（ROOM紹介文とハッシュタグ）／expand（この商品から広げる）／set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
+// action: roomtext（ROOM紹介文とハッシュタグ）／tags（ハッシュタグだけ。商品のデータから・AIなし）／tagsai（ハッシュタグだけAIで作り直す）／expand（この商品から広げる）／set（投稿セットの自動制作。社長が採用した商品を優先）／alternatives（差し替えの候補）／replace（1商品の差し替え・旧）／seed（初期候補）／scout（新しく探す）／more（もっと見せて）／intro（ROOM紹介文）／feature（看板商品の特集原稿）／verify（登録前の確認）
 import { send, checkAccess, readBody, requestReferer } from '../lib/http.js';
 import { readTaste, readExclude, readRefs, scout, seed, verify, featurePlan } from '../lib/pitch.js';
 import { generateIntros } from '../lib/explore.js';
 import { buildSet, replaceItem, alternatives, readHistory, readAdopted, PATTERNS } from '../lib/postset.js';
 import { expand, readBase, readPath } from '../lib/expand.js';
-import { generateRoomHashtags } from '../lib/room-hashtags.js';
+import { generateRoomHashtags, productTags } from '../lib/room-hashtags.js';
 import { maskSecrets, AiError } from '../lib/ai.js';
 
 const str = (v, n) => String(v == null ? '' : v).slice(0, n);
@@ -63,7 +63,21 @@ export default async function handler(req, res, env = process.env) {
         generateRoomHashtags({ campaign: { campaignTheme: theme || item.name, campaignType: str(set.patternLabel, 30), targetAudience: str(set.target, 60), priceRange: '' }, items: [{ productName: item.name, productCategory: '', productUseCase: item.role, roomDescription: item.reason, brand: item.brand }], env, deadline: startedAt + 45000 })
       ]);
       const tags = [...new Set([...((hr.products && hr.products[0] && hr.products[0].tags) || []), ...(hr.common || [])])].slice(0, 10);
-      return send(res, 200, { intro: (ir.intros[0] || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ''), tags, notice: [ir.fallback ? 'AIで紹介文を作れなかったため、簡易的な紹介文にしました' : '', hr.fallback ? 'ハッシュタグは企画のテーマと商品名から簡易的に作りました' : ''].filter(Boolean).join('。') });
+      // AIのタグが1つも残らなかったときも、商品のデータから関係の高いタグを作る（無理に増やさない）
+      if (!tags.length) tags.push(...productTags({ name: item.name, feature: item.reason, useCase: item.role, target: str(set.target, 60), theme, brand: item.brand }));
+      return send(res, 200, { intro: (ir.intros[0] || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ''), tags, notice: [ir.fallback ? 'AIで紹介文を作れなかったため、簡易的な紹介文にしました' : '', hr.fallback ? 'ハッシュタグは商品名・特徴から関係の高いものだけを作りました' : ''].filter(Boolean).join('。') });
+    }
+    // ハッシュタグだけ作る（紹介文は変えない）。tags：商品のデータだけから（AIなし・0円）／tagsai：AIで作り直す（失敗したら商品のデータから）
+    if (action === 'tags' || action === 'tagsai') {
+      const it = body.item && typeof body.item === 'object' ? body.item : {};
+      const set = body.set && typeof body.set === 'object' ? body.set : {};
+      const name = str(it.name, 200);
+      if (!name) return send(res, 400, { error: '商品がありません' });
+      const feature = str([it.feature, it.why].filter(Boolean).join('。'), 200);
+      const theme = str(set.title, 60);
+      if (action === 'tags') return send(res, 200, { tags: productTags({ name, feature, useCase: str(it.role, 20), target: str(set.target, 60), theme: `${theme} ${str(set.patternLabel, 30)}`, brand: str(it.brand, 30) }), from: '商品のデータ' });
+      const hr = await generateRoomHashtags({ campaign: { campaignTheme: theme || name, campaignType: str(set.patternLabel, 30), targetAudience: str(set.target, 60), priceRange: '' }, items: [{ productName: name, productCategory: '', productUseCase: str(it.role, 20), roomDescription: str([feature, it.intro].filter(Boolean).join('。'), 400), brand: str(it.brand, 30) }], env, deadline: startedAt + 45000 });
+      return send(res, 200, { tags: ((hr.products && hr.products[0] && hr.products[0].tags) || []).slice(0, 10), from: hr.fallback ? '商品のデータ' : 'AI', notice: hr.fallback ? 'AIでタグを作れなかったため、商品名・特徴から関係の高いタグだけを作りました' : '' });
     }
     if (action === 'alternatives') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;
@@ -78,7 +92,9 @@ export default async function handler(req, res, env = process.env) {
     if (!p.name) return send(res, 400, { error: '商品がありません' });
     if (action === 'intro') {
       const r = await generateIntros({ title: p.category || '', items: [{ name: p.name, price: p.price, brand: p.brand, reason: p.fit, caption: p.caption }], env, deadline: startedAt + 50000 });
-      return send(res, 200, { intro: r.intros[0] || '', notice: r.fallback ? 'AIでの紹介文作成に失敗したため、簡易的な紹介文にしました。直してから使ってください。' : '' });
+      // ハッシュタグも一緒に（商品のデータだけから。AIの呼び出しは増やさない）
+      const tags = productTags({ name: p.name, feature: [p.pitch, p.fit].filter(Boolean).join('。'), theme: p.category, brand: p.brand });
+      return send(res, 200, { intro: r.intros[0] || '', tags, notice: r.fallback ? 'AIでの紹介文作成に失敗したため、簡易的な紹介文にしました。直してから使ってください。' : '' });
     }
     if (action === 'feature') return send(res, 200, await featurePlan({ product: p, env, deadline: startedAt + 50000 }));
     return send(res, 400, { error: '操作が分かりません' });
