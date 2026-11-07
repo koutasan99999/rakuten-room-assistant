@@ -408,21 +408,69 @@
   // ハッシュタグだけ作る（紹介文は変えない）。ai=false：商品のデータから（AIなし・0円）／ai=true：AIで作り直す
   var tagBusy = {};
   var tagTried = {};
-  function makeTags(set, it, ai) {
+  function makeTags(set, it, ai, quiet) {
     var k = R.keyOf(it);
-    if (tagBusy[k]) return;
+    if (tagBusy[k]) return Promise.resolve('busy');
     tagBusy[k] = true; tagTried[k] = true;
     var x0 = R.get(it) || {};
-    K.postJson('api/pitch', { action: ai ? 'tagsai' : 'tags', set: { title: set.titleEdit || set.title, patternLabel: set.patternLabel || '', target: set.target || '' }, item: { name: it.name, role: it.role, brand: it.brand, feature: it.feature, why: it.why, intro: x0.intro || '' } }).then(function (r) {
+    return K.postJson('api/pitch', { action: ai ? 'tagsai' : 'tags', set: { title: set.titleEdit || set.title, patternLabel: set.patternLabel || '', target: set.target || '' }, item: { name: it.name, role: it.role, brand: it.brand, feature: it.feature, why: it.why, intro: x0.intro || '' } }).then(function (r) {
       delete tagBusy[k];
       var tags = r.status === 200 && r.data && Array.isArray(r.data.tags) ? r.data.tags : null;
-      if (!tags) { if (ai) K.showToast((r.data && r.data.error) || 'ハッシュタグを作れませんでした'); paint(); return; }
+      if (!tags) { if (ai && !quiet) K.showToast((r.data && r.data.error) || 'ハッシュタグを作れませんでした'); paint(); return 'fail'; }
       // 関係の高いタグが見つからなければ、今のタグを消さずにそのまま
-      if (!tags.length) { if (ai) K.showToast('関係の高いタグが見つからなかったため、今のタグのままにしました'); paint(); return; }
+      if (!tags.length) { if (ai && !quiet) K.showToast('関係の高いタグが見つからなかったため、今のタグのままにしました'); paint(); return 'none'; }
       R.saveTags(it, tags, r.data.from || '');
-      if (ai) K.showToast(r.data.notice || 'ハッシュタグを作り直しました（前のタグは履歴に残しています）');
+      if (ai && !quiet) K.showToast(r.data.notice || 'ハッシュタグを作り直しました（前のタグは履歴に残しています）');
       paint();
+      return r.data.from === 'AI' ? 'ai' : 'local';
     });
+  }
+  // 投稿セットの商品のハッシュタグをまとめて作り直す（紹介文は変えない。前のタグは履歴に残す。1商品ずつ順番に、AIを1回ずつ）
+  var regen = null; // { total, done, ai, local, none, fail, noIntro }
+  function regenTargets(sets) {
+    var seen = {}; var out = []; var noIntro = 0;
+    sets.forEach(function (set) {
+      (set.items || []).forEach(function (it) {
+        var k = R.keyOf(it);
+        if (seen[k]) return;
+        seen[k] = true;
+        var x = R.get(it);
+        if (x && x.intro) out.push({ set: set, it: it }); else noIntro++;
+      });
+    });
+    return { list: out, noIntro: noIntro };
+  }
+  function regenAll(sets, label) {
+    if (regen) { K.showToast('今、ハッシュタグを作り直しています'); return; }
+    var t = regenTargets(sets);
+    if (!t.list.length) { K.showToast('作り直せる商品がありません（紹介文がまだの商品は、商品を開くと紹介文とハッシュタグを作ります）'); return; }
+    var stop = window.AiUsage && window.AiUsage.blocked(t.list.length);
+    if (stop) { K.showToast(stop); return; }
+    if (!window.confirm(label + 'の ' + t.list.length + '商品のハッシュタグを作り直しますか？\n・AIを' + t.list.length + '回使います（推定 約' + Math.ceil(t.list.length * 0.5) + '円）\n・紹介文は変えません。今のタグ（手で直したタグも）は履歴に残します\n・AIが失敗した商品は、商品名・特徴から作ります' + (t.noIntro ? '\n・紹介文がまだの ' + t.noIntro + '商品は対象外です（開くと紹介文とタグを作ります）' : ''))) return;
+    regen = { total: t.list.length, done: 0, ai: 0, local: 0, none: 0, fail: 0, noIntro: t.noIntro };
+    paint();
+    var i = 0;
+    (function next() {
+      if (i >= t.list.length) {
+        var g = regen; regen = null;
+        K.showToast('ハッシュタグを作り直しました：AI ' + g.ai + '件・商品のデータから ' + g.local + '件' + (g.none ? '・見つからず今のまま ' + g.none + '件' : '') + (g.fail ? '・失敗 ' + g.fail + '件（今のまま）' : ''));
+        paint();
+        return;
+      }
+      var x = t.list[i++];
+      makeTags(x.set, x.it, true, true).then(function (res) {
+        if (regen) { regen.done++; if (res === 'ai') regen.ai++; else if (res === 'local') regen.local++; else if (res === 'none') regen.none++; else regen.fail++; }
+        paint();
+        next();
+      });
+    })();
+  }
+  function regenBox(sets, label) {
+    var box = el('div', 'card');
+    if (regen) { box.appendChild(el('p', 'hint pitch-busy', 'ハッシュタグを作り直しています… ' + regen.done + '/' + regen.total + '商品（このまま開いておいてください）')); return box; }
+    box.appendChild(btn(label + 'のハッシュタグをまとめて作り直す', 'btn btn-secondary regen-tags', function () { regenAll(sets, label); }));
+    box.appendChild(el('p', 'hint', '楽天ROOMのハッシュタグだけを、新しい作り方で作り直します。紹介文は変えません。前のタグは履歴に残ります。AIを商品の数だけ使います（1商品 推定0.5円）。'));
+    return box;
   }
   function copy(text, msg) { K.copyText(text).then(function () { K.showToast(msg); }, function () { K.showToast('コピーできませんでした'); }); }
   function roomPanel(set, i, it) {
@@ -549,6 +597,7 @@
     });
     // 商品を追加する（採用済みでまだ使っていない商品・広げるで見つけた商品から）
     if (targetSets().some(function (x) { return x.id === set.id; })) b.appendChild(addPanel(set));
+    b.appendChild(regenBox([set], 'この投稿セット'));
     wrap.appendChild(b);
 
     // C. Instagram用の完成画像
@@ -667,6 +716,8 @@
     if (set) { container.appendChild(detail(set)); return; }
     container.appendChild(el('p', 'editor-note', 'AI社員が企画を考え、実在の商品（3〜8点）・Instagram用の画像・キャプション・購入先までそろえた投稿セットです。開いて「採用」「差し替え・修正」「却下」を選ぶだけで大丈夫です。確認待ちが3件より少なくなると、AI社員が次を作ります。'));
     container.appendChild(adoptedSection());
+    var liveSets = D.all().filter(function (x) { return x.status !== 'rejected'; });
+    if (liveSets.length) container.appendChild(regenBox(liveSets, '確認待ち・採用の投稿セット（' + liveSets.length + '件）'));
     if (!approved()) {
       var ok = el('div', 'card');
       ok.appendChild(el('p', 'hint', '投稿セットの自動制作には、今使っているOpenAIのキーの利用料がかかります（1件あたりAIの呼び出し約3〜4回、約1円の見込み。画像はアプリで描くので画像生成の料金はかかりません。新しいサービスの契約はありません）。確認待ちが3件より少なくなると自動で作ります。'));
