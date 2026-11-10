@@ -36,7 +36,7 @@ test('タグの判断：企画のテーマ・購入目的を優先し、カテ�
   assert.equal(allowTag('#スマホグッズ', { score: 65, genreIds: g }), false); // 70点未満は使わない
 });
 
-test('ROOM用ハッシュタグ：企画の共通タグ＋商品ごとの具体タグ（2〜4個）で5〜10個、関係の薄いタグは入れない', async () => {
+test('ROOM用ハッシュタグ：企画の共通タグ＋商品ごとの具体タグ＋商品のデータからのタグで最大20個、関係の薄いタグは入れない', async () => {
   mock = installFetchMock({
     rakuten: () => json(500, {}),
     openai: () => aiReply({
@@ -51,10 +51,14 @@ test('ROOM用ハッシュタグ：企画の共通タグ＋商品ごとの具体�
   const { status, data } = await call({ ...BOUSAI, items: ITEMS });
   assert.equal(status, 200);
   assert.deepEqual(data.common, ['#防災', '#防災グッズ', '#災害対策', '#防災準備']);
-  assert.deepEqual(data.products[0].tags, ['#防災', '#防災グッズ', '#災害対策', '#防災準備', '#停電対策', '#モバイルバッテリー', '#非常用電源']);
-  assert.deepEqual(data.products[1].tags.slice(4), ['#カセットコンロ']); // #キッチン用品 #プチプラ は付けない
-  assert.deepEqual(data.products[2].tags.slice(4), ['#非常用トイレ', '#簡易トイレ', '#断水対策']);
-  for (const p of data.products) assert.ok(p.tags.length <= 10);
+  assert.deepEqual(data.products[0].tags.slice(0, 7), ['#防災', '#防災グッズ', '#災害対策', '#防災準備', '#停電対策', '#モバイルバッテリー', '#非常用電源']);
+  assert.ok(data.products[0].tags.includes('#Anker'), '商品名にあるブランドは商品のデータから足す');
+  assert.ok(data.products[1].tags.includes('#カセットコンロ'));
+  assert.ok(!data.products[1].tags.some((t) => ['#キッチン用品', '#プチプラ', '#ガジェット好き'].includes(t)), data.products[1].tags.join()); // 関係の薄いタグは付けない
+  assert.ok(['#非常用トイレ', '#簡易トイレ', '#断水対策'].every((t) => data.products[2].tags.includes(t)));
+  assert.ok(!data.products[0].tags.includes('#旅行グッズ'));
+  for (const p of data.products) assert.equal(new Set(p.tags).size, p.tags.length);
+  for (const p of data.products) assert.ok(p.tags.length <= 20);
   const [system, user] = mock.calls.openai[0].messages.map((m) => m.content);
   assert.match(system, /今回なぜ紹介しているのか/);
   assert.match(user, /企画のテーマ: 防災なら/);
@@ -93,7 +97,8 @@ async function pitch(body, env = ENV) {
 
 test('商品のデータだけから作るタグ：商品固有・用途・ジャンルを組み合わせ、商品名にないブランド・特徴は付けない', () => {
   const mug = productTags({ name: 'マグカップ 陶器 日本製', feature: '父の日のプレゼントに', target: '30代の男性', theme: '' });
-  assert.deepEqual(mug, ['#マグカップ', '#日本製', '#プレゼント選び', '#父の日ギフト', '#メンズギフト', '#キッチン雑貨']);
+  assert.deepEqual(mug.slice(0, 5), ['#マグカップ', '#日本製', '#プレゼント選び', '#父の日ギフト', '#メンズギフト']);
+  assert.ok(mug.includes('#キッチン雑貨'));
   const lantern = productTags({ name: 'オイルランタン ブラック', feature: 'キャンプの夜に', brand: 'コールマン' });
   assert.ok(lantern.includes('#ランタン') && lantern.includes('#キャンプ用品'));
   assert.ok(!lantern.includes('#コールマン'), '商品名にないブランドは付けない');
@@ -103,7 +108,7 @@ test('商品のデータだけから作るタグ：商品固有・用途・ジ�
   assert.ok(!productTags({ name: 'マグカップ ホワイト' }).includes('#白スニーカー'));
   // 何の商品か分からなければ、無理に作らない
   assert.deepEqual(productTags({ name: '謎の商品 ABC-123' }), []);
-  for (const t of [mug, lantern]) { assert.ok(t.length <= 10); assert.equal(new Set(t).size, t.length); }
+  for (const t of [mug, lantern]) { assert.ok(t.length <= 20); assert.equal(new Set(t).size, t.length); }
   assert.equal(confirmedInName('#Anker', 'Anker 充電器'), true);
   assert.equal(confirmedInName('#Coleman', 'オイルランタン'), false);
 });
@@ -117,12 +122,12 @@ test('AIのタグが少ないときは商品のデータから補い、商品名
   const tags = r.products[0].tags;
   assert.ok(!tags.includes('#Coleman') && !tags.includes('#モバイルバッテリー'), '商品名にないブランド・商品の種類は付けない');
   assert.ok(tags.includes('#ランタン') && tags.includes('#真鍮') && tags.includes('#キャンプ用品'), tags.join());
-  assert.ok(tags.length >= 5 && tags.length <= 10, tags.join());
+  assert.ok(tags.length >= 5 && tags.length <= 20, tags.join());
   // AIが企画のタグしか出さなくても、商品の種類のタグを入れる
   mock.restore();
   mock = installFetchMock({ rakuten: () => json(500, {}), openai: () => aiReply({ common: ['#プレゼント', '#ギフト', '#プレゼント選び', '#誕生日プレゼント', '#プチギフト'].map((tag) => ({ tag, score: 90 })), items: [{ id: 0, tags: [] }] }) });
   const g = await generateRoomHashtags({ campaign: { campaignTheme: 'ギフト' }, items: [{ productName: 'ステンレス タンブラー 真空断熱' }], env: ENV, deadline: Date.now() + 20000 });
-  assert.ok(g.products[0].tags.includes('#タンブラー') && g.products[0].tags.length <= 10, g.products[0].tags.join());
+  assert.ok(g.products[0].tags.includes('#タンブラー') && g.products[0].tags.length <= 20, g.products[0].tags.join());
 });
 
 test('AIが使えなくても、テーマのジャンルに当たらない企画でもタグが空にならない（関係の高いものだけ）', async () => {

@@ -62,7 +62,7 @@ export default async function handler(req, res, env = process.env) {
         generateIntros({ title: theme, items: [item], env, deadline: startedAt + 45000, extraRules: rules }),
         generateRoomHashtags({ campaign: { campaignTheme: theme || item.name, campaignType: str(set.patternLabel, 30), targetAudience: str(set.target, 60), priceRange: '' }, items: [{ productName: item.name, productCategory: '', productUseCase: item.role, roomDescription: item.reason, brand: item.brand }], env, deadline: startedAt + 45000 })
       ]);
-      const tags = [...new Set([...((hr.products && hr.products[0] && hr.products[0].tags) || []), ...(hr.common || [])])].slice(0, 10);
+      const tags = [...new Set([...((hr.products && hr.products[0] && hr.products[0].tags) || []), ...(hr.common || [])])].slice(0, 20);
       // AIのタグが1つも残らなかったときも、商品のデータから関係の高いタグを作る（無理に増やさない）
       if (!tags.length) tags.push(...productTags({ name: item.name, feature: item.reason, useCase: item.role, target: str(set.target, 60), theme, brand: item.brand }));
       return send(res, 200, { intro: (ir.intros[0] || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ''), tags, notice: [ir.fallback ? 'AIで紹介文を作れなかったため、簡易的な紹介文にしました' : '', hr.fallback ? 'ハッシュタグは商品名・特徴から関係の高いものだけを作りました' : ''].filter(Boolean).join('。') });
@@ -77,7 +77,7 @@ export default async function handler(req, res, env = process.env) {
       const theme = str(set.title, 60);
       if (action === 'tags') return send(res, 200, { tags: productTags({ name, feature, useCase: str(it.role, 20), target: str(set.target, 60), theme: `${theme} ${str(set.patternLabel, 30)}`, brand: str(it.brand, 30) }), from: '商品のデータ' });
       const hr = await generateRoomHashtags({ campaign: { campaignTheme: theme || name, campaignType: str(set.patternLabel, 30), targetAudience: str(set.target, 60), priceRange: '' }, items: [{ productName: name, productCategory: '', productUseCase: str(it.role, 20), roomDescription: str([feature, it.intro].filter(Boolean).join('。'), 400), brand: str(it.brand, 30) }], env, deadline: startedAt + 45000 });
-      return send(res, 200, { tags: ((hr.products && hr.products[0] && hr.products[0].tags) || []).slice(0, 10), from: hr.fallback ? '商品のデータ' : 'AI', notice: hr.fallback ? 'AIでタグを作れなかったため、商品名・特徴から関係の高いタグだけを作りました' : '' });
+      return send(res, 200, { tags: ((hr.products && hr.products[0] && hr.products[0].tags) || []).slice(0, 20), from: hr.fallback ? '商品のデータ' : 'AI', notice: hr.fallback ? 'AIでタグを作れなかったため、商品名・特徴から関係の高いタグだけを作りました' : '' });
     }
     if (action === 'alternatives') {
       const set = body.set && typeof body.set === 'object' ? body.set : null;

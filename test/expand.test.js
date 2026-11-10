@@ -136,3 +136,36 @@ test('テーマで広げる：投稿企画を返し、比較候補の検索は1�
   assert.equal(more.status, 200);
   assert.ok(more.data.items.length <= 3 && more.data.items.every((x) => !shown.includes(x.code)));
 });
+
+test('テーマで広げる（フライパン）：最初は12件まで・追加は10件。別のフライパンは2件まで（有名ブランドなら3件まで）、残りはキッチンの関連用品', async () => {
+  let planUser = '';
+  mock = installFetchMock({
+    rakuten: (url) => {
+      const k = url.searchParams.get('keyword');
+      if (k.includes('フライパン') && !/ふた|収納/.test(k)) return json(200, { items: ['鉄フライパン 24cm', '深型フライパン 28cm', 'ティファール フライパン 26cm', 'ストウブ スキレット フライパン', 'アルミ フライパン 20cm', 'セラミック フライパン'].map((n, i) => item(n, 3000 + i * 700, `fp:${i}`, { reviews: 300 - i })) });
+      return json(200, { items: [1, 2, 3].map((i) => item(`${k} タイプ${i}`, 1500 + i * 200, `${k}:${i}`)) });
+    },
+    openai: (body) => {
+      if (body.messages[0].content.includes('探すための検索語を決めます')) {
+        planUser = body.messages[0].content;
+        return aiReply({ themes: [{ title: 'フライパン料理を楽にする道具', angle: '自炊の手間を減らす' }],
+          queries: ['フライパン 定番', 'フライパン用 ふた', '油はねガード', 'シリコン トング', '鍋敷き 木製', 'フライパン 収納ラック', 'キッチンペーパーホルダー', 'スパイスラック'].map((keyword, i) => ({ keyword, label: keyword.slice(0, 8), axis: i ? 'related' : 'similar', theme: 0 })) });
+      }
+      const ids = [...body.messages[1].content.matchAll(/^ {2}(\d+-\d+): /gm)].map((m) => m[1]);
+      return aiReply({ picks: ids.map((id) => ({ id, relation: 'フライパン料理で一緒に使う', feature: '説明に書かれた特徴', value: '用途がはっきりしている', theme: 0 })) });
+    }
+  });
+  const base = { code: 'base:fp', name: '鉄フライパン 26cm IH対応', price: 4500, url: 'https://item.rakuten.co.jp/s/fp/', image: 'i' };
+  const r = await call({ action: 'expand', base, mode: 'omakase' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.match(planUser, /8語/);
+  assert.ok(r.data.items.length >= 10 && r.data.items.length <= 12, r.data.items.map((x) => x.name).join(" / ") + " ｜ " + r.data.notice);
+  const pans = r.data.items.filter((x) => /フライパン|スキレット/.test(x.name) && !/用|収納|ふた/.test(x.name));
+  assert.ok(pans.length <= 3, pans.map((x) => x.name).join());
+  assert.ok(pans.filter((x) => !x.brand).length <= 2, '有名ブランドでないフライパンは2件まで');
+  assert.ok(r.data.items.filter((x) => /トング|鍋敷き|ガード|ふた|収納|ホルダー|スパイス/.test(x.name)).length >= 7, 'キッチンの関連用品に広げる');
+  const shown = r.data.items.map((x) => x.code);
+  const more = await call({ action: 'expand', base, mode: 'omakase', want: 10, exclude: { codes: shown, names: r.data.items.map((x) => x.name) } });
+  assert.equal(more.status, 200);
+  assert.ok(more.data.want === 10 && more.data.items.every((x) => !shown.includes(x.code)));
+});

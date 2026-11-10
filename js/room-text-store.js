@@ -19,7 +19,7 @@
       var s = read(); var k = keyOf(p);
       if (s[k]) return s[k];
       var old = window.PitchStore && window.PitchStore.find ? window.PitchStore.find(p) : null;
-      if (old && old.intro) { s[k] = { intro: old.intro, tags: Array.isArray(old.tags) ? old.tags.slice(0, 10) : [], tagsFrom: Array.isArray(old.tags) && old.tags.length ? '商品のデータ' : '', generatedAt: '', from: '前に作ったROOM紹介文', history: [], registered: old.room === 'done' ? { at: '', by: 'owner', note: '前の記録' } : null }; write(s); return s[k]; }
+      if (old && old.intro) { s[k] = { intro: old.intro, tags: Array.isArray(old.tags) ? old.tags.slice(0, 20) : [], tagsFrom: Array.isArray(old.tags) && old.tags.length ? '商品のデータ' : '', generatedAt: '', from: '前に作ったROOM紹介文', history: [], registered: old.room === 'done' ? { at: '', by: 'owner', note: '前の記録' } : null }; write(s); return s[k]; }
       return null;
     },
     // 新しく作った文章を保存（前の文章は履歴へ）
