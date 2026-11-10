@@ -1,4 +1,4 @@
-// 「この商品から広げる」の画面：起点の商品 → 探し方（6種類）→ 楽天の実在の商品（5〜8点）→ その商品からさらに広げる…を何段階でも。
+// 「この商品から広げる」の画面：起点の商品 → 探し方（6種類）→ 楽天の実在の商品（10〜12点）→ その商品からさらに広げる…を何段階でも。
 // 探索の経路と結果は ExploreStore（このiPhone）に残り、再読み込みしても消えない。採用は PitchStore（既存の採用の記録）に入り、投稿セットの制作に引き継がれる。
 (function () {
   'use strict';
@@ -21,8 +21,8 @@
   var TIER = { high: '高価格帯', mid: '中価格帯', low: '低価格帯' };
   var busy = {}; // nodeId → { mode, kind }（1つの商品で同時に動く探索は1つ）
   var filterFor = {}; // nodeId → 表示する探索カテゴリー（'' はすべて）
-  var NEW_WANT = { omakase: 9 };   // 最初の探索で選ぶ点数（おまかせは9件前後のミックス。ほかは8）
-  var MORE_WANT = 3;               // 今の結果に追加するときの点数
+  var NEW_WANT = { omakase: 12 };  // 最初の探索で選ぶ点数（社長の指示 2026-11-10：10件以上。おまかせは12、ほかは10）
+  var MORE_WANT = 10;              // 今の結果に追加するときの点数（10件以上）
   var container = null;
 
   function btn(text, cls, fn) { var b = el('button', cls, text); b.type = 'button'; b.addEventListener('click', fn); return b; }
@@ -56,7 +56,7 @@
     if (busy[node.id]) { K.showToast('この商品では、いま探しています。終わってから押してください'); return; }
     var pool = X.pool(node.id);
     kind = kind || (pool && pool.items.length ? 'append' : 'new');
-    var want = kind === 'append' ? MORE_WANT : NEW_WANT[mode] || 8;
+    var want = kind === 'append' ? MORE_WANT : NEW_WANT[mode] || 10;
     var batchId = 'b' + Date.now().toString(36);
     busy[node.id] = { mode: mode, kind: kind };
     paint();
@@ -163,8 +163,8 @@
       if (busyNote) box.appendChild(busyNote);
       var last = pool && pool.batches.length ? pool.batches[pool.batches.length - 1] : null;
       if (last && last.error) box.appendChild(el('p', 'hint pitch-warn', '前回の探索に失敗しました：' + last.error));
-      if (!b) box.appendChild(btn('テーマで広げる（おまかせ・9件前後）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'new'); }));
-      box.appendChild(el('p', 'hint', 'テーマで広げるは、この商品の用途・利用シーン・関連ジャンルから、投稿企画（例：キャンプ初心者セット）を考えて、関連用品・別ジャンル・意外な商品を探します。同じ種類の比較候補は3件まで。似た商品と比べたいときは、下の「同じブランドの別商品」「同じ価格帯の他ブランド」を使ってください。'));
+      if (!b) box.appendChild(btn('テーマで広げる（おまかせ・12件前後）', 'btn btn-discover xp-go', function () { search(node, 'omakase', 'new'); }));
+      box.appendChild(el('p', 'hint', 'テーマで広げるは、この商品の用途・利用シーン・関連ジャンルから、投稿企画（例：キャンプ初心者セット）を考えて、関連用品・別ジャンル・意外な商品を探します。同じ種類の商品は2件まで（有名ブランドなら3件まで）。残りは一緒に使う便利グッズ・同じ場所で使う物（例：フライパンなら、ふた・トング・鍋敷き・収納）です。似た商品と比べたいときは、下の「同じブランドの別商品」「同じ価格帯の他ブランド」を使ってください。'));
       return box;
     }
     var latest = pool.batches.filter(function (x) { return !x.error; }).slice(-1)[0] || {};

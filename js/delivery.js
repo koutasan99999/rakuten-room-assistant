@@ -405,6 +405,73 @@
       paint();
     });
   }
+  // ハッシュタグだけ作る（紹介文は変えない）。ai=false：商品のデータから（AIなし・0円）／ai=true：AIで作り直す
+  var tagBusy = {};
+  var tagTried = {};
+  function makeTags(set, it, ai, quiet) {
+    var k = R.keyOf(it);
+    if (tagBusy[k]) return Promise.resolve('busy');
+    tagBusy[k] = true; tagTried[k] = true;
+    var x0 = R.get(it) || {};
+    return K.postJson('api/pitch', { action: ai ? 'tagsai' : 'tags', set: { title: set.titleEdit || set.title, patternLabel: set.patternLabel || '', target: set.target || '' }, item: { name: it.name, role: it.role, brand: it.brand, feature: it.feature, why: it.why, intro: x0.intro || '' } }).then(function (r) {
+      delete tagBusy[k];
+      var tags = r.status === 200 && r.data && Array.isArray(r.data.tags) ? r.data.tags : null;
+      if (!tags) { if (ai && !quiet) K.showToast((r.data && r.data.error) || 'ハッシュタグを作れませんでした'); paint(); return 'fail'; }
+      // 関係の高いタグが見つからなければ、今のタグを消さずにそのまま
+      if (!tags.length) { if (ai && !quiet) K.showToast('関係の高いタグが見つからなかったため、今のタグのままにしました'); paint(); return 'none'; }
+      R.saveTags(it, tags, r.data.from || '');
+      if (ai && !quiet) K.showToast(r.data.notice || 'ハッシュタグを作り直しました（前のタグは履歴に残しています）');
+      paint();
+      return r.data.from === 'AI' ? 'ai' : 'local';
+    });
+  }
+  // 投稿セットの商品のハッシュタグをまとめて作り直す（紹介文は変えない。前のタグは履歴に残す。1商品ずつ順番に、AIを1回ずつ）
+  var regen = null; // { total, done, ai, local, none, fail, noIntro }
+  function regenTargets(sets) {
+    var seen = {}; var out = []; var noIntro = 0;
+    sets.forEach(function (set) {
+      (set.items || []).forEach(function (it) {
+        var k = R.keyOf(it);
+        if (seen[k]) return;
+        seen[k] = true;
+        var x = R.get(it);
+        if (x && x.intro) out.push({ set: set, it: it }); else noIntro++;
+      });
+    });
+    return { list: out, noIntro: noIntro };
+  }
+  function regenAll(sets, label) {
+    if (regen) { K.showToast('今、ハッシュタグを作り直しています'); return; }
+    var t = regenTargets(sets);
+    if (!t.list.length) { K.showToast('作り直せる商品がありません（紹介文がまだの商品は、商品を開くと紹介文とハッシュタグを作ります）'); return; }
+    var stop = window.AiUsage && window.AiUsage.blocked(t.list.length);
+    if (stop) { K.showToast(stop); return; }
+    if (!window.confirm(label + 'の ' + t.list.length + '商品のハッシュタグを作り直しますか？\n・AIを' + t.list.length + '回使います（推定 約' + Math.ceil(t.list.length * 0.5) + '円）\n・紹介文は変えません。今のタグ（手で直したタグも）は履歴に残します\n・AIが失敗した商品は、商品名・特徴から作ります' + (t.noIntro ? '\n・紹介文がまだの ' + t.noIntro + '商品は対象外です（開くと紹介文とタグを作ります）' : ''))) return;
+    regen = { total: t.list.length, done: 0, ai: 0, local: 0, none: 0, fail: 0, noIntro: t.noIntro };
+    paint();
+    var i = 0;
+    (function next() {
+      if (i >= t.list.length) {
+        var g = regen; regen = null;
+        K.showToast('ハッシュタグを作り直しました：AI ' + g.ai + '件・商品のデータから ' + g.local + '件' + (g.none ? '・見つからず今のまま ' + g.none + '件' : '') + (g.fail ? '・失敗 ' + g.fail + '件（今のまま）' : ''));
+        paint();
+        return;
+      }
+      var x = t.list[i++];
+      makeTags(x.set, x.it, true, true).then(function (res) {
+        if (regen) { regen.done++; if (res === 'ai') regen.ai++; else if (res === 'local') regen.local++; else if (res === 'none') regen.none++; else regen.fail++; }
+        paint();
+        next();
+      });
+    })();
+  }
+  function regenBox(sets, label) {
+    var box = el('div', 'card');
+    if (regen) { box.appendChild(el('p', 'hint pitch-busy', 'ハッシュタグを作り直しています… ' + regen.done + '/' + regen.total + '商品（このまま開いておいてください）')); return box; }
+    box.appendChild(btn(label + 'のハッシュタグをまとめて作り直す', 'btn btn-secondary regen-tags', function () { regenAll(sets, label); }));
+    box.appendChild(el('p', 'hint', '楽天ROOMのハッシュタグだけを、新しい作り方で作り直します。紹介文は変えません。前のタグは履歴に残ります。AIを商品の数だけ使います（1商品 推定0.5円）。'));
+    return box;
+  }
   function copy(text, msg) { K.copyText(text).then(function () { K.showToast(msg); }, function () { K.showToast('コピーできませんでした'); }); }
   function roomPanel(set, i, it) {
     var k = R.keyOf(it);
@@ -418,8 +485,15 @@
     if (roomBusy[k]) box.appendChild(el('p', 'hint pitch-busy', '作り直しています…'));
     var steps = el('p', 'hint room-steps', '① コピー → ② 楽天ROOMを開いて貼り付けて登録 → ③ アプリに戻って「ROOMに登録した」');
     box.appendChild(steps);
-    var full = x.intro + (x.tags && x.tags.length ? '\n\n' + tagsText(x.tags) : '');
-    box.appendChild(btn('紹介文＋ハッシュタグをコピー', 'btn btn-primary room-copy', function () { copy(full, 'コピーしました。楽天ROOMで貼り付けてください'); }));
+    // 紹介文はあるのにタグが空（前に作った紹介文を引き継いだ商品など）：商品のデータから作って補う（AIなし・0円）
+    if (R.needsTags(it) && !tagTried[k] && !tagBusy[k]) setTimeout(function () { makeTags(set, it, false); }, 0);
+    if (tagBusy[k]) box.appendChild(el('p', 'hint pitch-busy', 'ハッシュタグを作っています…'));
+    // コピーは押したときの最新の内容で
+    box.appendChild(btn('紹介文＋ハッシュタグをコピー', 'btn btn-primary room-copy', function () {
+      var c = R.get(it) || x;
+      var hasTags = (c.tags || []).length;
+      copy(c.intro + (hasTags ? '\n\n' + tagsText(c.tags) : ''), hasTags ? 'コピーしました。楽天ROOMで貼り付けてください' : '紹介文をコピーしました（ハッシュタグはまだありません）');
+    }));
     if (roomEdit[k]) {
       var ta = el('textarea', 'input room-text');
       ta.rows = 8; ta.value = x.intro;
@@ -432,13 +506,15 @@
       box.appendChild(er);
     } else {
       box.appendChild(el('p', 'room-intro', x.intro));
-      box.appendChild(el('p', 'room-tags', tagsText(x.tags) || '（ハッシュタグなし）'));
+      box.appendChild(el('p', 'room-tags', tagsText(x.tags) || (tagBusy[k] ? '（ハッシュタグを作っています）' : '（関係の高いハッシュタグが見つかりませんでした。無理に付けていません。「ハッシュタグを作り直す」でAIに考えてもらえます）')));
+      if ((x.tags || []).length) box.appendChild(el('p', 'hint', 'ハッシュタグ ' + x.tags.length + '個' + (x.tagsFrom ? '｜' + (x.tagsFrom === 'AI' ? 'AIが作成' : x.tagsFrom === '商品のデータ' ? '商品名・特徴から作成' : x.tagsFrom) : '') + (x.editedAt && !x.tagsAt ? '｜社長が編集' : '')));
       box.appendChild(el('p', 'hint', x.intro.length + '字' + (x.editedAt ? '｜社長が編集（' + stamp(x.editedAt) + '）' : x.generatedAt ? '｜AIが作成（' + stamp(x.generatedAt) + '）' : '｜' + (x.from || '')) + ((x.history || []).length ? '｜前の文章 ' + x.history.length + '件を保存' : '')));
     }
     var r1 = el('div', 'room-grid');
     r1.appendChild(btn('紹介文だけコピー', 'status-btn', function () { copy(x.intro, '紹介文をコピーしました'); }));
-    r1.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { copy(tagsText(x.tags), 'ハッシュタグをコピーしました'); }));
+    r1.appendChild(btn('ハッシュタグだけコピー', 'status-btn', function () { var c = R.get(it) || x; if (!(c.tags || []).length) { K.showToast('ハッシュタグがまだありません。「ハッシュタグを作り直す」で作れます'); return; } copy(tagsText(c.tags), 'ハッシュタグをコピーしました'); }));
     r1.appendChild(btn('文章を編集する', 'status-btn', function () { roomEdit[k] = true; paint(); }));
+    r1.appendChild(btn('ハッシュタグを作り直す', 'status-btn', function () { if (window.confirm('ハッシュタグだけをAIで作り直しますか？（紹介文は変えません。今のタグは履歴に残ります。AIを1回使います）')) makeTags(set, it, true); }));
     r1.appendChild(btn('文章を作り直す', 'status-btn', function () { if (window.confirm('紹介文とハッシュタグを作り直しますか？（今の文章は履歴に残ります）')) makeRoomText(set, it, true); }));
     box.appendChild(r1);
     // ROOMを開く：商品番号を指定した楽天ROOMの登録（コレ！）画面のURL。開けない場合に備えて商品ページも置く
@@ -521,6 +597,7 @@
     });
     // 商品を追加する（採用済みでまだ使っていない商品・広げるで見つけた商品から）
     if (targetSets().some(function (x) { return x.id === set.id; })) b.appendChild(addPanel(set));
+    b.appendChild(regenBox([set], 'この投稿セット'));
     wrap.appendChild(b);
 
     // C. Instagram用の完成画像
@@ -639,6 +716,8 @@
     if (set) { container.appendChild(detail(set)); return; }
     container.appendChild(el('p', 'editor-note', 'AI社員が企画を考え、実在の商品（3〜8点）・Instagram用の画像・キャプション・購入先までそろえた投稿セットです。開いて「採用」「差し替え・修正」「却下」を選ぶだけで大丈夫です。確認待ちが3件より少なくなると、AI社員が次を作ります。'));
     container.appendChild(adoptedSection());
+    var liveSets = D.all().filter(function (x) { return x.status !== 'rejected'; });
+    if (liveSets.length) container.appendChild(regenBox(liveSets, '確認待ち・採用の投稿セット（' + liveSets.length + '件）'));
     if (!approved()) {
       var ok = el('div', 'card');
       ok.appendChild(el('p', 'hint', '投稿セットの自動制作には、今使っているOpenAIのキーの利用料がかかります（1件あたりAIの呼び出し約3〜4回、約1円の見込み。画像はアプリで描くので画像生成の料金はかかりません。新しいサービスの契約はありません）。確認待ちが3件より少なくなると自動で作ります。'));
