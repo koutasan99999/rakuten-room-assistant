@@ -41,11 +41,11 @@
   }
   // 掲載商品が、社長の採用か、AIの新規提案か（前の版で作ったセットは、採用リストの商品番号で判断する）
   function isAdopted(it) {
-    if (it.source === 'adopted') return true;
+    if (it.source === 'adopted' || it.source === 'base') return true;
     if (it.source === 'ai') return false;
     return adoptedAll().some(function (p) { return it.code && codeOf(p) === it.code; });
   }
-  function sourceChip(it) { return isAdopted(it) ? el('span', 'tag src-adopted', '社長が採用') : el('span', 'tag src-ai', 'AIの新規提案'); }
+  function sourceChip(it) { if (it.source === 'base') return el('span', 'tag src-adopted', '起点の商品'); return isAdopted(it) ? el('span', 'tag src-adopted', '社長が採用') : el('span', 'tag src-ai', 'AIの新規提案'); }
 
   // 楽天ROOMに全部登録するまでは「紹介したものは楽天ROOMにまとめています」と書かない（事実と違うため）
   function captionOf(set) {
@@ -562,6 +562,17 @@
     b.appendChild(el('p', 'field-label', '掲載する商品（' + set.items.length + '点）'));
     var nAd = set.items.filter(isAdopted).length;
     b.appendChild(el('p', 'hint', '社長が採用した商品 ' + nAd + '点・AIの新規提案 ' + (set.items.length - nAd) + '点' + (set.adoptedMissing && set.adoptedMissing.length ? '｜楽天で見つからず外した採用商品：' + set.adoptedMissing.map(cleanName).join('、') : '')));
+    var missingBase = baseMissing(set);
+    if (missingBase && targetSets().some(function (x) { return x.id === set.id; })) {
+      var mb = el('div', 'add-panel');
+      mb.appendChild(el('p', 'hint pitch-warn', 'この投稿は「' + cleanName(missingBase.name).slice(0, 30) + '」から広げた商品ですが、起点の商品が入っていません。'));
+      mb.appendChild(btn(set.items.length >= MAX_SET_ITEMS ? '起点の商品を入れる（' + MAX_SET_ITEMS + '点で上限。先に1点減らしてください）' : '起点の商品を1枚目に入れる', 'btn btn-primary co-sbtn', function () {
+        var r = addItems(set.id, [missingBase], '起点', { first: true });
+        K.showToast(r.added ? '起点の商品を1枚目に入れました。表紙・キャプションを作り直しています' : r.error);
+        paint();
+      }));
+      b.appendChild(mb);
+    }
     set.items.forEach(function (it, i) {
       var row = el('div', 'delivery-item');
       var top = el('div', 'cand-top');
@@ -748,27 +759,30 @@
   // 表紙・商品カードの文字とキャプションは既存の仕組み（api/instagram）で作り、ROOM紹介文は投稿セットの各商品から作れる。Instagramへの公開は社長が行う
   var MAX_SET_ITEMS = 8; // 表紙＋商品＋最後のスライドで10枚まで（Instagramのカルーセルの上限に収める）
   // 採用済み・広げるで見つけた商品を、投稿セットの商品の形にする（商品番号・名前・価格・URL・画像を引き継ぐ）
-  function toSetItem(it, i, role) {
+  var BASE_ROLE = '起点（ここから広げた）';
+  function toSetItem(it, i, role, source) {
     return { role: role || it.role || it.themeTitle || it.axisLabel || '採用' + (i + 1), name: it.name, brand: it.brand || '', price: it.price, postage: it.postage || '', url: it.url, code: it.code || '', image: it.image || '', shop: it.shop || '', caption: it.caption || '',
-      feature: it.feature || it.value || '', why: it.relation || it.value || it.reason || '', source: 'adopted', adoptedKey: it.key || it.code || '', adoptOrder: i + 1, priceCheckedAt: it.checkedAt || '', priceNote: it.checkedAt ? '' : '価格は見つけたときのもの（投稿前に楽天で確認してください）', room: 'unregistered',
+      feature: it.feature || it.value || '', why: source === 'base' ? '広げる前の、もとの商品' : it.relation || it.value || it.reason || '', source: source || 'adopted', adoptedKey: it.key || it.code || '', adoptOrder: i + 1, priceCheckedAt: it.checkedAt || '', priceNote: it.checkedAt ? '' : '価格は見つけたときのもの（投稿前に楽天で確認してください）', room: 'unregistered',
       officialUrl: '', officialNote: 'メーカー公式の商品ページは未取得' };
   }
   function sameItem(a, b) { return a.code && a.code === b.code || a.url && a.url === b.url || cleanName(a.name) === cleanName(b.name); }
   // 商品を追加できる投稿セット（却下・改善版に置き換えた元・公開済みは除く）
   function targetSets() { return D.all().filter(function (x) { return x.status !== 'rejected' && !x.supersededBy && !(x.igPost && x.igPost.url); }); }
   // 今ある投稿セットに商品を足す（同じ商品は足さない・8点まで）。表紙・商品カードの文字とキャプションを、今の商品で作り直す
-  function addItems(setId, items, from) {
+  // opts.first：先頭に入れる（広げるの起点の商品は1枚目に）
+  function addItems(setId, items, from, opts) {
     var cur = D.get(setId);
     if (!cur) return { added: 0, error: '投稿セットが見つかりません' };
     var room = MAX_SET_ITEMS - cur.items.length;
     var fresh = (items || []).filter(function (it, i, arr) { return it && it.name && !cur.items.some(function (x) { return sameItem(x, it); }) && arr.findIndex(function (y) { return y && sameItem(y, it); }) === i; });
     var dup = (items || []).length - fresh.length;
     if (room <= 0) return { added: 0, dup: dup, error: 'この投稿セットは' + MAX_SET_ITEMS + '点で上限です（Instagramは1投稿10枚まで）' };
-    var add = fresh.slice(0, room).map(function (it, i) { return toSetItem(it, cur.items.length + i, it.themeTitle || '追加'); });
+    var first = !!(opts && opts.first);
+    var add = fresh.slice(0, room).map(function (it, i) { return first ? toSetItem(it, i, BASE_ROLE, 'base') : toSetItem(it, cur.items.length + i, it.themeTitle || '追加'); });
     if (!add.length) return { added: 0, dup: dup, error: dup ? 'すでにこの投稿セットに入っています' : '追加できる商品がありません' };
     // 社長が手で直したキャプションは消さずに控えに残す（新しい商品に合わせたキャプションは作り直す）
     var kept = (cur.captionEditHistory || []).concat(cur.captionEdit ? [{ text: cur.captionEdit, at: new Date().toISOString(), reason: '商品の追加の前' }] : []).slice(-5);
-    var next = Object.assign({}, cur, { items: cur.items.concat(add), copy: null, copyAt: '', captionEdit: '', captionEditHistory: kept, alt: null });
+    var next = Object.assign({}, cur, { items: first ? add.concat(cur.items) : cur.items.concat(add), copy: null, copyAt: '', captionEdit: '', captionEditHistory: kept, alt: null });
     next.issues = localQuality(next);
     D.save(next);
     D.decide(setId, null, '商品の追加：' + add.map(function (x) { return cleanName(x.name).slice(0, 20); }).join('、') + (from ? '（' + from + 'から）' : ''), 'revise');
@@ -776,15 +790,34 @@
     return { added: add.length, dup: dup, over: fresh.length - add.length };
   }
 
+  // 広げるから作った投稿セットで、起点の商品が入っていないとき、その商品を返す（前に作った投稿セットの直し用）
+  function baseMissing(set) {
+    if (set.from !== 'explore' && set.pattern !== 'discovery') return null;
+    if (set.items.some(function (x) { return x.source === 'base'; })) return null;
+    var X = window.ExploreStore;
+    var cands = [];
+    (set.base || []).forEach(function (b) { cands.push(b); });
+    var m = String(set.reason || '').match(/^「(.+?)」から広げて/);
+    if (X && m) X.roots().forEach(function (n) { [n].concat(X.children(n.id)).forEach(function (c) { if (cleanName(c.product.name).slice(0, 20) === m[1]) cands.push(c.product); }); });
+    var hit = cands.filter(function (p) { return p && p.name && !set.items.some(function (x) { return sameItem(x, p); }); })[0];
+    if (hit && !hit.url && X) { /* set.base に名前しかないときは、広げるの記録から商品を探す */
+      X.roots().forEach(function (n) { [n].concat(X.children(n.id)).forEach(function (c) { if (!hit.url && sameItem(c.product, hit)) hit = c.product; }); });
+    }
+    return hit || null;
+  }
+  // opts.base：広げるの起点の商品（1枚目に入れる。起点がないと、何から広げた投稿か分からないため）
   function createFromItems(opts) {
-    var list = (opts.items || []).slice(0, MAX_SET_ITEMS);
+    var bases = (opts.base || []).filter(function (b, i, arr) { return b && b.name && arr.findIndex(function (y) { return y && sameItem(y, b); }) === i; });
+    var rest = (opts.items || []).filter(function (it) { return !bases.some(function (b) { return sameItem(b, it); }); });
+    var list = bases.concat(rest).slice(0, MAX_SET_ITEMS);
     var now = new Date().toISOString();
     var set = {
       id: 'set-' + Date.now().toString(36), createdAt: now, status: 'new', from: 'explore',
       pattern: 'discovery', patternLabel: '広げた商品から（社長が採用）', title: String(opts.title || '').slice(0, 30) || '見つけた商品' + list.length + '選',
       target: opts.target || '', reason: opts.reason || '「この商品から広げる」で社長が採用した商品から作成', appeal: opts.appeal || '',
       slots: [], adoptedOffered: (opts.items || []).length,
-      items: list.map(function (it, i) { return toSetItem(it, i); })
+      items: list.map(function (it, i) { return i < bases.length ? toSetItem(it, i, BASE_ROLE, 'base') : toSetItem(it, i); }),
+      base: bases.map(function (b) { return { code: b.code || '', name: b.name }; })
     };
     set.issues = localQuality(set);
     D.save(set);

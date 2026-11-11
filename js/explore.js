@@ -244,8 +244,13 @@
     if (title == null) return;
     posting = true; choosing[node.id] = false;
     paint();
-    if (list.length > max) K.showToast('Instagramの枚数の上限のため、採用した順に' + max + '件で作ります');
-    window.DeliveryView.createFromItems({ title: title.trim(), items: list, reason: '「' + cleanName(node.product.name).slice(0, 20) + '」から広げて、社長が採用した商品' }).then(function (set) {
+    if (list.length + 1 > max) K.showToast('Instagramの枚数の上限のため、起点の商品と、採用した順に' + max + '件までで作ります');
+    // 起点の商品（最初に広げた商品と、今広げている商品）を1枚目に入れる。起点がないと、何から広げた投稿か分からないため
+    var bases = [];
+    var root = X.path(node.id)[0];
+    if (root && root.product) bases.push(root.product);
+    if (node.product && (!root || root.id !== node.id)) bases.push(node.product);
+    window.DeliveryView.createFromItems({ title: title.trim(), base: bases, items: list, reason: '「' + cleanName(node.product.name).slice(0, 20) + '」から広げて、社長が採用した商品' }).then(function (set) {
       posting = false;
       goToSet(set, '投稿セットを作りました。画像・キャプション・ROOM紹介文を確認してください');
     }, function () { posting = false; K.showToast('投稿セットを作れませんでした'); paint(); });
@@ -266,7 +271,7 @@
     bar.appendChild(b);
     if (choosing[node.id] && list.length) {
       var ch = el('div', 'xp-choose');
-      ch.appendChild(btn('新しい投稿セットを作る（' + Math.min(list.length, max) + '件）', 'btn btn-secondary co-sbtn', function () { createNew(node, list, max); }));
+      ch.appendChild(btn('新しい投稿セットを作る（起点の商品＋採用' + Math.min(list.length, max - 1) + '件）', 'btn btn-secondary co-sbtn', function () { createNew(node, list, max); }));
       ch.appendChild(el('p', 'hint', '今ある投稿セットに追加する：'));
       targets.slice(0, 8).forEach(function (t) {
         var full = t.items.length >= max;
