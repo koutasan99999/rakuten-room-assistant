@@ -11,6 +11,7 @@ import coordImage from '../server/coord-image.js';
 import discover from '../server/discover.js';
 import explore from '../server/explore.js';
 import furusato from '../server/furusato.js';
+import health from '../server/health.js';
 import ideas from '../server/ideas.js';
 import ig from '../server/ig.js';
 import image from '../server/image.js';
@@ -39,6 +40,7 @@ export const ROUTES = {
   'discover': discover,
   'explore': explore,
   'furusato': furusato,
+  'health': health,
   'ideas': ideas,
   'ig': ig,
   'image': image,

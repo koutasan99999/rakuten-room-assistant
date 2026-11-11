@@ -9,6 +9,7 @@ import { MAJORS as PITCH_MAJORS } from '../lib/pitch-genres.js';
 const PITCH_KWS = new Set(PITCH_MAJORS.flatMap((m) => m.subs.flatMap((s) => s[3])).concat(['自転車 ベル 真鍮', 'サイクル ボトルケージ']));
 import exploreHandler from '../server/explore.js';
 import introsHandler from '../server/intros.js';
+import healthHandler from '../server/health.js';
 import instagramHandler from '../server/instagram.js';
 import imageHandler from '../server/image.js';
 import plansHandler from '../server/plans.js';
@@ -287,6 +288,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/discover') return handler(req, res, env);
   if (url.pathname === '/api/explore') return exploreHandler(req, res, env);
   if (url.pathname === '/api/intros') return introsHandler(req, res, env);
+  if (url.pathname === '/api/health') return healthHandler(req, res, env);
   if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
