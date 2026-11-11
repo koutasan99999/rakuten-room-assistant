@@ -269,3 +269,25 @@ test('ROOMの紹介文とハッシュタグ：企画のテーマと役割をAI�
   assert.ok(!/😊/.test(r.data.intro));
   assert.ok(r.data.tags.length >= 1 && r.data.tags.every((t) => t.startsWith('#')), JSON.stringify(r.data.tags));
 });
+
+test('0件のとき：楽天のエラーを「見つからなかった」に隠さず、理由を伝える。接続の確認（health）は鍵の有無・楽天・AIの結果を返す（値は返さない）', async () => {
+  const { installFetchMock: inst, json: j } = await import('./mock.js');
+  const health = (await import('../server/health.js')).default;
+  const m = inst({ rakuten: () => j(403, { error: 'forbidden', error_description: 'REQUEST_CONTEXT_BODY_HTTP_REFERRER_MISSING' }), openai: () => j(429, { error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } }) });
+  try {
+    const r = await call({ action: 'scout', recent: [], exclude: { codes: [], names: [] }, taste: { history: [] } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.items.length, 0);
+    assert.match(r.data.notice, /楽天の検索でエラー.*403/);
+    const req = { method: 'POST', headers: { host: 'x.app' }, body: { ai: true } };
+    const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+    await health(req, res, { RAKUTEN_APP_ID: 'app', OPENAI_API_KEY: 'sk-secret-123' });
+    const d = JSON.parse(res.body);
+    assert.equal(d.settings.rakutenAppId, true);
+    assert.equal(d.rakuten.ok, false);
+    assert.match(d.rakuten.error, /403/);
+    assert.equal(d.openai.ok, false);
+    assert.match(d.openai.error, /429/);
+    assert.ok(!res.body.includes('sk-secret-123'), '鍵の値は返さない');
+  } finally { m.restore(); }
+});

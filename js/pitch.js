@@ -60,6 +60,47 @@
       if (main === 'adopted') render();
     });
   }
+  // 接続の確認：検索が止まった・0件のときに、楽天とAIのどちらで止まっているかを確かめる（楽天は無料。AIは押したときだけ1回）
+  var health = null; var healthBusy = '';
+  function checkHealth(ai) {
+    healthBusy = ai ? '楽天とAIの接続を確かめています…' : '楽天の接続を確かめています…';
+    render();
+    K.postJson('api/health', { action: ai ? 'check' : 'rakuten', ai: !!ai }).then(function (r) {
+      healthBusy = '';
+      health = r.status === 200 ? r.data : { error: (r.data && r.data.error) || ('サーバーにつながりませんでした（' + (r.status || '通信エラー') + '）') };
+      render();
+    }, function () { healthBusy = ''; health = { error: 'サーバーにつながりませんでした（通信エラー）' }; render(); });
+  }
+  function healthBox() {
+    var box = el('details', 'buyer-plan');
+    if (health || healthBusy) box.open = true;
+    box.appendChild(el('summary', null, '検索が止まる・0件のとき：接続を確認する'));
+    if (healthBusy) box.appendChild(el('p', 'hint pitch-busy', healthBusy));
+    if (health) {
+      var lines = [];
+      if (health.error) lines.push('サーバー：つながりませんでした（' + health.error + '）');
+      else {
+        var st = health.settings || {};
+        lines.push('サーバー：つながりました（' + new Date(health.at).toLocaleTimeString('ja-JP') + '）');
+        lines.push('鍵の設定：楽天 ' + (st.rakutenAppId ? 'あり' : 'なし') + '・楽天のアクセスキー ' + (st.rakutenAccessKey ? 'あり' : 'なし') + '・OpenAI ' + (st.openaiKey ? 'あり' : 'なし'));
+        lines.push('楽天に伝えているアプリのURL：' + (st.referer || '不明'));
+        var rk = health.rakuten;
+        if (rk) lines.push('楽天の検索：' + (rk.ok ? 'OK（' + rk.count + '件・' + (rk.ms / 1000).toFixed(1) + '秒）' : '失敗：' + rk.error));
+        var ai = health.openai;
+        if (ai) lines.push('AI（OpenAI）：' + (ai.ok ? 'OK（' + ai.model + '・' + (ai.ms / 1000).toFixed(1) + '秒）' : '失敗：' + ai.error));
+      }
+      var pre = el('p', 'hint health-result', lines.join('\n'));
+      pre.style.whiteSpace = 'pre-wrap';
+      box.appendChild(pre);
+      box.appendChild(btn('結果をコピー', 'status-btn', function () { K.copyText(lines.join('\n')).then(function () { K.showToast('コピーしました'); }); }));
+    }
+    var row = el('div', 'pitch-row');
+    row.appendChild(btn('楽天を確認（無料）', 'status-btn', function () { if (!healthBusy) checkHealth(false); }));
+    row.appendChild(btn('楽天とAIを確認（AI1回）', 'status-btn', function () { if (!healthBusy) checkHealth(true); }));
+    box.appendChild(row);
+    return box;
+  }
+
   // ハッシュタグだけ（商品のデータから。AIなし・0円）。紹介文は変えない
   var tagTried = {};
   var tagFail = {};
@@ -362,6 +403,7 @@
     });
     area.appendChild(sub);
     if (lastNotice) area.appendChild(el('p', 'hint', lastNotice));
+    area.appendChild(healthBox());
     var list = el('div', 'buyer-list');
     area.appendChild(list);
     if (tab === 'deck') return renderDeck(list);
