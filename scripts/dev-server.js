@@ -12,6 +12,8 @@ import introsHandler from '../server/intros.js';
 import healthHandler from '../server/health.js';
 import agentsHandler from '../server/agents.js';
 import igHandler from '../server/ig.js';
+import workerHandler from '../server/worker.js';
+import { memoryKv } from '../lib/kv.js';
 import { withUsage } from '../lib/ai-usage.js';
 import instagramHandler from '../server/instagram.js';
 import imageHandler from '../server/image.js';
@@ -360,7 +362,7 @@ if (process.env.MOCK) {
     }
     return prevFetch(url, opts);
   };
-  env = { RAKUTEN_APP_ID: 'mock', OPENAI_API_KEY: 'mock', ...(process.env.APP_PASSCODE ? { APP_PASSCODE: process.env.APP_PASSCODE } : {}), ...(process.env.MOCK_IG ? { IG_ACCESS_TOKEN: 'mock' } : {}) };
+  env = { RAKUTEN_APP_ID: 'mock', OPENAI_API_KEY: 'mock', ...(process.env.APP_PASSCODE ? { APP_PASSCODE: process.env.APP_PASSCODE } : {}), ...(process.env.MOCK_IG ? { IG_ACCESS_TOKEN: 'mock' } : {}), ...(process.env.MOCK_KV ? { __kv: memoryKv(), CRON_SECRET: 'mock-cron' } : {}) };
 }
 
 http.createServer((req, res) => withUsage(async () => {
@@ -393,6 +395,7 @@ http.createServer((req, res) => withUsage(async () => {
   if (url.pathname === '/api/thief') return thiefHandler(req, res, env);
   if (url.pathname === '/api/pr') return prHandler(req, res, env);
   if (url.pathname === '/api/ig') return igHandler(req, res, env);
+  if (url.pathname === '/api/worker') return workerHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {
