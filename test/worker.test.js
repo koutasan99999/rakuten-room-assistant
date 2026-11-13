@@ -6,19 +6,34 @@ import { check, record } from '../lib/budget.js';
 import { withUsage } from '../lib/ai-usage.js';
 import worker from '../server/worker.js';
 import router from '../api/[route].js';
-import { installFetchMock, json, aiReply } from './mock.js';
+import { installFetchMock, json, aiReply, GOOD_INTRO } from './mock.js';
 
 let mock;
 afterEach(() => { if (mock) mock.restore(); mock = null; });
 const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec' };
 const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 3 });
-const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。')];
+const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
 function fetchMock({ failAi = false } = {}) {
+  let setAudits = 0;
   return installFetchMock({
     rakuten: (url) => json(200, { Items: url.searchParams.get('itemCode') ? SHOP.filter((x) => x.itemCode === url.searchParams.get('itemCode')) : SHOP }),
     openai: (body) => {
       if (failAi) return json(500, { error: { message: 'server error' } });
       const sys = body.messages[0].content;
+      const user = body.messages[1].content;
+      // 制作ライン：企画担当AI・投稿セット制作AI・監査AI（投稿セット）・制作担当AI
+      if (sys.includes('Instagram企画担当とバイヤー')) return aiReply({ pattern: 'discovery', title: 'キッチンの置き場所の工夫', target: '料理する人', reason: '置き場所に困る道具を並べる', appeal: '台所が片づく', adopted: [{ id: 0, role: '本命', feature: '水受けトレー付き', why: 'ふたの置き場所' }], slots: [{ role: '中価格帯', keyword: 'キッチン 道具' }, { role: '低価格帯', keyword: 'キッチン 便利' }] });
+      if (sys.includes('企画の枠ごとに')) return aiReply({ picks: [{ slot: 0, id: 0, feature: 'シリコン製', why: 'フライパンを傷つけにくい' }, { slot: 1, id: 1, feature: '3面で油はねを防ぐ', why: 'コンロまわり' }] });
+      if (sys.includes('投稿文字を作る担当')) return aiReply({ topicSlug: 'kitchen', category: 'キッチン', caption: '台所の置き場所、気づくと散らかりがち。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', hashtags: ['#キッチン用品'], cover: { title: 'キッチンの置き場所の工夫' }, items: [0, 1, 2].map((id) => ({ id, shortName: ['鍋蓋スタンド', 'シリコントング', '油はねガード'][id], subline: '置き場所が決まる', memo: '台所が片づく' })) });
+      if (sys.includes('紹介文を書く担当')) return aiReply({ items: [0, 1, 2].map((id) => ({ id, intro: GOOD_INTRO })) });
+      if (sys.includes('監査AIです') && sys.includes('投稿セット（Instagram')) {
+        setAudits++;
+        const sc = (a) => ({ accuracy: { score: a[0] }, compliance: { score: a[1] }, concept: { score: a[2] }, appeal: { score: a[3] }, room: { score: a[4] } });
+        return setAudits === 1 ? aiReply({ scores: sc([22, 18, 15, 12, 12]), flags: {}, fixes: [{ target: 'caption', text: '誰のどんな場面かを1文足す' }], proposal: 'revise', summary: '場面が抽象的' })
+          : aiReply({ scores: sc([24, 20, 18, 17, 13]), flags: {}, fixes: [], proposal: 'pass', summary: '商品データと一致し、場面も具体的' });
+      }
+      if (sys.includes('制作担当AIです')) return aiReply({ caption: '料理のたびに、ふたやトングの置き場所に迷う人へ。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', room: [], giveUp: '' });
+      void user;
       if (sys.includes('検索語を決めます')) return aiReply({ keywords: [{ keyword: 'キッチン 便利', why: 'x' }] });
       if (sys.includes('候補を最大3件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認' }] });
       if (sys.includes('監査AIです') && sys.includes('コメント案を')) return aiReply({ audits: [{ id: 'AAA1', scores: { specific: 23, natural: 21, relevance: 17, distance: 14, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
@@ -31,23 +46,78 @@ function fetchMock({ failAi = false } = {}) {
 const SNAP = { themes: ['キッチンの便利グッズ'], avoid: [], past: [], outreachPosts: [{ id: 'AAA1', url: 'https://www.instagram.com/p/AAA1/', handle: 'k', caption: '鍋のふたの置き場所に困って、水受けトレー付きのスタンドを置きました。', source: '社長が追加' }], pendingBuyer: 0 };
 const run = (kv, env = ENV) => withUsage(() => tick({ kv, env, startedAt: Date.now() }));
 
-test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤーの順に仕事を終える。成果物はサーバーに残り、アプリが受け取れる。費用（実測）をサーバー側で記録する', async () => {
+test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー → 合格候補を社長の確認なしで制作ライン（企画→制作→監査→修正）へ渡し、合格した投稿セットを社長の確認待ちにする。成果物はサーバーに残り、アプリが受け取れる。費用（実測）をサーバー側で記録する', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   assert.match((await run(kv)).skipped, /アプリの情報がまだ/);
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   const steps = [];
-  for (let i = 0; i < 12; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
-  assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done', 'idle'], steps.join(' / '));
+  for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
+  assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
+    'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true:done',
+    'buyer:buyer:true:done', 'idle'], steps.join(' / '));
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
   assert.equal(st.outreach[0].outreach.status, 'pass');
   assert.equal(st.outreach[0].outreach.final, '水受けトレー付きなら台が濡れにくそうですね');
   assert.equal(st.buyer.length, QUOTA.buyer, '1日の上限まで');
-  assert.equal(st.buyer[0].candidates[0].status, 'pass');
-  assert.ok(st.buyer[0].runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録（応答ID）');
+  assert.equal(st.buyer[1].candidates[0].status, 'pass');
+  assert.equal(st.buyer[0].candidates.length, 0, '投稿セットに使用済みの商品は、2回目の候補から外す（コードで判断）');
+  assert.equal(st.buyer[0].dropped[0].code, 's:lid');
+  assert.ok(st.buyer[1].runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録（応答ID）');
   assert.ok(st.budget.spent.month > 0 && st.budget.spent.dayAuto === st.budget.spent.month);
   assert.equal(st.log[0].ok, true);
+  // 制作ライン：社長の確認なしで次の社員へ渡り、合格した投稿セットだけが社長の確認待ちになる（採用・公開はしない）
+  const pr = st.production[0];
+  assert.equal(pr.result, 'pass', pr.why);
+  assert.equal(pr.revisions, 1, '監査AIの指示で制作担当AIが1回直した');
+  assert.deepEqual([...new Set(pr.runs.map((r) => r.role))].sort(), ['auditor', 'editor', 'planner', 'producer']);
+  assert.ok(pr.runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録');
+  assert.equal(pr.set.items.length, 3);
+  assert.equal(pr.set.items[0].source, 'buyer', '社長が採用した商品とは書かない');
+  assert.match(pr.set.copy.caption, /アフィリエイト/);
+  assert.match(pr.set.copy.body, /料理のたびに/, '修正した文章');
+  assert.equal(pr.set.roomTexts.length, 3);
+  assert.equal(pr.audits.length, 2);
+  assert.ok(pr.audits[1].check.checks.every((k) => k.ok !== false), JSON.stringify(pr.audits[1].check.checks));
+  // 仕事探しの記録：仕事がない社員は理由つきで「仕事なし」
+  assert.ok(st.board && st.board.items.length === 3);
+  assert.ok(st.board.items.every((x) => ['work', 'wait', 'none'].includes(x.status) && x.reason));
+  assert.equal(st.backlog, 0, '使った合格候補は二度と使わない');
+});
+
+test('仕事探し：合格候補がたまっていればバイヤーAIは待ち、社長の確認待ちの投稿セットが多ければ制作は待つ。費用の残りが見込みより少なければ始めない', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 6 }));
+  const cand = (code) => ({ id: 'c1', status: 'pass', versions: [{ data: { id: 'c1', code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
+  for (const c of ['a', 'b', 'c', 'd']) await kv.pushJson(WORKER_KEYS.buyer, { id: 's' + c, candidates: [cand(c)] }, 30);
+  const r = await run(kv);
+  assert.ok(r.idle, JSON.stringify(r));
+  const by = Object.fromEntries(r.board.items.map((x) => [x.agent, x]));
+  assert.equal(by.production.status, 'wait');
+  assert.match(by.production.reason, /確認待ちの投稿セットが6件/);
+  assert.equal(by.buyer.status, 'wait');
+  assert.match(by.buyer.reason, /合格候補が4件/);
+  assert.equal(by.outreach.status, 'none');
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 0 }));
+  await record(kv, 20, { auto: true });
+  const r2 = await run(kv);
+  assert.match(Object.fromEntries(r2.board.items.map((x) => [x.agent, x])).production.reason, /費用の残り/);
+  assert.equal(mock.calls.openai.length, 0);
+});
+
+test('停止スイッチ：止めている間は定期実行がAIを呼ばない。再開すると動く', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  const call = async (body) => { const req = { method: 'POST', url: '/api/worker', headers: { host: 'x.app' }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, { ...ENV, __kv: kv }); return JSON.parse(res.body); };
+  assert.equal((await call({ action: 'pause', reason: 'テスト' })).paused.on, true);
+  assert.match((await run(kv)).skipped, /停止中/);
+  assert.equal(mock.calls.openai.length, 0);
+  assert.equal((await call({ action: 'state' })).paused.on, true);
+  await call({ action: 'resume' });
+  assert.ok((await run(kv)).worked, '再開すると仕事をする');
 });
 
 test('二重実行の防止：鍵を持っている間は、次の実行は何もしない', async () => {

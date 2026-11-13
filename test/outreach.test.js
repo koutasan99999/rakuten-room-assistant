@@ -70,7 +70,7 @@ test('監査AIの採点は別の呼び出し。合計はコードが計算し、
   assert.equal(decide({ check: { hardFail: true, checks: [{ hard: true, ok: false, label: '宣伝' }] }, audit: { ...a, flags: {}, proposal: 'pass' }, revisions: 0 }).status, 'revise');
 });
 
-test('第1段階：出勤状況。記録がなければ「今は仕事していません」、失敗は「エラー」、確かめられない仕事は「状態未確認」（成功にしない）、社長の判断待ちは「承認待ち」、実際に動いているときだけ「仕事中」。出勤・退勤は実際の時刻から', () => {
+test('第1段階：出勤状況。記録がなければ「今は仕事していません」、失敗は「エラー」、確かめられない仕事は「状態未確認」（成功にしない）、社長の判断待ちは出勤に含めない、実際に動いているときだけ「仕事中」。出勤・退勤は実際の時刻から', () => {
   const ctx = { window: {}, console, localStorage: { getItem: () => null, setItem() {} }, location: {}, setTimeout };
   ctx.window = ctx;
   vm.createContext(ctx);
@@ -82,7 +82,10 @@ test('第1段階：出勤状況。記録がなければ「今は仕事してい�
   assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'running' }] }).key, 'working');
   assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'failed' }] }).key, 'error');
   assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'unknown' }] }).key, 'unknown');
-  assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok', pending: 2 }] }).key, 'approval');
+  // 社長の判断待ちがあるだけでは出勤にしない（2026-11-16）。今日AIを呼び出して仕事をしたときだけ「今日は出勤済み」
+  assert.equal(W.stateOf({ items: [{ start: iso(now - 3 * 86400000), end: iso(now - 3 * 86400000), state: 'ok', pending: 2 }] }).key, 'off');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok', calls: [{ ok: true }] }] }).key, 'today');
+  assert.equal(W.workedToday({ items: [{ start: iso(now), end: iso(now), state: 'ok', calls: [] }] }), false, 'AIを呼んでいない仕事は出勤に数えない');
   assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok' }] }).key, 'off', '仕事が終わったら「仕事中」は終わる');
   assert.equal(W.stateOf({ items: [{ start: iso(now - 3 * 86400000), end: iso(now - 3 * 86400000), state: 'failed' }] }).key, 'off', '古い失敗はエラーにしない');
   // 出勤・退勤：その日の最初の開始と最後の終了。仕事中なら退勤なし
@@ -100,5 +103,7 @@ test('第1段階：出勤状況。記録がなければ「今は仕事してい�
   const staff = W.staff();
   assert.ok(staff.length >= 6);
   assert.ok(staff.every((x) => x.items.length === 0));
-  assert.ok(staff.every((x) => ['off', 'approval'].includes(W.stateOf(x).key)));
+  assert.ok(staff.every((x) => W.stateOf(x).key === 'off'));
+  assert.ok(staff.every((x) => x.auto && typeof x.auto.can === 'boolean' && (x.auto.can ? x.auto.how : x.auto.why)), '社員ごとに、自律運営できるか・できない理由');
+  assert.equal(staff.filter((x) => x.auto.can).map((x) => x.key).sort().join(','), 'auditor,buyer,editor,outreach,planner,set');
 });

@@ -23,10 +23,10 @@
       return null;
     },
     // 新しく作った文章を保存（前の文章は履歴へ）
-    saveGenerated: function (p, intro, tags, theme) {
+    saveGenerated: function (p, intro, tags, theme, tagsFrom) {
       var s = read(); var k = keyOf(p); var x = s[k] || { history: [] };
       if (x.intro) x.history = [{ intro: x.intro, tags: x.tags, at: x.editedAt || x.generatedAt }].concat(x.history || []).slice(0, 5);
-      Object.assign(x, { intro: intro, tags: tags, tagsAt: now(), tagsFrom: 'AI', tagsCleared: false, generatedAt: now(), editedAt: '', theme: theme || '', from: 'AI' });
+      Object.assign(x, { intro: intro, tags: tags, tagsAt: now(), tagsFrom: tagsFrom || 'AI', tagsCleared: false, generatedAt: now(), editedAt: '', theme: theme || '', from: 'AI' });
       s[k] = x; write(s); return x;
     },
     saveEdit: function (p, intro, tags) {

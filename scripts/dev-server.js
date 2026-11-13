@@ -344,6 +344,14 @@ if (process.env.MOCK) {
           : revise ? { id, anchor: '耐熱230℃', comment: '耐熱230℃あると、揚げ物のときも気にせず使えそうですね', relevance: 75, relevanceWhy: '調理道具', follow: 60, followWhy: '料理の投稿' }
           : { id, anchor: '耐熱230℃', comment: '耐熱230℃いいですね、ぜひフォローお願いします', relevance: 75, relevanceWhy: '調理道具', follow: 60, followWhy: '料理の投稿' }) }, usage);
       }
+      // 制作ライン（自律運営）の画面確認用：監査AI（投稿セット）は1回目に修正を指示 → 制作担当AIが直す → 2回目は合格
+      if (sys.includes('監査AIです') && sys.includes('投稿セット（Instagram')) {
+        await wait();
+        const again = b.messages[1].content.includes('料理のたびに');
+        const sc = (a) => ({ accuracy: { score: a[0] }, compliance: { score: a[1] }, concept: { score: a[2] }, appeal: { score: a[3] }, room: { score: a[4] } });
+        return aiReply(again ? { scores: sc([24, 20, 18, 17, 13]), flags: {}, fixes: [], proposal: 'pass', summary: '商品データと一致し、場面も具体的' } : { scores: sc([22, 18, 15, 12, 12]), flags: {}, fixes: [{ target: 'caption', text: '誰のどんな場面かを1文足す' }], proposal: 'revise', summary: '場面が抽象的' }, usage);
+      }
+      if (sys.includes('制作担当AIです')) { await wait(); return aiReply({ caption: '料理のたびに、置き場所に迷う道具を集めました。\n\n今回は、台所で使う小物を並べています。\n\n買う前に見返せるよう、保存しておいてください。', room: [], giveUp: '' }, usage); }
       if (sys.includes('監査AIです') && sys.includes('コメント案を')) {
         await wait();
         const ids = [...b.messages[1].content.matchAll(/^案 (\S+)$/gm)].map((m) => m[1]);

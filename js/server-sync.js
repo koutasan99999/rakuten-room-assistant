@@ -23,21 +23,27 @@
   function snapshot() {
     var R = window.PrStore; var A = window.AgentsStore;
     var posts = R ? R.posts().filter(function (p) { return p.status === 'todo' && p.caption && p.caption.length >= 5 && !(p.outreach && /^(pass|hold|reject|running)$/.test(p.outreach.status)); }) : [];
-    var pending = A ? A.sessions().filter(function (x) { return x.origin === 'server' && x.status === 'done'; }).reduce(function (a, x) { return a + (x.candidates || []).filter(function (c) { return c.status === 'pass' && !c.owner; }).length; }, 0) : 0;
+    var pending = A ? A.sessions().filter(function (x) { return x.origin === 'server' && x.status === 'done'; }).reduce(function (a, x) { return a + (x.candidates || []).filter(function (c) { return c.status === 'pass' && !c.owner && !c.usedIn; }).length; }, 0) : 0;
+    var D = window.DeliveryStore;
+    // 社長が見送った商品は、制作ラインに使わない
+    var skip = [];
+    if (A) A.sessions().forEach(function (x) { (x.candidates || []).forEach(function (c) { var v = c.versions && c.versions[c.versions.length - 1]; if (c.owner && c.owner.decision !== 'adopt' && v && v.data && v.data.code) skip.push(v.data.code); }); });
     var model = ''; try { model = localStorage.getItem('room-agents-model') || ''; } catch (e) {}
     return {
       themes: themes(),
       avoid: (window.PitchStore ? window.PitchStore.list('adopt') : []).slice(0, 30).map(function (p) { return p.name; }),
       past: R ? R.pastComments() : [],
       outreachPosts: posts.slice(0, 30).map(function (p) { return { id: p.id, url: p.url, handle: p.handle, caption: p.caption, source: p.source }; }),
-      pendingBuyer: pending, auditModel: model
+      pendingBuyer: pending, auditModel: model,
+      history: D ? D.history() : [], recentPatterns: D ? D.recentPatterns() : [],
+      setCodes: D ? D.exclude().codes : [], skipCodes: skip.slice(0, 300), pendingSets: D ? D.pendingCount() : 0
     };
   }
 
   // サーバーの成果物を、このiPhoneの記録に入れる
   function merge(st) {
     var A = window.AgentsStore; var R = window.PrStore;
-    var n = { buyer: 0, outreach: 0 };
+    var n = { buyer: 0, outreach: 0, sets: 0, production: 0 };
     if (A) (st.buyer || []).forEach(function (s) {
       var cur = A.get(s.id);
       if (cur && cur.status === 'done') return; // 取り込み済み（社長の判断を消さない）
@@ -58,6 +64,26 @@
       var have = {}; R.runs().forEach(function (x) { have[x.id] = true; });
       (st.outreachRuns || []).forEach(function (run) { if (!have[run.id]) R.saveRun(run); });
     }
+    // 制作ライン：合格した投稿セットを「社長の確認待ち」に入れる（社長の判断・既存の投稿セットは上書きしない）
+    var D = window.DeliveryStore; var RT = window.RoomTextStore;
+    if (D && D.saveAuto) (st.production || []).slice().reverse().forEach(function (rec) {
+      if (D.autoGet(rec.id)) return; // 取り込み済み
+      var set = rec.set;
+      if (rec.result === 'pass' && set && !D.get(set.id)) {
+        D.save(Object.assign({}, set, { status: 'new' }));
+        if (RT) (set.roomTexts || []).forEach(function (t, i) { var it = set.items[i]; if (it && t.intro && !RT.peek(it)) RT.saveGenerated(it, t.intro, t.tags || [], set.title, t.tagsFrom || '商品のデータ'); });
+        n.sets++;
+      }
+      // 使った合格候補に、引き継いだ記録を残す（バイヤーAIの画面で、どこへ渡ったか分かるように）
+      if (A) (rec.source || []).forEach(function (c) {
+        var s = A.get(c.sessionId); if (!s) return;
+        var hit = false;
+        (s.candidates || []).forEach(function (x) { if (x.id === c.candidateId && !x.usedIn) { x.usedIn = { prodId: rec.id, setId: set ? set.id : '', result: rec.result, why: rec.why || '', at: rec.endedAt || rec.at }; hit = true; } });
+        if (hit) A.save(s);
+      });
+      var slim = Object.assign({}, rec); delete slim.set; slim.setId = set ? set.id : '';
+      D.saveAuto(slim); n.production++;
+    });
     return n;
   }
 
