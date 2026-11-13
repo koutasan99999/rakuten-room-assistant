@@ -20,7 +20,9 @@ export default async function handler(req, res, env = process.env) {
     if (!env.CRON_SECRET || !same(String(req.headers.authorization || ''), `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
     if (!kv) return send(res, 200, { ok: false, configured: false, notice: '保存場所（Upstash Redis）が未接続のため、自律運営は動きません' });
     try {
-      return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), startedAt }));
+      // 起動のきっかけ（schedule＝GitHubの定期実行／workflow_dispatch＝手動／vercel-cron）を記録する（定期実行が本当に動いたかの証拠）
+      const trigger = String(req.headers['x-trigger'] || (req.method === 'GET' ? 'vercel-cron' : 'unknown')).replace(/[^a-z_-]/gi, '').slice(0, 30);
+      return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), startedAt, trigger }));
     } catch (e) {
       return send(res, 200, { ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });
     }

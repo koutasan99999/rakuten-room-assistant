@@ -7,7 +7,8 @@
 name: worker
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # 毎時0分は GitHub の定期実行が混み合い、遅れたり飛ばされたりするため、ずらした分に動かす（2026-11-16）
+    - cron: '4,19,34,49 * * * *'
   workflow_dispatch: {}
 concurrency:
   group: worker
@@ -25,8 +26,11 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$WORKER_URL" ] || [ -z "$CRON_SECRET" ]; then echo "WORKER_URL か CRON_SECRET が未設定のため、何もしません"; exit 0; fi
-          code=$(curl -sS -o out.json -w '%{http_code}' --max-time 90 -X POST "${WORKER_URL%/}/api/worker" -H "Authorization: Bearer $CRON_SECRET" -H 'Content-Type: application/json' -d '{"action":"tick"}' || echo 000)
+          code=$(curl -sS -o out.json -w '%{http_code}' --max-time 90 -X POST "${WORKER_URL%/}/api/worker" -H "Authorization: Bearer $CRON_SECRET" -H 'Content-Type: application/json' -H "X-Trigger: ${{ github.event_name }}" -d '{"action":"tick"}' || echo 000)
+          echo "起動のきっかけ: ${{ github.event_name }}（schedule＝定期実行／workflow_dispatch＝手動）"
           echo "HTTP $code"
-          head -c 600 out.json || true
+          # 結果の要約（AIの呼び出しの細かい記録は省く）。読めなければ先頭だけ出す
+          jq -c 'del(.aiUsage) | if .worked then .worked |= del(.openaiIds) + {ids: (.openaiIds // [] | length)} else . end' out.json 2>/dev/null || head -c 1500 out.json || true
           echo
+          { echo "### 起動：${{ github.event_name }}・HTTP $code"; echo '```'; jq -c 'del(.aiUsage)' out.json 2>/dev/null | head -c 3000; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
           if [ "$code" != "200" ]; then exit 1; fi

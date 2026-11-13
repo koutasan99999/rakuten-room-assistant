@@ -9,7 +9,8 @@ import router from '../api/[route].js';
 import { installFetchMock, json, aiReply, GOOD_INTRO } from './mock.js';
 
 let mock;
-afterEach(() => { if (mock) mock.restore(); mock = null; });
+let setAuditUsers = [];
+afterEach(() => { if (mock) mock.restore(); mock = null; setAuditUsers = []; });
 const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec' };
 const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 3 });
 const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
@@ -28,6 +29,7 @@ function fetchMock({ failAi = false } = {}) {
       if (sys.includes('紹介文を書く担当')) return aiReply({ items: [0, 1, 2].map((id) => ({ id, intro: GOOD_INTRO })) });
       if (sys.includes('監査AIです') && sys.includes('投稿セット（Instagram')) {
         setAudits++;
+        setAuditUsers.push(user);
         const sc = (a) => ({ accuracy: { score: a[0] }, compliance: { score: a[1] }, concept: { score: a[2] }, appeal: { score: a[3] }, room: { score: a[4] } });
         return setAudits === 1 ? aiReply({ scores: sc([22, 18, 15, 12, 12]), flags: {}, fixes: [{ target: 'caption', text: '誰のどんな場面かを1文足す' }], proposal: 'revise', summary: '場面が抽象的' })
           : aiReply({ scores: sc([24, 20, 18, 17, 13]), flags: {}, fixes: [], proposal: 'pass', summary: '商品データと一致し、場面も具体的' });
@@ -79,6 +81,15 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.match(pr.set.copy.body, /料理のたびに/, '修正した文章');
   assert.equal(pr.set.roomTexts.length, 3);
   assert.equal(pr.audits.length, 2);
+  // 監査AIには、コードが付けるPR表記を含むキャプション全文を見せる（本文だけを見せて「PR表記がない」と不合格にしない）
+  assert.match(setAuditUsers[0], /キャプション全文[^\n]*アフィリエイト/);
+  assert.match(setAuditUsers[0], /card:1/);
+  // 修正指示が実際に直されたかをコードで確かめ、修正前後の全文を残す
+  assert.equal(pr.audits[0].fixCheck[0].target, 'caption');
+  assert.equal(pr.audits[0].fixCheck[0].changed, true);
+  assert.equal(pr.versions.length, 2);
+  assert.match(pr.versions[1].texts.caption, /料理のたびに/);
+  assert.match(pr.versions[0].texts.caption, /台所の置き場所/);
   assert.ok(pr.audits[1].check.checks.every((k) => k.ok !== false), JSON.stringify(pr.audits[1].check.checks));
   // 仕事探しの記録：仕事がない社員は理由つきで「仕事なし」
   assert.ok(st.board && st.board.items.length === 3);
@@ -184,4 +195,15 @@ test('API：定期実行は合言葉が必要。保存場所が未接続なら�
   const kv = memoryKv();
   const s = await call({ ...ENV, __kv: kv }, {}, { action: 'sync', snapshot: { ...SNAP, outreachPosts: [...SNAP.outreachPosts, { id: 'z', url: 'https://example.com/p/1', caption: 'あいうえおかきく' }] } });
   assert.equal(s.data.outreachPosts, 1, 'Instagramの投稿のURLでなければ受け取らない');
+});
+
+test('制作担当AI：商品カードの文字も直せる。直した場所を記録する', async () => {
+  const { applyEdit, fixCheck, codeCheck } = await import('../lib/production.js');
+  const set = { title: 't', items: [{ name: 'a', price: 1000 }], copy: { body: '本文', caption: '本文\n\n※楽天アフィリエイトを利用しています。', hashtags: [], items: [{ shortName: 'a', subline: '人気No.1', memo: 'メモ' }] }, roomTexts: [{ intro: 'x' }] };
+  const r = applyEdit(set, { caption: '', card: [{ n: 1, subline: '水受けトレー付き', memo: '' }], room: [] });
+  assert.equal(r.set.copy.items[0].subline, '水受けトレー付き');
+  assert.equal(set.copy.items[0].subline, '人気No.1', '元の版は変えない');
+  assert.deepEqual(r.changed, ['card:1']);
+  assert.equal(fixCheck([{ target: 'card:1', text: 'x' }, { target: 'room:1', text: 'y' }], r.changed).map((f) => f.changed).join(','), 'true,false');
+  assert.ok(codeCheck(set).checks.find((k) => k.key === 'pr').ok, 'PR表記はキャプション全文で確認する');
 });

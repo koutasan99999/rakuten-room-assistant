@@ -1023,3 +1023,7 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 .wk-item { background: #faf8f5; border-radius: 8px; padding: 8px; margin: 6px 0; }
 .wk-state-inprogress { background: #efe6ff; color: #5b2ea6; }
 .wk-auto { background: #f6f3ff; border-radius: 8px; padding: 8px; margin: 6px 0 10px; }
+
+/* 監査の全文・修正前後の全文（2026-11-16） */
+.wk-extra { margin-top: 6px; }
+.wk-pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; }

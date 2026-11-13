@@ -101,8 +101,25 @@
         : steps.map(function (x) { return x.name.replace(/^[^：]+：/, '') + '：' + (x.status === 'ok' ? (x.note || '完了') : '失敗 ' + (x.note || '')); });
       if (role === 'auditor' || (role === 'planner' && rec.result === 'hold' && !(rec.audits || []).length) || role === 'editor') dl = dl.concat(['結果：' + (RESULT[rec.result] || rec.result || '') + (rec.result !== 'pass' && rec.why ? '：' + rec.why : '')]);
       var failed = steps.some(function (x) { return x.status === 'failed'; }) && rec.result === 'failed';
+      var extra = [];
+      var FLAG = { fabrication: '根拠のない記述（捏造の疑い）', unverified: '確認できない断定', policy: '規約・表現' };
+      if (role === 'auditor') (rec.audits || []).forEach(function (a, i) {
+        var au = a.audit || {};
+        var lines = ['合計 ' + (au.total == null ? '採点なし' : au.total + '点') + '｜判定：' + ({ pass: '合格', revise: '修正', hold: '保留', reject: '不合格' }[a.decision && a.decision.status] || '') + '｜理由：' + ((a.decision && a.decision.why) || '')];
+        Object.keys(au.scores || {}).forEach(function (k) { var sc = au.scores[k]; lines.push(sc.label + ' ' + sc.score + '/' + sc.max + (sc.deductions ? '：' + sc.deductions : '')); });
+        var fl = Object.keys(FLAG).filter(function (k) { return au.flags && au.flags[k]; });
+        if (fl.length) lines.push('flag（点数に関係なく不合格）：' + fl.map(function (k) { return FLAG[k]; }).join('・') + (au.flags.why ? '：' + au.flags.why : ''));
+        (au.fixes || []).forEach(function (f, j) { var fc = (a.fixCheck || [])[j]; lines.push('修正指示［' + (f.target || 'caption') + '］' + f.text + (fc ? (fc.changed ? '（制作担当AIが直した）' : '（直されていない）') : '')); });
+        if (au.needResearch) lines.push('追加調査が必要：' + au.needResearch);
+        if (au.summary) lines.push('まとめ：' + au.summary);
+        ((a.check && a.check.checks) || []).forEach(function (k) { lines.push((k.ok === false ? 'NG ' : k.ok === true ? 'OK ' : '未確認 ') + k.label + '：' + k.detail); });
+        extra.push({ title: (i + 1) + '回目の採点の全文', lines: lines });
+      });
+      var textLines = function (t) { var out = ['キャプション本文：' + (t.caption || '（なし）')]; (t.cards || []).forEach(function (c, j) { out.push('商品カード' + (j + 1) + '：' + c.subline + '／' + c.memo); }); (t.room || []).forEach(function (r, j) { out.push('ROOM紹介文' + (j + 1) + '：' + r); }); return out; };
+      if (role === 'editor' || role === 'producer') (rec.versions || []).forEach(function (v) { if ((role === 'editor') === (v.round > 0)) extra.push({ title: (v.round ? v.round + '回目の修正後の全文（直した場所：' + ((v.changed || []).join('・') || 'なし') + '）' : '最初に作った全文'), lines: (v.giveUp ? ['直せない点：' + v.giveUp] : []).concat(textLines(v.texts || {})) }); });
+      if (role === 'producer' && rec.draft) extra.push({ title: '最終の下書き（' + (RESULT[rec.result] || rec.result) + '。社長の確認待ちには入れていない）', lines: rec.draft.items.map(function (it) { return it.name.slice(0, 40) + '（' + it.price + '円）'; }).concat(textLines(rec.draft.texts || {})) });
       return { start: startOf(runs, (steps[0] || {}).startedAt || rec.at), end: endOf(runs, (steps[steps.length - 1] || {}).endedAt || rec.endedAt), state: failed ? 'failed' : 'ok', what: what, error: failed ? (rec.failedStep || '') + '：' + (rec.error || '') : '',
-        calls: runs, cost: sum(runs, 'yen'), tokens: tokens(runs), rakuten: role === 'planner' ? rec.rakutenCalls || 0 : 0, deliverables: dl, open: rec.result === 'pass' ? function () { go('#pitch', function () { if (window.PitchView && window.PitchView.show) window.PitchView.show('sets'); }); } : function () { go('#company'); } };
+        calls: runs, cost: sum(runs, 'yen'), tokens: tokens(runs), rakuten: role === 'planner' ? rec.rakutenCalls || 0 : 0, deliverables: dl, extra: extra, open: rec.result === 'pass' ? function () { go('#pitch', function () { if (window.PitchView && window.PitchView.show) window.PitchView.show('sets'); }); } : function () { go('#company'); } };
     }).filter(Boolean);
   }
   function outreachItems() {
@@ -169,11 +186,11 @@
       { key: 'outreach', name: '営業・交流担当AI', title: '営業部', duty: '他の人の投稿（文章を確認できたもの）へのコメント案とフォロー候補の評価。送信・フォローは社長', items: outreachItems(), board: 'outreach',
         auto: { can: true, how: '文章を確認できた交流候補（社長が追加・公式APIで集めたもの）があれば作る。候補を自分で探すには、Instagram公式API（Facebookログイン方式）の鍵が必要' } },
       { key: 'pitch', name: '商品の提案（プレゼン）', title: '商品部', duty: '「次の商品を探してもらう」「広げる」で、楽天の商品を探してプレゼンを書く', jobTypes: ['pitch', 'explore', 'explore_more'], items: aiLogItems(['pitch:scout', 'pitch:more', 'pitch:seed', 'pitch:expand', 'explore'], function (t) { return /expand|explore/.test(t) ? '「広げる」で関連商品を探す' : '商品を探してプレゼンを書く'; }, function () { go('#pitch'); }),
-        auto: { can: false, why: 'バイヤーAIと同じ「商品を探す」仕事のため、自律運営はバイヤーAIに一本化（同じ仕事に二重に費用をかけない）。画面のボタンは今までどおり使えます' } },
+        auto: { can: false, kind: '担当外', why: 'バイヤーAIと同じ「商品を探す」仕事のため、自律運営はバイヤーAIに一本化（同じ仕事に二重に費用をかけない）。画面のボタンは今までどおり使えます' } },
       { key: 'meeting', name: '経営会議（旧方式）', title: '経営', duty: '毎日1回、事実を集めて会議の文章を作る（1回のAI呼び出しで複数の役。新方式に置き換え予定）', jobTypes: ['company'], items: meetingItems(),
-        auto: { can: false, why: '会議の材料（事実）は、社長のiPhoneの中の記録からコードが集めるため、サーバーではまだ集められない。今はアプリを開いたときに1日1回' } },
+        auto: { can: false, kind: 'データ不足', why: '会議の材料（事実）は、社長のiPhoneの中の記録からコードが集めるため、サーバーではまだ集められない。今はアプリを開いたときに1日1回' } },
       { key: 'perf', name: '実績の取り込み（コード）', title: '分析', duty: 'Instagramの数字を公式APIから取り込む（AIなし）', items: perfItems(),
-        auto: { can: false, why: 'Instagram公式APIの鍵が未設定のため動けない（鍵を設定すれば、1日1回の定期実行で取り込める）' } }
+        auto: { can: false, kind: 'API未設定', why: 'Instagram公式APIの鍵が未設定のため動けない（鍵を設定すれば、1日1回の定期実行で取り込める）' } }
     ];
   }
 
@@ -245,6 +262,13 @@
       x.deliverables.slice(0, 8).forEach(function (d) { ul.appendChild(el('li', null, d)); });
       box.appendChild(ul);
     }
+    // 監査の全文・修正前後の全文など（記録にあるものだけ）
+    (x.extra || []).forEach(function (sec) {
+      var d = el('details', 'wk-extra');
+      d.appendChild(el('summary', null, sec.title));
+      sec.lines.forEach(function (l) { d.appendChild(el('p', 'hint wk-pre' + (/^NG|不合格|flag|直されていない/.test(l) ? ' pitch-warn' : ''), l)); });
+      box.appendChild(d);
+    });
     if (x.open) box.appendChild(btn('成果物の画面を開く', 'status-btn', x.open));
     return box;
   }
@@ -277,13 +301,15 @@
   var AGENT = { buyer: 'バイヤーAI', outreach: '営業・交流担当AI', production: '制作ライン' };
   var ROLE_NAME = { planner: '企画担当AI', producer: '投稿セット制作AI', auditor: '監査AI', editor: '制作担当AI' };
   var BOARD = { work: '仕事あり', wait: '待ち', none: '仕事なし' };
+  var TRIG = { schedule: 'GitHubの定期実行（15分ごと）', workflow_dispatch: '手動', 'vercel-cron': 'Vercelの予備（1日1回）', unknown: '不明' };
+  var KIND = { nodata: 'データ不足', waiting: '処理待ち', budget: '予算不足', quota: '今日の上限', backlog: '確認待ちが多い', nokey: 'API未設定', error: 'エラー', paused: '停止中' };
   function boardOf(key) {
     var sv = window.ServerSync && window.ServerSync.status();
     var b = sv && sv.board;
     if (!b || !key) return null;
     var items = b.items || [];
     var hit = key === 'auditor' ? (items.filter(function (x) { return x.status === 'work'; })[0] || items[0]) : items.filter(function (x) { return x.agent === key; })[0];
-    return hit ? { at: b.at, status: hit.status, reason: key === 'auditor' ? (hit.status === 'work' ? (AGENT[hit.agent] || hit.agent) + 'の成果物を採点する予定' : '採点する成果物がまだない') : hit.reason } : null;
+    return hit ? { at: b.at, status: hit.status, kind: hit.kind, reason: key === 'auditor' ? (hit.status === 'work' ? (AGENT[hit.agent] || hit.agent) + 'の成果物を採点する予定' : '採点する成果物がまだない') : hit.reason } : null;
   }
   function autonomyBox() {
     var box = el('div', 'wk-auto');
@@ -294,7 +320,8 @@
     var b = sv.budget || { spent: {}, limits: {} };
     box.appendChild(el('p', 'field-label', '自律運営（アプリを閉じていても、定期実行で仕事を進めます）'));
     var lines = [
-      '最後の定期実行：' + (h.lastTickAt ? stamp(h.lastTickAt) : 'まだ'),
+      '最後の実行：' + (h.lastTickAt ? stamp(h.lastTickAt) : 'まだ') + (h.lastTrigger ? '（' + (TRIG[h.lastTrigger] || h.lastTrigger) + '）' : ''),
+      'きっかけ別の最後の実行：' + ['schedule', 'workflow_dispatch', 'vercel-cron'].map(function (k) { return TRIG[k] + ' ' + (h.triggers && h.triggers[k] ? stamp(h.triggers[k]) : 'まだ記録なし'); }).join('／'),
       '今の仕事：' + (sv.job ? (AGENT[sv.job.type] || sv.job.type) + (sv.job.role ? '（' + ROLE_NAME[sv.job.role] + '）' : '') + '・段階「' + sv.job.step + '」（' + stamp(sv.job.startedAt) + ' 開始' + (sv.job.attempts ? '・やり直し' + sv.job.attempts + '回目' : '') + '）' : 'なし'),
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
@@ -317,7 +344,7 @@
     if ((sv.log || []).length) {
       var det = el('details');
       det.appendChild(el('summary', null, '定期実行の記録（最近 ' + Math.min(10, sv.log.length) + '件）'));
-      sv.log.slice(0, 10).forEach(function (x) { det.appendChild(el('p', 'hint' + (x.ok ? '' : ' pitch-warn'), stamp(x.at) + '｜' + (AGENT[x.agent] || x.agent) + (x.role ? '（' + ROLE_NAME[x.role] + '）' : '') + '｜段階「' + x.step + '」｜' + (x.ok ? '成功' : '失敗：' + x.error) + (x.final ? '｜仕事を' + (x.final === 'done' ? '完了' : '打ち切り') : '') + '｜AI ' + x.calls + '回・' + yen(x.yen) + (x.openaiIds && x.openaiIds.length ? '｜応答ID ' + x.openaiIds.join('・') : ''))); });
+      sv.log.slice(0, 10).forEach(function (x) { det.appendChild(el('p', 'hint' + (x.ok ? '' : ' pitch-warn'), stamp(x.at) + '｜' + (x.trigger ? (TRIG[x.trigger] || x.trigger) + '｜' : '') + (AGENT[x.agent] || x.agent) + (x.role ? '（' + ROLE_NAME[x.role] + '）' : '') + '｜段階「' + x.step + '」｜' + (x.ok ? '成功' : '失敗：' + x.error) + (x.final ? '｜仕事を' + (x.final === 'done' ? '完了' : '打ち切り') : '') + '｜AI ' + x.calls + '回・' + yen(x.yen) + (x.openaiIds && x.openaiIds.length ? '｜応答ID ' + x.openaiIds.join('・') : ''))); });
       box.appendChild(det);
     }
     if (sv.merged && (sv.merged.buyer || sv.merged.outreach || sv.merged.production)) box.appendChild(el('p', 'hint', '今回受け取った成果物：商品の候補 ' + sv.merged.buyer + '件・コメント案 ' + sv.merged.outreach + '件・制作ラインの記録 ' + (sv.merged.production || 0) + '件（うち社長の確認待ちの投稿セット ' + (sv.merged.sets || 0) + '件）'));
@@ -390,7 +417,7 @@
       var items = (s.items || []).slice().sort(function (a, b) { return (a.start || '') < (b.start || '') ? 1 : -1; });
       var last = items[0];
       var bd = s.auto && s.auto.can ? boardOf(s.board) : null;
-      top.appendChild(el('span', 'wk-last', (bd ? '仕事探し：' + BOARD[bd.status] + '（' + bd.reason + '）｜' : s.auto && !s.auto.can ? '自律運営まだ：' + s.auto.why.slice(0, 40) + '…｜' : '') + (last ? '最後の仕事：' + stamp(last.end || last.start) + '・' + last.what.slice(0, 20) : '記録された仕事はまだありません')));
+      top.appendChild(el('span', 'wk-last', (bd ? '仕事探し：' + BOARD[bd.status] + (bd.kind && KIND[bd.kind] ? '・' + KIND[bd.kind] : '') + '（' + bd.reason + '）｜' : s.auto && !s.auto.can ? '自律運営まだ（' + (s.auto.kind || '') + '）：' + s.auto.why.slice(0, 40) + '…｜' : '') + (last ? '最後の仕事：' + stamp(last.end || last.start) + '・' + last.what.slice(0, 20) : '記録された仕事はまだありません')));
       row.appendChild(top);
       if (open[s.key]) row.appendChild(detailView(s, st));
       sb.appendChild(row);
