@@ -1,11 +1,12 @@
 // 自律運営のAPI（2026-11-14）：/api/worker
-// action: tick（定期実行：GitHub Actions／Vercel Cron。合言葉 CRON_SECRET が必要）／pause・resume（社長の停止スイッチ）／sync（アプリ→サーバー：仕事を選ぶための情報）／state（サーバー→アプリ：状態・成果物・記録）
+// action: tick（定期実行：QStash（署名）／GitHub Actions・Vercel Cron（合言葉 CRON_SECRET））／pause・resume（社長の停止スイッチ）／sync（アプリ→サーバー：仕事を選ぶための情報）／state（サーバー→アプリ：状態・成果物・記録）
 // 保存場所（Upstash Redis の無料枠）が設定されていなければ「未接続」と返し、何もしない（今までの機能には影響しない）。
 import crypto from 'node:crypto';
 import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import { maskSecrets } from '../lib/ai.js';
+import { verifyQstash } from '../lib/qstash.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
@@ -16,12 +17,21 @@ export default async function handler(req, res, env = process.env) {
   const action = String(body.action || url.searchParams.get('action') || (req.method === 'GET' ? 'tick' : 'state'));
   const kv = kvFrom(env);
   if (action === 'tick') {
-    // 定期実行：合言葉が一致したときだけ（GitHub Actions も Vercel Cron も Authorization: Bearer で送る）
-    if (!env.CRON_SECRET || !same(String(req.headers.authorization || ''), `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
+    // 定期実行の認証：(1) QStash の署名（Upstash-Signature）か、(2) 合言葉（GitHub Actions・Vercel Cron が Authorization: Bearer で送る）
+    let trigger = '';
+    if (req.headers['upstash-signature']) {
+      const raw = typeof req.body === 'string' ? req.body : req.body && typeof req.body === 'object' && Object.keys(req.body).length ? JSON.stringify(req.body) : '';
+      const v = verifyQstash({ signature: req.headers['upstash-signature'], body: raw, keys: [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY] });
+      if (!v.ok) return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
+      trigger = 'qstash';
+    } else if (!env.CRON_SECRET || !same(String(req.headers.authorization || ''), `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
     if (!kv) return send(res, 200, { ok: false, configured: false, notice: '保存場所（Upstash Redis）が未接続のため、自律運営は動きません' });
     try {
-      // 起動のきっかけ（schedule＝GitHubの定期実行／workflow_dispatch＝手動／vercel-cron）を記録する（定期実行が本当に動いたかの証拠）
-      const trigger = String(req.headers['x-trigger'] || (req.method === 'GET' ? 'vercel-cron' : 'unknown')).replace(/[^a-z_-]/gi, '').slice(0, 30);
+      // 起動のきっかけ（qstash＝QStashの定期実行／schedule＝GitHubの定期実行／workflow_dispatch＝手動／vercel-cron）を記録する（定期実行が本当に動いたかの証拠）
+      trigger = trigger || String(req.headers['x-trigger'] || (req.method === 'GET' ? 'vercel-cron' : 'unknown')).replace(/[^a-z_-]/gi, '').slice(0, 30);
+      // QStash のやり直し（同じ呼び出しの再送）は、2回目以降は何もしない（同じ仕事を二重に進めない）
+      const mid = String(req.headers['upstash-message-id'] || '').replace(/[^\w-]/g, '').slice(0, 80);
+      if (trigger === 'qstash' && mid && !(await kv.set(`worker:qstash:${mid}`, '1', { nx: true, ex: 3600 }))) return send(res, 200, { ok: true, skipped: '同じ呼び出しの再送のため、何もしません（二重実行の防止）' });
       return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), startedAt, trigger }));
     } catch (e) {
       return send(res, 200, { ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });

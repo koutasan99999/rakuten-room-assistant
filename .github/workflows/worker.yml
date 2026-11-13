@@ -1,14 +1,13 @@
-# 自律運営の定期実行（2026-11-15）：15分ごとに、本番のアプリの /api/worker を1回呼ぶ（AI社員の仕事を1段階だけ進める）。
+# 自律運営の手動の実行（2026-11-15）：本番のアプリの /api/worker を1回呼ぶ（AI社員の仕事を1段階だけ進める）。
 # 公開リポジトリの GitHub Actions は無料。実行は数秒（curl だけ）。
 # 必要な設定（リポジトリの Settings → Secrets and variables → Actions → Secrets）：
 #   WORKER_URL  … 本番のアプリのURL（例：https://xxxx.vercel.app）
 #   CRON_SECRET … Vercel の環境変数 CRON_SECRET と同じ値
 # どちらかが無ければ、何もせずに終わる（失敗にしない）。
 name: worker
+# 2026-11-16：GitHub の定期実行（schedule）は、11/13 に約7時間待っても一度も起動しなかったため外した。
+# 15分ごとの定期実行は QStash（Upstash の無料枠）が担当する。ここは手動の実行（動作確認）だけに使う（二重の定期実行をしない）。
 on:
-  schedule:
-    # 毎時0分は GitHub の定期実行が混み合い、遅れたり飛ばされたりするため、ずらした分に動かす（2026-11-16）
-    - cron: '4,19,34,49 * * * *'
   workflow_dispatch: {}
 concurrency:
   group: worker
