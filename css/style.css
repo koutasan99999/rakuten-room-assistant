@@ -1002,3 +1002,17 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 /* C0：画像の品質確認と、修正前後の比較 */
 .cq-thumbs { display: flex; gap: 6px; overflow-x: auto; margin: 4px 0 10px; }
 .cq-thumbs img { width: 72px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid #e3ddd6; flex: 0 0 auto; }
+
+/* 第1段階：AI社員の仕事 */
+.wk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.wk-backup { font-size: 14px; padding: 8px 12px; }
+.wk-row { border-top: 1px solid #ece6df; padding: 8px 0; }
+.wk-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 4px 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.wk-name { font-weight: 700; }
+.wk-state { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eee; color: #555; }
+.wk-state-running { background: #fff3c4; color: #7a5a00; }
+.wk-state-failed { background: #fde2e1; color: #a1260d; }
+.wk-state-approval { background: #e3efff; color: #1b4f9c; }
+.wk-state-done { background: #e2f4e5; color: #23683a; }
+.wk-last { flex-basis: 100%; font-size: 12px; color: #777; }
+.wk-item { background: #faf8f5; border-radius: 8px; padding: 8px; margin: 6px 0; }

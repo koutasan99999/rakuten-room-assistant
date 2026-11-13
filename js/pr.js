@@ -18,7 +18,7 @@
     ['gift', 'ギフト・プレゼント', ['プレゼント選び', 'ギフト', '誕生日プレゼント', '贈り物']],
     ['brand', 'ブランド・メーカー公式', []]
   ];
-  var GNAME = {}; GENRES.forEach(function (g) { GNAME[g[0]] = g[1]; });
+  var GNAME = { theme: '今のテーマ' }; GENRES.forEach(function (g) { GNAME[g[0]] = g[1]; });
   var tabA = 'candidate'; var tabP = 'todo'; var genreF = '';
   var busy = {};
   var container = null;
@@ -32,12 +32,27 @@
   function stars(n) { return '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n); }
   function companyLog(a) { if (window.CompanyStore) window.CompanyStore.addActivity(a); }
 
-  // ---- 今日の探す場所（自動で用意）：ジャンルごとのハッシュタグを日替わりで2つ＋採用した商品のブランドの検索 ----
+  // ---- 探す場所：今紹介している商品・企画から（固定のジャンルにしない。防災も特別扱いしない）＋ジャンルの探す場所（日替わり） ----
+  var STOP = /^(送料無料|送料込み|ポイント|公式|楽天|日本製|メンズ|レディース|おしゃれ|人気|新作|限定|セット|対応|大容量|正規品)$/;
+  function themeWords() {
+    var words = [];
+    currentThemes().forEach(function (t) {
+      String(t).split(/[\s　・／\/、,]+/).forEach(function (w) {
+        w = w.replace(/[0-9０-９]+(cm|mm|ml|g|L|個|枚|本|色|cm)?$/i, '').trim();
+        if (w.length >= 2 && w.length <= 12 && !STOP.test(w) && /[ぁ-んァ-ヶ一-龯]/.test(w) && words.indexOf(w) === -1) words.push(w);
+      });
+    });
+    return words.slice(0, 8);
+  }
   function places() {
-    var day = Math.floor(Date.now() / 86400000);
     var out = [];
+    themeWords().forEach(function (w) {
+      out.push({ genre: 'theme', label: '#' + w, url: 'https://www.instagram.com/explore/tags/' + encodeURIComponent(w) + '/' });
+      out.push({ genre: 'theme', label: w + '（Googleで投稿を探す）', url: 'https://www.google.com/search?q=' + encodeURIComponent('site:instagram.com ' + w) });
+    });
+    var day = Math.floor(Date.now() / 86400000);
     GENRES.forEach(function (g, gi) {
-      g[2].forEach(function (t, i) { if ((i + day + gi) % g[2].length < 2) out.push({ genre: g[0], label: '#' + t, url: 'https://www.instagram.com/explore/tags/' + encodeURIComponent(t) + '/' }); });
+      g[2].forEach(function (t, i) { if ((i + day + gi) % g[2].length < 1) out.push({ genre: g[0], label: '#' + t, url: 'https://www.instagram.com/explore/tags/' + encodeURIComponent(t) + '/' }); });
     });
     var brands = {};
     (window.PitchStore ? window.PitchStore.list('adopt') : []).forEach(function (p) { if (p.brand) brands[p.brand] = true; });
@@ -57,17 +72,114 @@
     });
   }
 
-  // ---- コメント案（投稿の文章から。既存のコメント案の決まり：具体的な1点に触れる・宣伝しない・体験を作らない） ----
-  function makeDrafts(id) {
-    var p = R.posts().filter(function (x) { return x.id === id; })[0];
-    if (!p || !p.caption || busy[id]) return;
-    busy[id] = true; paint();
-    K.postJson('api/thief', { action: 'comment', caption: p.caption }).then(function (r) {
-      delete busy[id];
-      if (r.status === 200 && Array.isArray(r.data.comments)) R.updatePost(id, { drafts: r.data.comments, draftAt: new Date().toISOString(), draftError: '' });
-      else R.updatePost(id, { draftError: (r.data && r.data.error) || 'コメント案を作れませんでした' });
-      paint();
-    });
+  // ---- 営業・交流担当AI（第2段階・2026-11-14）：コメント案 → コードの確認 → 監査AI（別のAI呼び出し）→ 修正（最大2回）→ 判定 ----
+  // 使うのは、実在する投稿のURLと、確認できた投稿の文章だけ。文章のない投稿には作らない。送信はしない（社長がInstagramで行う）
+  var MAX_REV = 2;
+  var running = null; // 実行中の記録
+  // 眼科医くまの今のテーマ：今紹介している商品（採用した商品）・投稿セットの企画・広げるの起点（固定のジャンルにしない）
+  function currentThemes() {
+    var out = [];
+    var add = function (t) { t = String(t || '').replace(/[【\[].*?[】\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30); if (t && out.indexOf(t) === -1) out.push(t); };
+    var D = window.DeliveryStore;
+    if (D) D.all().filter(function (x) { return x.status !== 'rejected'; }).slice(0, 5).forEach(function (x) { add(x.titleEdit || x.title); });
+    (window.PitchStore ? window.PitchStore.list('adopt') : []).slice(0, 8).forEach(function (p) { add(p.name); });
+    var X = window.ExploreStore;
+    if (X && X.roots) X.roots().slice(0, 3).forEach(function (n) { add(n.product && n.product.name); });
+    return out.slice(0, 12);
+  }
+  function run_save(r) { R.saveRun(r); }
+  function call(r, step, body) {
+    r.steps.push({ name: step, status: 'running', at: new Date().toISOString() });
+    run_save(r); paint();
+    return K.postJson('api/pr', body).then(function (x) {
+      var st = r.steps[r.steps.length - 1];
+      if (x.data && Array.isArray(x.data.runs)) r.runs = r.runs.concat(x.data.runs);
+      if (x.status !== 200 || !x.data || x.data.ok !== true) {
+        st.status = 'failed';
+        r.status = 'failed'; r.failedStep = (x.data && x.data.failedStep) || step; r.error = (x.data && x.data.error) || ('通信できませんでした（' + (x.status || '通信エラー') + '）');
+        run_save(r); paint();
+        return null;
+      }
+      st.status = 'ok'; run_save(r);
+      return x.data;
+    }, function () { var st = r.steps[r.steps.length - 1]; st.status = 'failed'; r.status = 'failed'; r.failedStep = step; r.error = '通信できませんでした'; run_save(r); paint(); return null; });
+  }
+  function slim(p) { return { id: p.id, url: p.url, handle: p.handle, caption: p.caption, source: p.source }; }
+  function makeDrafts(ids) {
+    if (!Array.isArray(ids)) ids = [ids];
+    if (running) { K.showToast('いま営業・交流担当AIが作業中です'); return; }
+    var all = R.posts();
+    var posts = ids.map(function (id) { return all.filter(function (x) { return x.id === id; })[0]; }).filter(function (p) { return p && p.status === 'todo'; }).slice(0, 5);
+    var noText = posts.filter(function (p) { return !p.caption || p.caption.length < 5; });
+    posts = posts.filter(function (p) { return noText.indexOf(p) === -1; });
+    noText.forEach(function (p) { R.updatePost(p.id, { draftError: '投稿の文章がないため、コメント案を作りません（内容を推測しない）。投稿の文章を貼ってください' }); });
+    if (!posts.length) { K.showToast('投稿の文章がある候補がありません'); paint(); return; }
+    var stop = window.AiUsage && window.AiUsage.blocked(2 + MAX_REV * 2);
+    if (stop) { K.showToast(stop); return; }
+    var themes = currentThemes();
+    var past = R.pastComments();
+    var r = { id: 'o' + Date.now().toString(36), at: new Date().toISOString(), status: 'running', posts: posts.map(function (p) { return p.id; }), themes: themes, steps: [], runs: [], result: {} };
+    running = r;
+    posts.forEach(function (p) { busy[p.id] = true; R.updatePost(p.id, { draftError: '', outreach: { runId: r.id, status: 'running', versions: [], revisions: 0 } }); });
+    var cur = {}; // id → { draft, check }
+    var revisions = {};
+    function finish() {
+      posts.forEach(function (p) {
+        delete busy[p.id];
+        var o = (R.posts().filter(function (x) { return x.id === p.id; })[0] || {}).outreach || {};
+        if (o.status === 'running' || o.status === 'revise') { o.status = r.status === 'failed' ? 'failed' : 'hold'; o.why = r.status === 'failed' ? '失敗：' + r.failedStep + '（' + r.error + '）' : (o.why || '') + '（修正' + MAX_REV + '回でも合格にならなかった）'; }
+        R.updatePost(p.id, { outreach: o, drafts: o.status === 'pass' && o.final ? [o.final] : [] });
+        r.result[p.id] = o.status;
+      });
+      if (r.status !== 'failed') r.status = 'done';
+      r.endedAt = new Date().toISOString();
+      run_save(r); running = null; paint();
+      K.showToast(r.status === 'failed' ? '営業・交流担当AIの作業が失敗しました：' + r.failedStep : '合格したコメント案：' + Object.keys(r.result).filter(function (k) { return r.result[k] === 'pass'; }).length + '件');
+    }
+    function store(id, patch, version) {
+      var p = R.posts().filter(function (x) { return x.id === id; })[0];
+      var o = Object.assign({}, p.outreach || {}, patch);
+      if (version) o.versions = (o.versions || []).concat([version]);
+      R.updatePost(id, { outreach: o });
+      return o;
+    }
+    function audit(list) {
+      return call(r, '監査AI：コメント案の採点（別のAI呼び出し）', { action: 'outreach_audit', posts: posts.filter(function (p) { return list.indexOf(p.id) !== -1; }).map(slim), drafts: list.map(function (id) { return cur[id].draft; }), past: past, revisions: revisions }).then(function (a) {
+        if (!a) return finish();
+        var again = [];
+        (a.decisions || []).forEach(function (dc) {
+          var au = (a.audits || []).filter(function (x) { return x.id === dc.id; })[0] || null;
+          var ck = (a.checks || []).filter(function (x) { return x.id === dc.id; })[0] || cur[dc.id].check;
+          var o = (R.posts().filter(function (x) { return x.id === dc.id; })[0] || {}).outreach || {};
+          var vs = (o.versions || []).slice();
+          if (vs.length) { vs[vs.length - 1] = Object.assign({}, vs[vs.length - 1], { audit: au, check: ck, decision: dc }); }
+          store(dc.id, { versions: vs, status: dc.status, why: dc.why, final: dc.status === 'pass' ? cur[dc.id].draft.comment : '', score: au ? au.total : null, follow: cur[dc.id].draft.follow, followWhy: cur[dc.id].draft.followWhy, relevance: cur[dc.id].draft.relevance, relevanceWhy: cur[dc.id].draft.relevanceWhy, revisions: revisions[dc.id] || 0 });
+          if (dc.status === 'revise' && (revisions[dc.id] || 0) < MAX_REV) again.push({ id: dc.id, comment: cur[dc.id].draft.comment, anchor: cur[dc.id].draft.anchor, why: dc.why, fixes: au ? au.fixes : [] });
+        });
+        if (!again.length) return finish();
+        again.forEach(function (x) { revisions[x.id] = (revisions[x.id] || 0) + 1; });
+        return draft(again.map(function (x) { return x.id; }), again);
+      });
+    }
+    function draft(list, revise) {
+      return call(r, revise ? '営業・交流担当AI：修正 ' + revisions[list[0]] + '回目' : '営業・交流担当AI：コメント案を作る', { action: 'outreach_draft', posts: posts.filter(function (p) { return list.indexOf(p.id) !== -1; }).map(slim), themes: themes, past: past, revise: revise || null }).then(function (d) {
+        if (!d) return finish();
+        var next = [];
+        (d.drafts || []).forEach(function (x) {
+          if (x.giveUp) { store(x.id, { status: 'hold', why: '追加の情報が必要（推測で補わない）：' + x.giveUp }); return; }
+          var ck = (d.checks || []).filter(function (k) { return k.id === x.id; })[0] || null;
+          cur[x.id] = { draft: x, check: ck };
+          store(x.id, {}, { v: ((R.posts().filter(function (y) { return y.id === x.id; })[0] || {}).outreach || { versions: [] }).versions.length + 1, comment: x.comment, anchor: x.anchor, at: new Date().toISOString(), check: ck });
+          next.push(x.id);
+        });
+        (d.skipped || []).forEach(function (x) { store(x.id, { status: 'hold', why: x.why }); });
+        list.filter(function (id) { return next.indexOf(id) === -1 && !(d.drafts || []).some(function (x) { return x.id === id; }); }).forEach(function (id) { store(id, { status: 'hold', why: 'コメント案が返されなかった' }); });
+        if (!next.length) return finish();
+        return audit(next);
+      });
+    }
+    paint();
+    draft(posts.map(function (p) { return p.id; }), null);
   }
 
   function addFromForm(url, handle, caption, genre, reason) {
@@ -185,14 +297,14 @@
       });
       autoState.last = { kind: 'recent', at: r.data.checkedAt, added: newIds.length, errors: r.data.errors || [] };
       // コメント案は、新しい候補のうち5件まで自動で作る（AIの費用：1件あたり推定0.5円）
-      newIds.slice(0, 5).forEach(function (id) { makeDrafts(id); });
+      if (newIds.length) makeDrafts(newIds.slice(0, 5));
       K.showToast(newIds.length ? 'コメント候補を' + newIds.length + '件入れました' : '直近72時間の新しい投稿はありませんでした');
       paint();
     });
   }
   function autoCard() {
     loadStatus();
-    var c = card('自動で探す（社長がInstagramを探さなくてよい方法）');
+    var c = card('営業・交流活動：自動で探す（公式に許された方法だけ）');
     var st = autoState.status || {};
     var acc = R.accounts(); var posts = R.posts();
     var tiles = el('div', 'co-tiles');
@@ -227,8 +339,8 @@
   }
 
   function placesCard() {
-    var c = card('今日の探す場所（自動で用意）');
-    c.appendChild(el('p', 'hint', '上の「自動で探す」で足りないとき用です（個人のアカウントや、ハッシュタグの投稿は、今の設定では自動で集められないため）。ジャンルごとの探す場所を毎日入れ替えて用意します。開いて良いアカウント・投稿を見つけたら、URLをコピーして下の「候補に入れる」へ。新しい投稿・コメント欄が活発な投稿を優先してください。'));
+    var c = card('探す場所（今紹介している商品・企画から自動で用意）');
+    c.appendChild(el('p', 'hint', '今紹介している商品・投稿の企画から、言葉を選んで探す場所を用意します（固定のジャンルにしません）。公式APIでは、ハッシュタグや個人の投稿を自動で集められないため、開いて良い投稿を見つけたら、URLと投稿の文章を下の「候補に入れる」に貼ってください。今のテーマ：' + (currentThemes().slice(0, 5).join('／') || '（採用した商品・投稿セットがまだありません）')));
     var grid = el('div', 'pr-places');
     places().forEach(function (p) { var a = linkBtn(p.label, p.url, 'pr-place'); a.appendChild(el('span', 'pr-place-genre', GNAME[p.genre] || '')); grid.appendChild(a); });
     c.appendChild(grid);
@@ -239,7 +351,7 @@
   var form = { url: '', handle: '', cap: '', genre: '', reason: '' };
   function bind(input, key) { input.value = form[key]; input.addEventListener('input', function () { form[key] = input.value; }); input.addEventListener('change', function () { form[key] = input.value; }); return input; }
   function addCard() {
-    var c = card('候補に入れる（URLを貼るだけ）');
+    var c = card('営業・交流活動：候補に入れる（投稿のURLと文章を貼る）');
     var url = el('input', 'input'); url.placeholder = 'InstagramのプロフィールURL または 投稿のURL';
     var handle = el('input', 'input'); handle.placeholder = '投稿のとき：投稿者のアカウント名（@なしでOK）';
     var cap = el('textarea', 'input'); cap.rows = 3; cap.placeholder = '投稿のとき：投稿の文章を貼る（コメント案を作ります。見ていない内容は書きません）';
@@ -255,7 +367,7 @@
   }
 
   function accountsCard() {
-    var c = card('フォロー候補');
+    var c = card('営業・交流活動：フォロー候補');
     var tabs = el('div', 'xp-filter');
     var acc = R.accounts();
     [['candidate', '候補'], ['followed', 'フォロー済み'], ['hidden', '興味なし']].forEach(function (t) { tabs.appendChild(btn(t[1] + '（' + acc.filter(function (a) { return a.status === t[0]; }).length + '）', 'xp-chip' + (tabA === t[0] ? ' active' : ''), function () { tabA = t[0]; paint(); })); });
@@ -271,6 +383,9 @@
       r.appendChild(el('p', 'co-title', '@' + a.handle + (a.official ? '（公式）' : '')));
       r.appendChild(el('p', 'hint', '優先度 ' + stars(a.priority || 1) + '｜ジャンル：' + (GNAME[a.genre] || '未分類') + '｜' + a.source + '｜' + stamp(a.addedAt) + ' 追加'));
       if (a.reason) r.appendChild(el('p', 'hint', 'おすすめ理由：' + a.reason));
+      // 営業・交流担当AIの評価（この人の投稿から。AIの評価で、実績ではない）
+      var fs = R.posts().filter(function (p) { return p.handle === a.handle && p.outreach && p.outreach.follow != null; }).sort(function (x, y) { return y.outreach.follow - x.outreach.follow; })[0];
+      if (fs) r.appendChild(el('p', 'hint', 'フォロー候補としての評価（AI）：' + fs.outreach.follow + '点・' + (fs.outreach.followWhy || '')));
       if (a.evidence) r.appendChild(el('p', 'hint', '根拠：' + a.evidence + (a.checkedAt ? '（' + stamp(a.checkedAt) + ' 確認）' : '')));
       var rc = R.recentContact(a.handle, 7);
       if (rc) r.appendChild(el('p', 'hint pitch-warn', '直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済み（' + stamp(rc.at) + '）。続けての営業は控えめに'));
@@ -291,9 +406,40 @@
     return c;
   }
 
+  var OSTATUS = { pass: '合格（コピーして使える）', revise: '修正中', hold: '保留', reject: '不合格・コメントしない方がよい', failed: '失敗' };
+  function outreachView(p, o) {
+    var box = el('div', 'pr-draft');
+    box.appendChild(el('p', 'co-title', '営業・交流担当AIの案：' + (OSTATUS[o.status] || o.status) + (o.score != null ? '｜監査AI ' + o.score + '点' : '') + (o.revisions ? '｜修正' + o.revisions + '回' : '')));
+    var last = (o.versions || [])[(o.versions || []).length - 1];
+    if (o.status === 'pass' && o.final) {
+      box.appendChild(el('p', 'pr-draft-text', o.final));
+      box.appendChild(btn('コメントをコピー', 'btn btn-primary co-sbtn', function () { K.copyText(o.final).then(function () { K.showToast('コピーしました。Instagramで投稿を開いて、内容を確かめてから送ってください'); }, function () { K.showToast('コピーできませんでした'); }); }));
+    } else if (last) box.appendChild(el('p', 'hint', '最後の案（合格していないのでコピーは出しません）：' + last.comment));
+    if (o.why) box.appendChild(el('p', 'hint' + (o.status === 'pass' ? '' : ' pitch-warn'), o.why));
+    if (o.relevance != null) box.appendChild(el('p', 'hint', '今のテーマとの関係：' + o.relevance + '点（' + (o.relevanceWhy || '') + '）｜フォロー候補として：' + (o.follow != null ? o.follow + '点（' + (o.followWhy || '') + '）' : '未評価') + '｜※AIの評価'));
+    var det = el('details');
+    det.appendChild(el('summary', null, '採点と修正の記録（' + (o.versions || []).length + '版）'));
+    (o.versions || []).forEach(function (v) {
+      det.appendChild(el('p', 'field-label', 'v' + v.v + '：' + v.comment + '（触れた点「' + (v.anchor || '') + '」）'));
+      if (v.check) v.check.checks.forEach(function (k) { det.appendChild(el('p', 'hint' + (k.ok === false ? ' pitch-warn' : ''), (k.ok === true ? 'OK ' : k.ok === false ? 'NG ' : '未確認 ') + k.label + '：' + k.detail)); });
+      if (v.audit) {
+        det.appendChild(el('p', 'hint', '監査AI：' + v.audit.total + '点・提案 ' + v.audit.proposal + (v.audit.summary ? '｜' + v.audit.summary : '')));
+        Object.keys(v.audit.scores || {}).forEach(function (k) { var sc = v.audit.scores[k]; det.appendChild(el('p', 'hint', sc.label + ' ' + sc.score + '/' + sc.max + (sc.deductions ? '｜減点：' + sc.deductions : ''))); });
+        if ((v.audit.fixes || []).length) det.appendChild(el('p', 'hint', '修正指示：' + v.audit.fixes.join('／')));
+      }
+      if (v.decision) det.appendChild(el('p', 'hint', '判定（コード）：' + (OSTATUS[v.decision.status] || v.decision.status) + '｜' + v.decision.why));
+    });
+    box.appendChild(det);
+    return box;
+  }
+
   function postsCard() {
-    var c = card('コメント候補');
+    var c = card('営業・交流活動：コメント候補（他の人の投稿）');
     var posts = R.posts();
+    var waiting = posts.filter(function (p) { return p.status === 'todo' && p.caption && p.caption.length >= 5 && !(p.outreach && p.outreach.status); });
+    c.appendChild(el('p', 'hint', '営業・交流担当AIがコメント案を作り、別のAI呼び出しの監査AIが採点します（80点以上・監査AIも合格・コードの確認もOKだけ合格。修正は2回まで）。投稿の文章がない候補には作りません。コメントとフォローは、社長がInstagramで行います。'));
+    if (running) c.appendChild(el('p', 'hint pitch-busy', '営業・交流担当AIが作業中：' + ((running.steps[running.steps.length - 1] || {}).name || '準備')));
+    else if (waiting.length) c.appendChild(btn('コメント案をまとめて作る（文章のある未対応 ' + Math.min(5, waiting.length) + '件）', 'btn btn-discover', function () { makeDrafts(waiting.slice(0, 5).map(function (p) { return p.id; })); }));
     var tabs = el('div', 'xp-filter');
     [['todo', '未対応'], ['commented', 'コメント済み'], ['skipped', '見送り']].forEach(function (t) { tabs.appendChild(btn(t[1] + '（' + posts.filter(function (p) { return p.status === t[0]; }).length + '）', 'xp-chip' + (tabP === t[0] ? ' active' : ''), function () { tabP = t[0]; paint(); })); });
     c.appendChild(tabs);
@@ -307,9 +453,13 @@
       var rc = R.recentContact(p.handle, 7);
       if (rc && p.status === 'todo') r.appendChild(el('p', 'hint pitch-warn', 'このアカウントには直近7日に' + (rc.type === 'comment' ? 'コメント' : 'フォロー') + '済みです（' + stamp(rc.at) + '）。続けてのコメントは控えましょう'));
       if (busy[p.id]) r.appendChild(el('p', 'hint pitch-busy', 'コメント案を作っています…'));
-      (p.drafts || []).forEach(function (d, i) {
+      var o = p.outreach;
+      if (!p.caption && p.status === 'todo') r.appendChild(el('p', 'hint', '投稿の文章がないため、コメント案は作りません（内容を推測しないため）。Instagramで投稿を開き、文章をコピーして貼り直すと作れます。'));
+      if (o && o.status && o.status !== 'running') r.appendChild(outreachView(p, o));
+      else if (!o && (p.drafts || []).length) (p.drafts || []).forEach(function (d, i) {
+        // 前の方式（監査なし）で作ったコメント案：残しておく（消さない）
         var dr = el('div', 'pr-draft');
-        dr.appendChild(el('p', 'pr-draft-text', '案' + (i + 1) + '：' + d));
+        dr.appendChild(el('p', 'pr-draft-text', '前の方式の案' + (i + 1) + '（監査なし）：' + d));
         dr.appendChild(btn('コピー', 'status-btn co-sbtn', function () { K.copyText(d).then(function () { K.showToast('コピーしました。Instagramで内容を確かめてから送ってください'); }, function () { K.showToast('コピーできませんでした'); }); }));
         r.appendChild(dr);
       });
@@ -318,14 +468,14 @@
       row.appendChild(linkBtn('Instagramで開く', p.url, 'btn btn-secondary co-sbtn'));
       if (p.status === 'todo') {
         row.appendChild(btn('コメントした', 'btn btn-primary co-sbtn', function () {
-          var t = window.prompt('実際に送ったコメント（記録用。送った文面に直してください）', (p.drafts || [])[0] || '');
+          var t = window.prompt('実際に送ったコメント（記録用。送った文面に直してください）', (p.outreach && p.outreach.final) || (p.drafts || [])[0] || '');
           if (t == null) return;
           R.setPost(p.id, 'commented', t.trim());
           companyLog({ type: 'comment', label: 'コメント（社長が送信）', account: p.handle, url: p.url, text: t.trim(), status: 'sent', by: 'owner' });
           paint();
         }));
         row.appendChild(btn('見送り', 'status-btn', function () { R.setPost(p.id, 'skipped'); paint(); }));
-        if (p.caption) row.appendChild(btn((p.drafts || []).length ? 'コメント案を作り直す' : 'コメント案を作る', 'status-btn', function () { makeDrafts(p.id); }));
+        if (p.caption && !running) row.appendChild(btn(p.outreach && p.outreach.status ? 'コメント案を作り直す' : 'コメント案を作る', 'status-btn', function () { makeDrafts([p.id]); }));
       } else if (p.status === 'commented') r.appendChild(el('p', 'hint', stamp(p.commentedAt) + ' コメント（社長の申告）：' + (p.commentedText || '')));
       r.appendChild(row);
       c.appendChild(r);
@@ -338,14 +488,15 @@
     if (!container || !container.isConnected) return;
     var y = window.scrollY;
     container.innerHTML = '';
+    // 営業・交流活動（第2段階）を先に：他の人の投稿へのコメント候補 → 候補の入れ方 → 探す場所 → 自動で探す → フォロー候補。実績（P0）はそのあと
+    container.appendChild(dashboard());
+    container.appendChild(postsCard());
+    container.appendChild(addCard());
+    container.appendChild(placesCard());
+    container.appendChild(autoCard());
+    container.appendChild(accountsCard());
     // P0：投稿ごとの実績（公式APIか社長の手入力。未取得は推測しない）
     if (window.PerfView) container.appendChild(window.PerfView.panel(paint));
-    container.appendChild(dashboard());
-    container.appendChild(autoCard());
-    container.appendChild(placesCard());
-    container.appendChild(addCard());
-    container.appendChild(accountsCard());
-    container.appendChild(postsCard());
     window.scrollTo(0, y);
   }
   var imported = false;

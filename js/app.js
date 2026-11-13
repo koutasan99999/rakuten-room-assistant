@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-14.1';
+  var APP_VERSION = '2026-11-14.2';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1234,6 +1234,7 @@
       company: { meeting: 1, reply: 1, work: 1 },
       health: { check: 1, rakuten: 0 },
       agents: { buyer: 2, check: 0, audit: 1, revise: 1, spec: 0 },
+      pr: { outreach_draft: 1, outreach_audit: 1, status: 0, sites: 0, recent: 0, hashtag: 0 },
       instagram: 1, intros: 2, 'room-hashtags': 1, ideas: 1, 'seed-ideas': 1, 'release-ideas': 1, 'brand-note': 1, explore: 2, buyer: 2, thief: 1, coord: 1, 'plan-titles': 1, assets: 1
     };
     var t = table[p];
