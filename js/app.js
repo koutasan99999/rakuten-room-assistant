@@ -3,7 +3,7 @@
 
   // 更新の直後、古い画面（index.html）と新しいプログラムが混ざると、ボタンや一覧が出なくなる。
   // 画面の版（meta app-version）とこのファイルの版が違うときは、最新の画面を1回だけ読み直す
-  var APP_VERSION = '2026-11-11.2';
+  var APP_VERSION = '2026-11-13.1';
   var pageVersion = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   if (pageVersion !== APP_VERSION) {
     var triedFor = '';
@@ -1233,6 +1233,7 @@
       pitch: { scout: 2, more: 2, seed: 1, intro: 2, feature: 1, set: 3, replace: 1, alternatives: 2, expand: 2, roomtext: 3, tags: 0, tagsai: 1, verify: 0 },
       company: { meeting: 1, reply: 1, work: 1 },
       health: { check: 1, rakuten: 0 },
+      agents: { buyer: 2, check: 0, audit: 1, revise: 1, spec: 0 },
       instagram: 1, intros: 2, 'room-hashtags': 1, ideas: 1, 'seed-ideas': 1, 'release-ideas': 1, 'brand-note': 1, explore: 2, buyer: 2, thief: 1, coord: 1, 'plan-titles': 1, assets: 1
     };
     var t = table[p];
@@ -1252,7 +1253,27 @@
     setCaps: function (capYen, dayCap) { var s = aiRead(); if (capYen > 0) s.capYen = capYen; if (dayCap > 0) s.dayCap = dayCap; aiWrite(s); },
     // 呼ぶ前の確認：月の予算・1日の回数の上限を超えるなら止める（理由を返す）
     blocked: function (n) { if (!n) return ''; var c = AiUsage.caps(); if (AiUsage.month().yen + n * YEN_PER_CALL > c.capYen) return '今月のAIの予算の上限（推定' + c.capYen + '円）に達したため、AIを使う処理を止めています。「経営報告」の運用コストで上限を変えられます'; if (AiUsage.day().calls + n > c.dayCap) return '今日のAIの呼び出し回数の上限（' + c.dayCap + '回）に達したため止めています（明日また動きます）'; return ''; },
-    record: function (path, body) { var n = aiCalls(path, body); if (!n) return; var s = aiRead(); var d = aiToday(); var x = s.days[d] = s.days[d] || { calls: 0, yen: 0, byType: {} }; var k = String(path).replace(/^.*api\//, '') + (body && body.action ? ':' + body.action : ''); x.calls += n; x.yen += n * YEN_PER_CALL; x.byType[k] = (x.byType[k] || 0) + n; Object.keys(s.days).sort().slice(0, -120).forEach(function (old) { delete s.days[old]; }); aiWrite(s); }
+    record: function (path, body) { var n = aiCalls(path, body); if (!n) return; var s = aiRead(); var d = aiToday(); var x = s.days[d] = s.days[d] || { calls: 0, yen: 0, byType: {} }; var k = String(path).replace(/^.*api\//, '') + (body && body.action ? ':' + body.action : ''); x.calls += n; x.yen += n * YEN_PER_CALL; x.byType[k] = (x.byType[k] || 0) + n; Object.keys(s.days).sort().slice(0, -120).forEach(function (old) { delete s.days[old]; }); aiWrite(s); },
+    // 段階0（2026-11-12）：サーバーが返した実際の使用量（aiUsage）で、呼ぶ前に足した推定を置き換える。失敗した呼び出しも数える
+    reconcile: function (path, body, u) {
+      if (!u || !u.measured) return;
+      var n = aiCalls(path, body); var s = aiRead(); var d = aiToday();
+      var x = s.days[d] = s.days[d] || { calls: 0, yen: 0, byType: {} };
+      x.calls += (Number(u.calls) || 0) - n;
+      x.yen = Math.max(0, x.yen + (Number(u.yen) || 0) - n * YEN_PER_CALL);
+      x.measuredCalls = (x.measuredCalls || 0) + (Number(u.calls) || 0);
+      x.measuredYen = Math.round(((x.measuredYen || 0) + (Number(u.yen) || 0)) * 1000) / 1000;
+      x.failedCalls = (x.failedCalls || 0) + (Number(u.failedCalls) || 0);
+      x.tokens = (x.tokens || 0) + (Number(u.promptTokens) || 0) + (Number(u.completionTokens) || 0);
+      if (u.priceKnown === false) x.priceUnknown = true;
+      var k = String(path).replace(/^.*api\//, '') + (body && body.action ? ':' + body.action : '');
+      // 実行の記録（AIの呼び出し1回ずつ。最新300件）：あとで確認・書き出しできる
+      s.log = (s.log || []).concat((u.runs || []).map(function (r) { return { at: new Date().toISOString(), type: k, role: r.role || '', step: r.step || '', model: r.model, ok: !!r.ok, yen: r.yen, ms: r.ms, promptTokens: r.promptTokens, completionTokens: r.completionTokens, openaiId: r.openaiId || '', error: r.error || '' }; })).slice(-300);
+      aiWrite(s);
+    },
+    log: function () { return (aiRead().log || []).slice(); },
+    // 今月の実測の分（実際の使用量で計算した費用と回数）
+    measured: function (m) { var s = aiRead(); m = m || aiToday().slice(0, 7); var out = { calls: 0, yen: 0, failed: 0, tokens: 0, priceUnknown: false }; Object.keys(s.days).forEach(function (d) { if (d.indexOf(m) === 0) { var x = s.days[d]; out.calls += x.measuredCalls || 0; out.yen += x.measuredYen || 0; out.failed += x.failedCalls || 0; out.tokens += x.tokens || 0; if (x.priceUnknown) out.priceUnknown = true; } }); out.yen = Math.round(out.yen * 10) / 10; return out; }
   };
   window.AiUsage = AiUsage;
 
@@ -1263,7 +1284,10 @@
       if (stop) return Promise.resolve({ status: 429, data: { error: stop, budget: true } });
       AiUsage.record(path, body);
     }
-    return rawPostJson(path, body, retried);
+    return rawPostJson(path, body, retried).then(function (r) {
+      if (r && r.data && r.data.aiUsage) AiUsage.reconcile(path, body, r.data.aiUsage);
+      return r;
+    });
   }
   function rawPostJson(path, body, retried) {
     return fetch(path, {
@@ -5088,7 +5112,10 @@
       if (stop) return Promise.resolve({ status: 429, data: { error: stop, budget: true } });
       AiUsage.record(jp, body);
     }
-    return rawJobCall(type, body, info);
+    return rawJobCall(type, body, info).then(function (r) {
+      if (jp && r && r.data && r.data.aiUsage) AiUsage.reconcile(jp, body, r.data.aiUsage);
+      return r;
+    });
   }
   function rawJobCall(type, body, info) {
     // 「今後非表示」にした商品は、サーバーの検索でも除いてもらう（表示済みの扱い）

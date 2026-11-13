@@ -49,8 +49,10 @@ export function json(status, data) {
   return new Response(typeof data === 'string' ? data : JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-export function aiReply(content) {
-  return json(200, { choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }] });
+// 使用量（usage）と応答IDも、本物のOpenAIの応答と同じ形で付ける（段階0：実測の記録のテスト用）
+let replySeq = 0;
+export function aiReply(content, usage = { prompt_tokens: 1200, completion_tokens: 400, completion_tokens_details: { reasoning_tokens: 150 } }) {
+  return json(200, { id: `chatcmpl-mock-${++replySeq}`, usage, choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }] });
 }
 
 // 1×1の白いPNG（画像生成の偽物の応答に使う）
