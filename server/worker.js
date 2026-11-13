@@ -6,7 +6,7 @@ import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import { maskSecrets } from '../lib/ai.js';
-import { verifyQstash } from '../lib/qstash.js';
+import { verifyQstash, keyInfo } from '../lib/qstash.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
@@ -27,7 +27,10 @@ export default async function handler(req, res, env = process.env) {
       const v = [...new Set(bodies)].map((b) => verifyQstash({ signature: req.headers['upstash-signature'], body: b, keys })).find((x) => x.ok) || verifyQstash({ signature: req.headers['upstash-signature'], body: bodies[0], keys });
       if (!v.ok) {
         // 断った理由を残す（定期実行が動かないときの原因を、手動の実行のログと画面で確かめられるように）
-        if (kv) await kv.setJson('worker:qstash:reject', { at: new Date().toISOString(), why: v.why, keys: keys.filter(Boolean).length, method: req.method, contentType: String(req.headers['content-type'] || '').slice(0, 60) }).catch(() => {});
+        // 鍵の値・署名そのものは残さない（設定の有無・形・本文の長さ・呼び先のパスだけ）
+        let sub = '';
+        try { sub = new URL(JSON.parse(Buffer.from(String(req.headers['upstash-signature']).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).sub).pathname; } catch { sub = '読めない'; }
+        if (kv) await kv.setJson('worker:qstash:reject', { at: new Date().toISOString(), why: v.why, keyInfo: keyInfo(keys), method: req.method, contentType: String(req.headers['content-type'] || '').slice(0, 60), bodyType: typeof req.body, bodyLength: typeof req.body === 'string' ? req.body.length : req.body ? JSON.stringify(req.body).length : 0, subPath: sub.slice(0, 60) }).catch(() => {});
         return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
       }
       trigger = 'qstash';

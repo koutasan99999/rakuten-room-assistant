@@ -274,3 +274,15 @@ test('QStash：URLに ?action=tick が無くても、署名つきなら定期実
   assert.equal(res.statusCode, 200, res.body);
   assert.equal(JSON.parse(res.body).worked.trigger, 'qstash');
 });
+
+test('QStash：環境変数に貼り付けたときの前後の空白・改行・引用符があっても、同じ鍵なら受け付ける。違う鍵・HS256以外は受け付けない。断った記録に鍵の値は残さない', async () => {
+  const { verifyQstash, keyInfo } = await import('../lib/qstash.js');
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: [' sig_cur\n', ''] }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: ['"sig_cur"'] }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: ['sig_cu'] }).ok, false, '鍵の一部だけでは受け付けない');
+  const none = qsig('sig_cur').split('.'); none[0] = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  assert.match(verifyQstash({ signature: none.join('.'), keys: ['sig_cur'] }).why, /HS256/);
+  const info = keyInfo([' sig_cur\n', undefined]);
+  assert.equal(JSON.stringify(info), JSON.stringify([{ set: true, sigPrefix: true, hadExtra: true }, { set: false, sigPrefix: false, hadExtra: false }]));
+  assert.ok(!JSON.stringify(info).includes('sig_cur'), '鍵の値は出さない');
+});

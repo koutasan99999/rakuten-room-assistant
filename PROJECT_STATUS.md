@@ -1,6 +1,6 @@
 # 眼科医くまアプリ 現状一覧（PROJECT_STATUS）
 
-最終確認：2026-11-16（自律運営の制作ライン：合格候補→企画担当AI→投稿セット制作AI→監査AI→制作担当AI→社長の確認待ち。仕事探し。出勤と社長確認待ちの分離。テスト 236件。定期実行を QStash に・断った理由の記録）
+最終確認：2026-11-16（自律運営の制作ライン：合格候補→企画担当AI→投稿セット制作AI→監査AI→制作担当AI→社長の確認待ち。仕事探し。出勤と社長確認待ちの分離。テスト 237件。定期実行を QStash に・断った理由の記録）
 このファイルは「今のコードに何があるか」の正本。作業を始めるときは、このファイルと実際のコードを両方確認する。
 機能を追加・変更・削除したら、同じコミットでこのファイルも直す。
 
@@ -18,7 +18,7 @@
 
 ## 1-2. 自律運営（2026-11-15・本番で動作確認済み：11/13 バイヤーAI・監査AIの仕事がアプリを閉じたまま完了。2026-11-16 制作ラインを追加・本番は未反映）
 - 目的：アプリを閉じていても、AI社員が社内の仕事（承認の要らない仕事）を進める。対外的な行動（投稿・コメント・フォロー・商品の採用）は今までどおり社長の承認と操作。
-- 定期実行（2026-11-16）：QStash（Upstash の無料枠・1日1,000通まで。15分ごとなら1日96通）の定期実行が /api/worker?action=tick を呼ぶ。サーバーは QStash の署名（Upstash-Signature）を、Vercel の環境変数 QSTASH_CURRENT_SIGNING_KEY・QSTASH_NEXT_SIGNING_KEY で確かめる（合言葉を QStash に預けない）。同じ呼び出しの再送（Upstash-Message-Id）は1時間は何もしない。lib/qstash.js。署名つきの呼び出しは ?action=tick が無くても定期実行として扱う。本文はVercelが形を変えることがあるため、ありうる元の形（空・{}・JSON）のどれかで要約値が一致すればよい。断った呼び出しは理由を worker:qstash:reject に残し、手動の実行の応答と画面（自律運営の欄）に出す（2026-11-14 00:00〜01:15 JST、QStash からの起動の記録が0回だったため）。
+- 定期実行（2026-11-16）：QStash（Upstash の無料枠・1日1,000通まで。15分ごとなら1日96通）の定期実行が /api/worker?action=tick を呼ぶ。サーバーは QStash の署名（Upstash-Signature）を、Vercel の環境変数 QSTASH_CURRENT_SIGNING_KEY・QSTASH_NEXT_SIGNING_KEY で確かめる（合言葉を QStash に預けない）。同じ呼び出しの再送（Upstash-Message-Id）は1時間は何もしない。lib/qstash.js。署名つきの呼び出しは ?action=tick が無くても定期実行として扱う。本文はVercelが形を変えることがあるため、ありうる元の形（空・{}・JSON）のどれかで要約値が一致すればよい。鍵は前後の空白・改行・引用符だけを取り除いて使う（貼り付けの誤り対策。鍵そのものは変えない）。署名の方式は HS256 だけ。断った呼び出しは理由と、鍵の値を含まない調査用の情報（鍵の設定の有無・sig_ で始まるか・余計な文字があったか・本文の長さ・呼び先のパス）を worker:qstash:reject に残し、手動の実行の応答と画面（自律運営の欄）に出す（2026-11-14 01:00・01:15 JST、QStash の配信はVercelに届いたが「署名を確かめられません」で401になったため。QStash の Logs で社長が確認）。
   GitHub Actions（.github/workflows/worker.yml）は手動の実行だけ（合言葉 CRON_SECRET・Secrets の WORKER_URL・CRON_SECRET）。GitHub の定期実行（schedule）は、11/13 に設定から約7時間（ずらした時刻での登録し直しを含む）一度も起動しなかったため外した（二重の定期実行をしない）。予備に Vercel Cron（1日1回・vercel.json）。
 - 保存場所：Upstash Redis（Vercel Marketplace の無料枠：256MB・月50万回）。環境変数 KV_REST_API_URL・KV_REST_API_TOKEN（または UPSTASH_REDIS_REST_URL／TOKEN）。無ければ自律運営は「未接続」で何もしない（今までの機能には影響しない）。lib/kv.js。
 - ワーカー（lib/worker.js・server/worker.js）：1回の定期実行で、仕事を1段階だけ進めて保存（60秒以内）。
