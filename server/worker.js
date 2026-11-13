@@ -14,15 +14,22 @@ export default async function handler(req, res, env = process.env) {
   const startedAt = Date.now();
   const url = new URL(req.url || '/', 'http://localhost');
   const body = req.method === 'POST' ? await readBody(req) : {};
-  const action = String(body.action || url.searchParams.get('action') || (req.method === 'GET' ? 'tick' : 'state'));
+  // QStash の呼び出し（署名つき）は、URLに ?action=tick が無くても定期実行として扱う
+  const action = String(body.action || url.searchParams.get('action') || (req.method === 'GET' || req.headers['upstash-signature'] ? 'tick' : 'state'));
   const kv = kvFrom(env);
   if (action === 'tick') {
     // 定期実行の認証：(1) QStash の署名（Upstash-Signature）か、(2) 合言葉（GitHub Actions・Vercel Cron が Authorization: Bearer で送る）
     let trigger = '';
     if (req.headers['upstash-signature']) {
-      const raw = typeof req.body === 'string' ? req.body : req.body && typeof req.body === 'object' && Object.keys(req.body).length ? JSON.stringify(req.body) : '';
-      const v = verifyQstash({ signature: req.headers['upstash-signature'], body: raw, keys: [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY] });
-      if (!v.ok) return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
+      // 本文：Vercel が先に読んで形を変えることがあるため、ありうる元の形（文字列・空・{}・JSON）のどれかで要約値が一致すればよい（署名そのものは偽造できない）
+      const bodies = [typeof req.body === 'string' ? req.body : '', '', '{}', req.body && typeof req.body === 'object' ? JSON.stringify(req.body) : ''];
+      const keys = [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY];
+      const v = [...new Set(bodies)].map((b) => verifyQstash({ signature: req.headers['upstash-signature'], body: b, keys })).find((x) => x.ok) || verifyQstash({ signature: req.headers['upstash-signature'], body: bodies[0], keys });
+      if (!v.ok) {
+        // 断った理由を残す（定期実行が動かないときの原因を、手動の実行のログと画面で確かめられるように）
+        if (kv) await kv.setJson('worker:qstash:reject', { at: new Date().toISOString(), why: v.why, keys: keys.filter(Boolean).length, method: req.method, contentType: String(req.headers['content-type'] || '').slice(0, 60) }).catch(() => {});
+        return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
+      }
       trigger = 'qstash';
     } else if (!env.CRON_SECRET || !same(String(req.headers.authorization || ''), `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
     if (!kv) return send(res, 200, { ok: false, configured: false, notice: '保存場所（Upstash Redis）が未接続のため、自律運営は動きません' });

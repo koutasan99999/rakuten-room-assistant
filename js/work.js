@@ -330,6 +330,7 @@
     if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
     else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);
     if (!sv.snapshotAt) lines.push('アプリの情報がまだサーバーに届いていません');
+    if (sv.qstashReject) lines.push('QStashからの呼び出しを断った最後の記録：' + stamp(sv.qstashReject.at) + '（' + sv.qstashReject.why + '）');
     if (sv.board) lines.push('仕事探し（' + stamp(sv.board.at) + '）：' + (sv.board.items || []).map(function (x) { return (AGENT[x.agent] || x.agent) + '＝' + BOARD[x.status] + '（' + x.reason + '）'; }).join('／'));
     lines.push('投稿セットにまだ使っていない合格候補：' + (sv.backlog || 0) + '件');
     var ul = el('ul', 'co-facts'); lines.forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);

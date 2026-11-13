@@ -247,3 +247,30 @@ test('QStash：署名が正しい定期実行だけ動き、きっかけを qsta
   const st = await state(kv, ENV);
   assert.equal(st.health.lastTrigger, 'qstash');
 });
+
+test('QStash：断った理由を残す（原因を調べられるように）。本文が {} で届いても署名が正しければ受け付ける', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  const env = { ...ENV, __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur', QSTASH_NEXT_SIGNING_KEY: 'next' };
+  const call = async (headers, body) => { const req = { method: 'POST', url: '/api/worker?action=tick', headers: { host: 'x.app', ...headers }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, env); return { status: res.statusCode, data: JSON.parse(res.body) }; };
+  const bad = await call({ 'upstash-signature': qsig('wrong'), 'upstash-message-id': 'x1' });
+  assert.equal(bad.status, 401);
+  assert.match((await kv.getJson('worker:qstash:reject')).why, /一致しない/);
+  const ok = await call({ 'upstash-signature': qsig('cur', { body: '{}' }), 'upstash-message-id': 'x2' }, {});
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(ok.data.worked.trigger, 'qstash');
+  assert.match(ok.data.qstashReject.why, /一致しない/, '応答にも断った最後の記録を付ける');
+});
+
+test('QStash：URLに ?action=tick が無くても、署名つきなら定期実行として動く', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  const env = { ...ENV, APP_PASSCODE: 'pass', __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur' };
+  const req = { method: 'POST', url: '/api/worker', headers: { host: 'x.app', 'upstash-signature': qsig('cur', { sub: 'https://x.app/api/worker' }), 'upstash-message-id': 'y1' } };
+  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+  await worker(req, res, env);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(JSON.parse(res.body).worked.trigger, 'qstash');
+});
