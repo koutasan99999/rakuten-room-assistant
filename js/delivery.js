@@ -124,6 +124,9 @@
     var images = set.noPhoto ? Promise.resolve(set.items.map(function () { return null; })) : Promise.all(set.items.map(function (it) { return K.loadProductImage(it.image); }));
     var bear = window.IgRender.loadImage(K.bearSrc).catch(function () { return null; });
     return Promise.all([images, bear]).then(function (r) {
+      // C0：描いた画像の中で、どの商品の写真か分かるように印を付ける（客観確認で、商品写真の一致を確かめる）
+      r[0].forEach(function (img, i) { if (img) img.__tag = 'item:' + i + ':' + (set.items[i].code || ''); });
+      if (r[1]) r[1].__tag = 'bear';
       var copy = set.copy || {};
       var ci = copy.items || [];
       var style = styleOf(set);
@@ -136,10 +139,18 @@
         items: set.items.map(function (it, i) { var c = ci[i] || {}; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: c.memo || it.feature, price: it.price, role: it.role, brand: it.brand, point: it.feature || c.subline || '' }; })
       };
       var slides = window.IgRender.renderPost(post);
+      // C0：客観的な品質確認（はみ出し・文字の大きさ・コントラスト・商品写真の一致・PR表記・権利）と、版の保存（修正前後の比較用）
+      var check = null;
+      if (window.CreativeCheck) {
+        try {
+          check = window.CreativeCheck.checkPost(slides, set, { missingPhoto: r[0].map(function (x) { return !x; }), bearLoaded: !!r[1] });
+          window.CreativeCheck.saveVersion(set.id, key, slides, check, set.titleEdit || set.title);
+        } catch (e) { check = { error: String(e && e.message || e), slides: [], post: [], ng: 0, warn: 0, ok: false }; }
+      }
       return Promise.all(slides.map(function (s) { return K.canvasToBlob(s.canvas); })).then(function (blobs) {
         var folder = (set.createdAt || '').slice(0, 10) + '_' + set.id;
         var files = slides.map(function (s, i) { return { name: s.fileName, blob: blobs[i] }; });
-        var out = { folder: folder, files: files, urls: blobs.map(function (b) { return URL.createObjectURL(b); }), missing: r[0].filter(function (x) { return !x; }).length };
+        var out = { folder: folder, files: files, urls: blobs.map(function (b) { return URL.createObjectURL(b); }), missing: r[0].filter(function (x) { return !x; }).length, check: check };
         slideCache[key] = out;
         return out;
       });
@@ -537,6 +548,41 @@
     return box;
   }
 
+  // ---- C0：画像の客観的な品質確認（コードで測った事実。AIの評価ではない）と、修正前後の比較 ----
+  function qualityBox(set, out) {
+    var box = el('div', 'add-panel cq-box');
+    var ck = out.check;
+    var post = window.CreativeCheck.postChecks(D.get(set.id) || set);
+    var slideIssues = [];
+    (ck.slides || []).forEach(function (s, i) { s.issues.forEach(function (x) { slideIssues.push({ level: x.level, msg: (i + 1) + '枚目：' + x.msg }); }); });
+    var all = post.concat(slideIssues);
+    var ng = all.filter(function (x) { return x.level === 'ng'; });
+    var warn = all.filter(function (x) { return x.level === 'warn'; });
+    box.appendChild(el('p', 'field-label', '画像の品質確認（コードで測定・AIなし）：' + (ck.error ? '確認できなかった' : ng.length ? '不合格 ' + ng.length + '件' : '合格') + (warn.length ? '・注意 ' + warn.length + '件' : '')));
+    if (ck.error) box.appendChild(el('p', 'hint pitch-warn', '確認の途中でエラー：' + ck.error));
+    ng.concat(warn).slice(0, 12).forEach(function (x) { box.appendChild(el('p', 'hint' + (x.level === 'ng' ? ' pitch-warn' : ''), (x.level === 'ng' ? '不合格 ' : '注意 ') + x.msg)); });
+    if (ng.length + warn.length > 12) box.appendChild(el('p', 'hint', 'ほか ' + (ng.length + warn.length - 12) + '件'));
+    var minSize = (ck.slides || []).map(function (s) { return s.minSize; }).filter(Boolean);
+    box.appendChild(el('p', 'hint', '測ったこと：文字のはみ出しと端の余白（' + window.CreativeCheck.SAFE + 'px）・文字の大きさ（最小 ' + (minSize.length ? Math.min.apply(null, minSize) + 'px' : '不明') + '）・文字と背景の濃さの差・途中で切れた文字・商品写真の一致・PR表記・素材の権利。見た目の良し悪しは、ここでは判断していません。'));
+    var cmp = el('div');
+    box.appendChild(btn('前の版と比べる', 'status-btn', function () {
+      cmp.innerHTML = '';
+      cmp.appendChild(el('p', 'hint', '読み込んでいます…'));
+      window.CreativeCheck.versions(set.id).then(function (list) {
+        cmp.innerHTML = '';
+        if (list.length < 2) { cmp.appendChild(el('p', 'hint', list.length ? 'まだ1つの版しかありません（タイトル・デザイン・商品を変えると、新しい版として残ります）' : '保存された版がありません')); return; }
+        list.slice(0, 4).forEach(function (v, vi) {
+          cmp.appendChild(el('p', 'field-label', (vi === 0 ? '今の版' : '前の版 ' + vi) + '｜' + stamp(v.at) + '｜' + (v.label || '') + '｜不合格 ' + v.ng + '・注意 ' + v.warn));
+          var row = el('div', 'cq-thumbs');
+          v.thumbs.slice(0, 4).forEach(function (t) { var im = el('img'); im.src = t; im.alt = ''; row.appendChild(im); });
+          cmp.appendChild(row);
+        });
+      });
+    }));
+    box.appendChild(cmp);
+    return box;
+  }
+
   // ---- 詳細 ----
   function detail(set) {
     var wrap = el('div');
@@ -624,6 +670,7 @@
       prev.innerHTML = '';
       out.urls.forEach(function (u, i) { var f = el('figure'); var im = el('img'); im.src = u; im.alt = out.files[i].name; f.appendChild(im); f.appendChild(el('figcaption', null, (i + 1) + '. ' + out.files[i].name)); prev.appendChild(f); });
       if (out.missing) prev.appendChild(el('p', 'hint pitch-warn', out.missing + '件の商品画像を読み込めませんでした。'));
+      if (out.check && window.CreativeCheck) c.insertBefore(qualityBox(set, out), dlRow);
       dlRow.appendChild(btn('画像をまとめて保存（写真へ）', 'btn btn-primary', function () { K.saveFiles(out.files); }));
       dlRow.appendChild(btn('ZIPで保存（画像＋キャプション）', 'status-btn', function () {
         Promise.all(out.files.map(function (f) { return f.blob.arrayBuffer(); })).then(function (bufs) {

@@ -12,7 +12,7 @@
 - 静的な画面（index.html・js/・css/）＋ Vercel の1つの関数（api/[route].js が server/*.js に振り分け。Hobby は関数12個まで）。
 - 外部API：楽天市場の商品検索（1秒1回）、OpenAI（lib/ai.js の runWithModels）、Instagram 公式API（lib/ig-graph.js。トークン未設定）。
 - 保存：会社のデータはすべて社長のiPhoneの localStorage（サーバーには保存場所がない）。主なキー：
-  room-pitch（プレゼン・採用）／room-explore（広げる）／room-delivery（投稿セット）／room-texts（ROOM紹介文）／room-company（経営会議・業務）／room-agents（AI社員の試験：バイヤーAI×監査AIの実行記録）／room-ai-usage（AIの利用量と予算。実測の使用量と実行の記録も）／room-pr（Instagram広報部：フォロー候補・コメント候補）。
+  room-pitch（プレゼン・採用）／room-explore（広げる）／room-delivery（投稿セット）／room-texts（ROOM紹介文）／room-company（経営会議・業務）／room-agents（AI社員の試験：バイヤーAI×監査AIの実行記録）／room-ig-perf（投稿ごとの実績：公式APIか手入力。未取得は推測しない）／IndexedDB room-creative（投稿画像の版と客観確認の結果）／room-ai-usage（AIの利用量と予算。実測の使用量と実行の記録も）／room-pr（Instagram広報部：フォロー候補・コメント候補）。
   既存のデータを消す・初期化する変更はしない。キーを変えるときは読み替え（互換）を入れる。
 - 定時実行：vercel.json の cron（Hobby は1日1回）。サーバーに会社のデータがないため、会議や制作は「アプリを開いたとき」に動く。
 

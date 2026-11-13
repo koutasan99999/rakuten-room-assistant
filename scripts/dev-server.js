@@ -11,6 +11,7 @@ import exploreHandler from '../server/explore.js';
 import introsHandler from '../server/intros.js';
 import healthHandler from '../server/health.js';
 import agentsHandler from '../server/agents.js';
+import igHandler from '../server/ig.js';
 import { withUsage } from '../lib/ai-usage.js';
 import instagramHandler from '../server/instagram.js';
 import imageHandler from '../server/image.js';
@@ -295,6 +296,27 @@ if (process.env.MOCK) {
       if (code.startsWith('ag:')) return json(200, { items: AG.filter((x) => x.itemCode === code) });
       if ((q.searchParams.get('keyword') || '').startsWith('キッチン便利')) { await new Promise((r) => setTimeout(r, 300)); return json(200, { items: AG, pageCount: 1 }); }
     }
+    // P0の画面確認用（MOCK_IG=1 のときだけ）：Instagramの公式APIの偽物（1件は追加の指標が使えない＝取れない指標の扱いの確認）
+    if (process.env.MOCK_IG && u.includes('graph.instagram.com')) {
+      const q = new URL(u);
+      const p = q.pathname;
+      if (/\/me$/.test(p)) return json(200, { user_id: '1', username: 'ganka_kuma_', account_type: 'BUSINESS', followers_count: 12, follows_count: 5, media_count: 9 });
+      if (/\/me\/insights$/.test(p)) {
+        if (q.searchParams.get('breakdown') === 'follow_type') return json(200, { data: [{ name: q.searchParams.get('metric'), total_value: { value: 41, breakdowns: [{ dimension_keys: ['follow_type'], results: [{ dimension_values: ['FOLLOWER'], value: 6 }, { dimension_values: ['NON_FOLLOWER'], value: 35 }] }] } }] });
+        return json(200, { data: [{ name: q.searchParams.get('metric'), total_value: { value: 7 } }] });
+      }
+      if (/\/me\/media$/.test(p)) return json(200, { data: [
+        { id: 'm1', caption: '【PR】楽天アフィリエイトを利用しています\nフライパンまわりの便利グッズ5選', media_type: 'CAROUSEL_ALBUM', media_product_type: 'FEED', permalink: 'https://www.instagram.com/p/AAA111/', timestamp: new Date(Date.now() - 80 * 3600000).toISOString(), like_count: 2, comments_count: 0 },
+        { id: 'm2', caption: '加湿器の掃除がおっくうな人へ', media_type: 'VIDEO', media_product_type: 'REELS', permalink: 'https://www.instagram.com/reel/BBB222/', timestamp: new Date(Date.now() - 20 * 3600000).toISOString(), like_count: 5, comments_count: 1 }
+      ] });
+      const mm = p.match(/\/(m\d)\/insights$/);
+      if (mm) {
+        const metric = q.searchParams.get('metric');
+        if (/follows/.test(metric)) return mm[1] === 'm2' ? json(400, { error: { message: '(#100) metric[0] must be one of the following values: ...' } }) : json(200, { data: [{ name: 'follows', values: [{ value: 1 }] }, { name: 'profile_visits', values: [{ value: 3 }] }, { name: 'total_interactions', values: [{ value: 4 }] }] });
+        const v = mm[1] === 'm1' ? { views: 6, reach: 5, saved: 1, shares: 0, likes: 2, comments: 0 } : { views: 48, reach: 40, saved: 3, shares: 2, likes: 5, comments: 1 };
+        return json(200, { data: Object.keys(v).map((k) => ({ name: k, values: [{ value: v[k] }] })) });
+      }
+    }
     if (u.includes('api.openai.com/v1/chat')) {
       const b = JSON.parse(opts.body);
       const sys = b.messages[0].content;
@@ -322,7 +344,7 @@ if (process.env.MOCK) {
     }
     return prevFetch(url, opts);
   };
-  env = { RAKUTEN_APP_ID: 'mock', OPENAI_API_KEY: 'mock', ...(process.env.APP_PASSCODE ? { APP_PASSCODE: process.env.APP_PASSCODE } : {}) };
+  env = { RAKUTEN_APP_ID: 'mock', OPENAI_API_KEY: 'mock', ...(process.env.APP_PASSCODE ? { APP_PASSCODE: process.env.APP_PASSCODE } : {}), ...(process.env.MOCK_IG ? { IG_ACCESS_TOKEN: 'mock' } : {}) };
 }
 
 http.createServer((req, res) => withUsage(async () => {
@@ -354,6 +376,7 @@ http.createServer((req, res) => withUsage(async () => {
   if (url.pathname === '/api/company') return companyHandler(req, res, env);
   if (url.pathname === '/api/thief') return thiefHandler(req, res, env);
   if (url.pathname === '/api/pr') return prHandler(req, res, env);
+  if (url.pathname === '/api/ig') return igHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {

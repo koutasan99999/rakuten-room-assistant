@@ -138,7 +138,7 @@
     var scale = Math.min(1, maxSide / Math.max(img.width, img.height));
     var w = Math.max(1, Math.round(img.width * scale));
     var h = Math.max(1, Math.round(img.height * scale));
-    var c = document.createElement('canvas');
+    var c = tagged(document.createElement('canvas'), img);
     c.width = w; c.height = h;
     var x = c.getContext('2d');
     x.drawImage(img, 0, 0, w, h);
@@ -174,7 +174,7 @@
     var out = document.createElement('canvas');
     out.width = cw; out.height = ch;
     out.getContext('2d').drawImage(c, minX, minY, cw, ch, 0, 0, cw, ch);
-    return cutoutWhite(out);
+    return cutoutWhite(tagged(out, img));
   }
 
   // ---- 白い背景を透明にする（周りから続いている白だけを抜く。白い商品を消しすぎたら抜かない） ----
@@ -576,11 +576,38 @@
     '今回のまとめは\nプロフィールの\nROOMに載せています'
   ];
 
+  // C0（2026-11-13）：画像の客観的な品質確認のために、描いた文字と画像を記録する（描く結果は変えない）
+  // canvas.__ops に { t:'text', text, x, y, size, weight, align, baseline, fill, width } と { t:'img', tag, x, y, w, h } を残す
+  function probe(canvas, ctx) {
+    if (ctx.__probed) return ctx;
+    ctx.__probed = true;
+    canvas.__ops = canvas.__ops || [];
+    var fillText = ctx.fillText, drawImage = ctx.drawImage;
+    ctx.fillText = function (text, x, y, maxWidth) {
+      try {
+        var m = String(ctx.font).match(/(\d+)\s*px/);
+        var w = String(ctx.font).match(/^(\d{3})\s/);
+        canvas.__ops.push({ t: 'text', text: String(text), x: x, y: y, size: m ? Number(m[1]) : 0, weight: w ? Number(w[1]) : 400, align: ctx.textAlign, baseline: ctx.textBaseline, fill: typeof ctx.fillStyle === 'string' ? ctx.fillStyle : '', width: ctx.measureText(String(text)).width });
+      } catch (e) {}
+      return fillText.apply(ctx, arguments);
+    };
+    ctx.drawImage = function (img) {
+      try {
+        var a = arguments;
+        var box = a.length >= 9 ? [a[5], a[6], a[7], a[8]] : a.length >= 5 ? [a[1], a[2], a[3], a[4]] : [a[1], a[2], img.width, img.height];
+        canvas.__ops.push({ t: 'img', tag: (img && img.__tag) || '', x: box[0], y: box[1], w: box[2], h: box[3] });
+      } catch (e) {}
+      return drawImage.apply(ctx, arguments);
+    };
+    return ctx;
+  }
+  function tagged(src, from) { if (src && from && from.__tag) src.__tag = from.__tag; return src; }
+
   function render(templateName, data) {
     var canvas = document.createElement('canvas');
     canvas.width = SIZE.width;
     canvas.height = SIZE.height;
-    var ctx = canvas.getContext('2d');
+    var ctx = probe(canvas, canvas.getContext('2d'));
     ctx.textBaseline = 'alphabetic';
     TEMPLATES[templateName](ctx, data);
     return canvas;

@@ -998,3 +998,7 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 .xp-choose { display: grid; gap: 6px; margin: 6px 0; padding: 8px; background: #fafaf7; border-radius: 10px; }
 .xp-target { text-align: left; min-height: 40px; font-size: 12px; white-space: normal; }
 .xp-target:disabled { opacity: 0.5; }
+
+/* C0：画像の品質確認と、修正前後の比較 */
+.cq-thumbs { display: flex; gap: 6px; overflow-x: auto; margin: 4px 0 10px; }
+.cq-thumbs img { width: 72px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid #e3ddd6; flex: 0 0 auto; }
