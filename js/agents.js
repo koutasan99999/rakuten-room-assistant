@@ -205,6 +205,8 @@
       card.appendChild(det);
     }
     card.appendChild(versionBlock(last, c.versions.length > 1 ? '修正後 v' + last.v : '提出物 v1'));
+    // 自律運営：合格した候補は、社長の確認なしで制作ライン（企画→制作→監査）へ渡る。採用（正式採用）は社長が決める
+    if (c.usedIn) card.appendChild(el('p', 'hint', '制作ラインへ引き継ぎ済み：投稿セット' + (c.usedIn.result === 'pass' ? '（監査に合格・社長の確認待ち）' : c.usedIn.result === 'failed' ? '（失敗）' : '（監査で保留：' + (c.usedIn.why || '') + '）') + '・' + stamp(c.usedIn.at)));
     if (c.owner) card.appendChild(el('p', 'hint', '社長の判断：' + (c.owner.decision === 'adopt' ? '採用（' : '見送り（') + stamp(c.owner.at) + '）'));
     else if (c.status === 'pass' && x.status === 'done') {
       var row = el('div', 'pitch-row');

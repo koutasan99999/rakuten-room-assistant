@@ -380,9 +380,12 @@
     body.innerHTML = '';
     // 会社のトップ（最初の画面）から、社員の出勤状況・業務日報へ（経営報告のいちばん上）
     if (window.WorkView) {
-      var ws = window.WorkView.staff().map(function (x) { return window.WorkView.stateOf(x).key; });
+      var staffAll = window.WorkView.staff();
+      var ws = staffAll.map(function (x) { return window.WorkView.stateOf(x).key; });
       var cnt = function (k) { return ws.filter(function (x) { return x === k; }).length; };
-      var wl = btn('社員の出勤状況：仕事中 ' + cnt('working') + '人・承認待ち ' + cnt('approval') + '人・エラー ' + cnt('error') + '人' + (cnt('unknown') ? '・状態未確認 ' + cnt('unknown') + '人' : '') + ' ›', 'link-btn wk-top-link', function () { location.hash = '#company'; setTimeout(function () { var t = document.getElementById('staff-attendance'); if (t) t.scrollIntoView(); }, 400); });
+      // 出勤（今日AIを呼び出して仕事をした社員）と、社長確認待ち（過去の成果物）は分けて書く
+      var pendN = window.WorkView.pendingList ? window.WorkView.pendingList().reduce(function (a, x) { return a + x.n; }, 0) : 0;
+      var wl = btn('社員の出勤状況：今日の出勤 ' + staffAll.filter(window.WorkView.workedToday).length + '人・エラー ' + cnt('error') + '人' + (cnt('unknown') ? '・状態未確認 ' + cnt('unknown') + '人' : '') + '｜社長確認待ち ' + pendN + '件' + (cnt('unknown') ? '・状態未確認 ' + cnt('unknown') + '人' : '') + ' ›', 'link-btn wk-top-link', function () { location.hash = '#company'; setTimeout(function () { var t = document.getElementById('staff-attendance'); if (t) t.scrollIntoView(); }, 400); });
       body.appendChild(wl);
     }
     var counts = { adopt: S.list('adopt').length, hold: S.list('hold').length, reject: S.list('reject').length };

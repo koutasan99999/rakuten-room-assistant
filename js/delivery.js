@@ -42,10 +42,10 @@
   // 掲載商品が、社長の採用か、AIの新規提案か（前の版で作ったセットは、採用リストの商品番号で判断する）
   function isAdopted(it) {
     if (it.source === 'adopted' || it.source === 'base') return true;
-    if (it.source === 'ai') return false;
+    if (it.source === 'ai' || it.source === 'buyer') return false;
     return adoptedAll().some(function (p) { return it.code && codeOf(p) === it.code; });
   }
-  function sourceChip(it) { if (it.source === 'base') return el('span', 'tag src-adopted', '起点の商品'); return isAdopted(it) ? el('span', 'tag src-adopted', '社長が採用') : el('span', 'tag src-ai', 'AIの新規提案'); }
+  function sourceChip(it) { if (it.source === 'buyer') return el('span', 'tag src-ai', 'バイヤーAIの候補（監査AIが合格）'); if (it.source === 'base') return el('span', 'tag src-adopted', '起点の商品'); return isAdopted(it) ? el('span', 'tag src-adopted', '社長が採用') : el('span', 'tag src-ai', 'AIの新規提案'); }
 
   // 楽天ROOMに全部登録するまでは「紹介したものは楽天ROOMにまとめています」と書かない（事実と違うため）
   function captionOf(set) {
@@ -259,7 +259,9 @@
     });
     c.appendChild(strip);
     var nAd = set.items.filter(isAdopted).length;
-    c.appendChild(el('p', 'hint', set.items.length + '商品（社長が採用 ' + nAd + '・AIの新規提案 ' + (set.items.length - nAd) + '）｜' + stamp(set.createdAt) + ' 作成'));
+    var nBy = set.items.filter(function (it) { return it.source === 'buyer'; }).length;
+    c.appendChild(el('p', 'hint', set.items.length + '商品（社長が採用 ' + nAd + (nBy ? '・バイヤーAIの合格候補 ' + nBy : '') + '・AIの新規提案 ' + (set.items.length - nAd - nBy) + '）｜' + stamp(set.createdAt) + ' 作成'));
+    if (set.auto) c.appendChild(el('p', 'hint', '自律運営で作成（企画担当AI→投稿セット制作AI→監査AI' + (set.auto.revisions ? '→制作担当AIが' + set.auto.revisions + '回修正' : '') + '）｜監査 ' + set.auto.score + '点・合格。採用・公開は社長が決めます'));
     c.addEventListener('click', function () { openId = set.id; paint(); window.scrollTo(0, 0); });
     return c;
   }
@@ -607,7 +609,8 @@
     var b = el('div', 'card');
     b.appendChild(el('p', 'field-label', '掲載する商品（' + set.items.length + '点）'));
     var nAd = set.items.filter(isAdopted).length;
-    b.appendChild(el('p', 'hint', '社長が採用した商品 ' + nAd + '点・AIの新規提案 ' + (set.items.length - nAd) + '点' + (set.adoptedMissing && set.adoptedMissing.length ? '｜楽天で見つからず外した採用商品：' + set.adoptedMissing.map(cleanName).join('、') : '')));
+    var nBy = set.items.filter(function (it) { return it.source === 'buyer'; }).length;
+    b.appendChild(el('p', 'hint', '社長が採用した商品 ' + nAd + '点' + (nBy ? '・バイヤーAIの合格候補 ' + nBy + '点' : '') + '・AIの新規提案 ' + (set.items.length - nAd - nBy) + '点' + (set.adoptedMissing && set.adoptedMissing.length ? '｜楽天で見つからず外した採用商品：' + set.adoptedMissing.map(cleanName).join('、') : '')));
     var missingBase = baseMissing(set);
     if (missingBase && targetSets().some(function (x) { return x.id === set.id; })) {
       var mb = el('div', 'add-panel');

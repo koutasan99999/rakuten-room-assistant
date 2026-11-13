@@ -59,6 +59,17 @@
       window.DeliveryStore.all().forEach(function (x) { (x.items || []).forEach(function (it) { if (it.code) codes.push(it.code); }); });
       return { codes: codes.slice(0, 600), names: [] };
     },
+    // 自律運営の制作ライン（企画→制作→監査→修正）の記録。投稿セットとは別に残す（保留・失敗の理由も日報に出すため）
+    saveAuto: function (rec) {
+      var s = read();
+      s.auto = (Array.isArray(s.auto) ? s.auto : []).filter(function (x) { return x.id !== rec.id; });
+      s.auto.unshift(rec);
+      s.auto = s.auto.slice(0, 30);
+      write(s);
+      return rec;
+    },
+    autoRuns: function () { var a = read().auto; return Array.isArray(a) ? a : []; },
+    autoGet: function (id) { return window.DeliveryStore.autoRuns().filter(function (x) { return x.id === id; })[0] || null; },
     pendingCount: function () { return window.DeliveryStore.all().filter(function (x) { return x.status === 'new' && !x.supersededBy; }).length; }
   };
 })();
