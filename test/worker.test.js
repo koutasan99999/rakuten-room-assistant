@@ -207,3 +207,43 @@ test('制作担当AI：商品カードの文字も直せる。直した場所を
   assert.equal(fixCheck([{ target: 'card:1', text: 'x' }, { target: 'room:1', text: 'y' }], r.changed).map((f) => f.changed).join(','), 'true,false');
   assert.ok(codeCheck(set).checks.find((k) => k.key === 'pr').ok, 'PR表記はキャプション全文で確認する');
 });
+
+// QStash の署名（JWT・HS256）をテスト用に作る
+import crypto from 'node:crypto';
+const b64u = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+function qsig(key, { sub = 'https://x.app/api/worker?action=tick', body = '', iss = 'Upstash', exp = Math.floor(Date.now() / 1000) + 300 } = {}) {
+  const h = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const p = b64u(JSON.stringify({ iss, sub, exp, nbf: Math.floor(Date.now() / 1000) - 1, iat: Math.floor(Date.now() / 1000), jti: 'j', body: crypto.createHash('sha256').update(body).digest('base64') }));
+  return `${h}.${p}.${b64u(crypto.createHmac('sha256', key).update(`${h}.${p}`).digest())}`;
+}
+
+test('QStash：署名を確かめる（今の鍵・次の鍵）。鍵違い・期限切れ・発行者違い・本文違い・呼び先違いは受け付けない', async () => {
+  const { verifyQstash } = await import('../lib/qstash.js');
+  const keys = ['cur', 'next'];
+  assert.equal(verifyQstash({ signature: qsig('cur'), keys }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('next'), keys }).ok, true, '鍵の入れ替え中も受け付ける');
+  assert.match(verifyQstash({ signature: qsig('bad'), keys }).why, /一致しない/);
+  assert.match(verifyQstash({ signature: qsig('cur', { exp: 1 }), keys }).why, /期限/);
+  assert.match(verifyQstash({ signature: qsig('cur', { iss: 'x' }), keys }).why, /発行者/);
+  assert.match(verifyQstash({ signature: qsig('cur', { body: '{"a":1}' }), keys }).why, /本文/);
+  assert.match(verifyQstash({ signature: qsig('cur', { sub: 'https://x.app/api/pitch' }), keys }).why, /URL/);
+  assert.match(verifyQstash({ signature: qsig('cur'), keys: [] }).why, /未設定/);
+});
+
+test('QStash：署名が正しい定期実行だけ動き、きっかけを qstash と記録する。同じ呼び出しの再送は何もしない', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  const env = { ...ENV, __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur', QSTASH_NEXT_SIGNING_KEY: 'next' };
+  const call = async (headers) => { const req = { method: 'POST', url: '/api/worker?action=tick', headers: { host: 'x.app', ...headers } }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, env); return { status: res.statusCode, data: JSON.parse(res.body) }; };
+  assert.equal((await call({ 'upstash-signature': qsig('bad'), 'upstash-message-id': 'm0' })).status, 401);
+  assert.equal(mock.calls.openai.length, 0, '署名が違えばAIを呼ばない');
+  const r = await call({ 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm1' });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.worked.trigger, 'qstash');
+  assert.ok(r.data.triggers.qstash, 'きっかけ別の最後の実行時刻を返す（手動の実行の記録からも確かめられる）');
+  const again = await call({ 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm1' });
+  assert.match(again.data.skipped, /再送/);
+  const st = await state(kv, ENV);
+  assert.equal(st.health.lastTrigger, 'qstash');
+});

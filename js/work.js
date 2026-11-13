@@ -301,7 +301,7 @@
   var AGENT = { buyer: 'バイヤーAI', outreach: '営業・交流担当AI', production: '制作ライン' };
   var ROLE_NAME = { planner: '企画担当AI', producer: '投稿セット制作AI', auditor: '監査AI', editor: '制作担当AI' };
   var BOARD = { work: '仕事あり', wait: '待ち', none: '仕事なし' };
-  var TRIG = { schedule: 'GitHubの定期実行（15分ごと）', workflow_dispatch: '手動', 'vercel-cron': 'Vercelの予備（1日1回）', unknown: '不明' };
+  var TRIG = { qstash: 'QStashの定期実行（15分ごと）', schedule: 'GitHubの定期実行（15分ごと）', workflow_dispatch: '手動', 'vercel-cron': 'Vercelの予備（1日1回）', unknown: '不明' };
   var KIND = { nodata: 'データ不足', waiting: '処理待ち', budget: '予算不足', quota: '今日の上限', backlog: '確認待ちが多い', nokey: 'API未設定', error: 'エラー', paused: '停止中' };
   function boardOf(key) {
     var sv = window.ServerSync && window.ServerSync.status();
@@ -321,7 +321,7 @@
     box.appendChild(el('p', 'field-label', '自律運営（アプリを閉じていても、定期実行で仕事を進めます）'));
     var lines = [
       '最後の実行：' + (h.lastTickAt ? stamp(h.lastTickAt) : 'まだ') + (h.lastTrigger ? '（' + (TRIG[h.lastTrigger] || h.lastTrigger) + '）' : ''),
-      'きっかけ別の最後の実行：' + ['schedule', 'workflow_dispatch', 'vercel-cron'].map(function (k) { return TRIG[k] + ' ' + (h.triggers && h.triggers[k] ? stamp(h.triggers[k]) : 'まだ記録なし'); }).join('／'),
+      'きっかけ別の最後の実行：' + ['qstash', 'schedule', 'workflow_dispatch', 'vercel-cron'].map(function (k) { return TRIG[k] + ' ' + (h.triggers && h.triggers[k] ? stamp(h.triggers[k]) : 'まだ記録なし'); }).join('／'),
       '今の仕事：' + (sv.job ? (AGENT[sv.job.type] || sv.job.type) + (sv.job.role ? '（' + ROLE_NAME[sv.job.role] + '）' : '') + '・段階「' + sv.job.step + '」（' + stamp(sv.job.startedAt) + ' 開始' + (sv.job.attempts ? '・やり直し' + sv.job.attempts + '回目' : '') + '）' : 'なし'),
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
