@@ -330,6 +330,7 @@
     if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
     else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);
     if (!sv.snapshotAt) lines.push('アプリの情報がまだサーバーに届いていません');
+    if (sv.qstashReject) { var qr = sv.qstashReject; lines.push('QStashからの呼び出しを断った最後の記録：' + stamp(qr.at) + '（' + qr.why + '）' + (qr.keyInfo ? '｜鍵：' + qr.keyInfo.map(function (k, i) { return (i ? '次の鍵' : '今の鍵') + (k.set ? '設定あり' + (k.sigPrefix ? '' : '・sig_で始まらない') + (k.hadExtra ? '・前後に余計な文字' : '') : '未設定'); }).join('／') : '') + (qr.subPath ? '｜呼び先 ' + qr.subPath : '') + '｜本文 ' + (qr.bodyLength || 0) + '字'); }
     if (sv.board) lines.push('仕事探し（' + stamp(sv.board.at) + '）：' + (sv.board.items || []).map(function (x) { return (AGENT[x.agent] || x.agent) + '＝' + BOARD[x.status] + '（' + x.reason + '）'; }).join('／'));
     lines.push('投稿セットにまだ使っていない合格候補：' + (sv.backlog || 0) + '件');
     var ul = el('ul', 'co-facts'); lines.forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);

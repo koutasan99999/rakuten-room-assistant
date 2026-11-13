@@ -6,23 +6,35 @@ import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import { maskSecrets } from '../lib/ai.js';
-import { verifyQstash } from '../lib/qstash.js';
+import { verifyQstash, keyInfo, readRawBody } from '../lib/qstash.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
 export default async function handler(req, res, env = process.env) {
   const startedAt = Date.now();
   const url = new URL(req.url || '/', 'http://localhost');
-  const body = req.method === 'POST' ? await readBody(req) : {};
-  const action = String(body.action || url.searchParams.get('action') || (req.method === 'GET' ? 'tick' : 'state'));
+  // QStash の呼び出し（署名つき）は、req.body に触れる前に生の本文を読む（署名の検証に、加工されていない本文が必要）
+  const signed = !!req.headers['upstash-signature'];
+  const rawBody = signed ? await readRawBody(req) : null;
+  const body = signed ? {} : req.method === 'POST' ? await readBody(req) : {};
+  // QStash の呼び出し（署名つき）は、URLに ?action=tick が無くても定期実行として扱う
+  const action = String(body.action || url.searchParams.get('action') || (req.method === 'GET' || req.headers['upstash-signature'] ? 'tick' : 'state'));
   const kv = kvFrom(env);
   if (action === 'tick') {
     // 定期実行の認証：(1) QStash の署名（Upstash-Signature）か、(2) 合言葉（GitHub Actions・Vercel Cron が Authorization: Bearer で送る）
     let trigger = '';
     if (req.headers['upstash-signature']) {
-      const raw = typeof req.body === 'string' ? req.body : req.body && typeof req.body === 'object' && Object.keys(req.body).length ? JSON.stringify(req.body) : '';
-      const v = verifyQstash({ signature: req.headers['upstash-signature'], body: raw, keys: [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY] });
-      if (!v.ok) return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
+      // 生の本文そのもので厳密に確かめる（本文を作り直したり、候補を試したりしない）
+      const keys = [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY];
+      const v = verifyQstash({ signature: req.headers['upstash-signature'], body: rawBody, keys });
+      if (!v.ok) {
+        // 断った理由を残す（定期実行が動かないときの原因を、手動の実行のログと画面で確かめられるように）
+        // 鍵の値・署名そのものは残さない（設定の有無・形・本文の長さ・呼び先のパスだけ）
+        let sub = '';
+        try { sub = new URL(JSON.parse(Buffer.from(String(req.headers['upstash-signature']).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).sub).pathname; } catch { sub = '読めない'; }
+        if (kv) await kv.setJson('worker:qstash:reject', { at: new Date().toISOString(), why: v.why, keyInfo: keyInfo(keys), method: req.method, contentType: String(req.headers['content-type'] || '').slice(0, 60), rawBodyRead: Buffer.isBuffer(rawBody), bodyLength: Buffer.isBuffer(rawBody) ? rawBody.length : null, subPath: sub.slice(0, 60) }).catch(() => {});
+        return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` });
+      }
       trigger = 'qstash';
     } else if (!env.CRON_SECRET || !same(String(req.headers.authorization || ''), `Bearer ${env.CRON_SECRET}`)) return send(res, 401, { error: '定期実行の合言葉が違います' });
     if (!kv) return send(res, 200, { ok: false, configured: false, notice: '保存場所（Upstash Redis）が未接続のため、自律運営は動きません' });
