@@ -16,7 +16,7 @@
   → アプリを開いていない間は、制作・会議などは動かない。別のスマホやパソコンからはデータが見えない。
 - 定時実行：1日1回 /api/ig（data/post-queue.json の予定投稿を公式APIで投稿。鍵が無ければ何もしない。今の予定は CHARMY 1件で「保留」）。
 
-## 1-2. 自律運営（2026-11-15・【未接続】保存場所と定期実行の設定待ち）
+## 1-2. 自律運営（2026-11-15・設定済み：Upstash Redis・GitHub Secrets・CRON_SECRET。本番での動作は確認中）
 - 目的：アプリを閉じていても、AI社員が社内の仕事（承認の要らない仕事）を進める。対外的な行動（投稿・コメント・フォロー・商品の採用）は今までどおり社長の承認と操作。
 - 定期実行：GitHub Actions（.github/workflows/worker.yml・15分ごと・公開リポジトリなので無料）が /api/worker を呼ぶ。予備に Vercel Cron（1日1回・vercel.json）。どちらも CRON_SECRET が必要。GitHub側の Secrets：WORKER_URL・CRON_SECRET（無ければ何もしない）。
 - 保存場所：Upstash Redis（Vercel Marketplace の無料枠：256MB・月50万回）。環境変数 KV_REST_API_URL・KV_REST_API_TOKEN（または UPSTASH_REDIS_REST_URL／TOKEN）。無ければ自律運営は「未接続」で何もしない（今までの機能には影響しない）。lib/kv.js。
