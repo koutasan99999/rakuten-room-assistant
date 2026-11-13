@@ -150,6 +150,9 @@
     var job = (s.jobTypes || []).map(function (t) { return liveJobs[t]; }).filter(Boolean)[0];
     var pending = items.reduce(function (a, x) { return a + (x.pending || 0); }, 0) + (s.extraPending || 0);
     if (items.some(function (x) { return x.state === 'running'; }) || job) return { key: 'working', label: '仕事中', pending: pending, job: job };
+    // 自律運営（サーバー）：仕事の途中（定期実行のたびに1段階ずつ進む。今この瞬間に動いているとは限らないので「仕事中」とは書かない）
+    var sv = window.ServerSync && window.ServerSync.status();
+    if (sv && sv.configured && sv.job && sv.job.type === s.key) return { key: 'inprogress', label: '途中（定期実行で続き）', pending: pending, server: sv.job };
     if (last && last.state === 'unknown') return { key: 'unknown', label: '状態未確認', pending: pending };
     if (last && last.state === 'failed' && Date.now() - new Date(last.end || last.start).getTime() < DAY) return { key: 'error', label: 'エラー', pending: pending };
     if (pending) return { key: 'approval', label: '承認待ち ' + pending + '件', pending: pending };
@@ -213,6 +216,38 @@
     return box;
   }
 
+  // 自律運営（アプリを閉じていても、定期実行でサーバーが仕事を進める）の状態。サーバーから受け取った事実だけ
+  var AGENT = { buyer: 'バイヤーAI', outreach: '営業・交流担当AI' };
+  function autonomyBox() {
+    var box = el('div', 'wk-auto');
+    var sv = window.ServerSync && window.ServerSync.status();
+    if (!sv) { box.appendChild(el('p', 'hint', '自律運営：サーバーの状態を確認しています…')); return box; }
+    if (!sv.configured) { box.appendChild(el('p', 'hint', '自律運営：未接続（' + (sv.error || 'サーバーの保存場所が未設定') + '）。今は、アプリを開いたときに社長が押した仕事だけが動きます。')); return box; }
+    var h = sv.health || {};
+    var b = sv.budget || { spent: {}, limits: {} };
+    box.appendChild(el('p', 'field-label', '自律運営（アプリを閉じていても、定期実行で仕事を進めます）'));
+    var lines = [
+      '最後の定期実行：' + (h.lastTickAt ? stamp(h.lastTickAt) : 'まだ'),
+      '今の仕事：' + (sv.job ? (AGENT[sv.job.type] || sv.job.type) + '・段階「' + sv.job.step + '」（' + stamp(sv.job.startedAt) + ' 開始' + (sv.job.attempts ? '・やり直し' + sv.job.attempts + '回目' : '') + '）' : 'なし'),
+      '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
+      '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
+    ];
+    if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
+    else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);
+    if (!sv.snapshotAt) lines.push('アプリの情報がまだサーバーに届いていません');
+    var ul = el('ul', 'co-facts'); lines.forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);
+    if ((sv.log || []).length) {
+      var det = el('details');
+      det.appendChild(el('summary', null, '定期実行の記録（最近 ' + Math.min(10, sv.log.length) + '件）'));
+      sv.log.slice(0, 10).forEach(function (x) { det.appendChild(el('p', 'hint' + (x.ok ? '' : ' pitch-warn'), stamp(x.at) + '｜' + (AGENT[x.agent] || x.agent) + '｜段階「' + x.step + '」｜' + (x.ok ? '成功' : '失敗：' + x.error) + (x.final ? '｜仕事を' + (x.final === 'done' ? '完了' : '打ち切り') : '') + '｜AI ' + x.calls + '回・' + yen(x.yen) + (x.openaiIds && x.openaiIds.length ? '｜応答ID ' + x.openaiIds.join('・') : ''))); });
+      box.appendChild(det);
+    }
+    if (sv.merged && (sv.merged.buyer || sv.merged.outreach)) box.appendChild(el('p', 'hint', '今回受け取った成果物：商品の候補 ' + sv.merged.buyer + '件・コメント案 ' + sv.merged.outreach + '件'));
+    return box;
+  }
+
+  if (window.ServerSync) window.ServerSync.on(function () { repaint(); });
+
   function panel(rp) {
     repaint = rp || repaint;
     refreshJobs();
@@ -223,10 +258,11 @@
     if (window.Backup) head.appendChild(btn('データのバックアップを保存', 'btn btn-secondary wk-backup', function () { window.Backup.save().then(function (r) { K.showToast(r === 'shared' ? 'バックアップを保存しました' : 'バックアップのファイルを書き出しました'); }, function () { K.showToast('保存できませんでした'); }); }));
     wrap.appendChild(head);
     wrap.appendChild(el('p', 'hint', '実際に動いた記録（AIの呼び出し・処理・成果物）だけを表示します。動いていない社員は「今は仕事していません」です。途中で通信が切れた等で完了を確かめられない仕事は「状態未確認」とし、成功にはしません。社員を押すと、業務日報と成果物を見られます。'));
+    wrap.appendChild(autonomyBox());
     var all = staff();
-    var counts = { working: 0, approval: 0, error: 0, unknown: 0, off: 0 };
+    var counts = { working: 0, inprogress: 0, approval: 0, error: 0, unknown: 0, off: 0 };
     var rows = all.map(function (s) { var st = stateOf(s); counts[st.key]++; return { s: s, st: st }; });
-    wrap.appendChild(el('p', 'hint wk-summary', '仕事中 ' + counts.working + '人｜承認待ち ' + counts.approval + '人｜エラー ' + counts.error + '人' + (counts.unknown ? '｜状態未確認 ' + counts.unknown + '人' : '') + '｜今は仕事していません ' + counts.off + '人'));
+    wrap.appendChild(el('p', 'hint wk-summary', '仕事中 ' + counts.working + '人' + (counts.inprogress ? '｜途中 ' + counts.inprogress + '人' : '') + '｜承認待ち ' + counts.approval + '人｜エラー ' + counts.error + '人' + (counts.unknown ? '｜状態未確認 ' + counts.unknown + '人' : '') + '｜今は仕事していません ' + counts.off + '人'));
     rows.forEach(function (x) {
       var s = x.s, st = x.st;
       var row = el('div', 'wk-row wk-' + st.key);

@@ -2,7 +2,9 @@
 // 機能が増えて12個を超え、デプロイが失敗していた（2026-10-29 の #39 以降）。そのため、機能ごとのAPI（server/*.js）を
 // この1つの関数から呼び分ける。URLは今までどおり /api/○○（[route] の部分が ○○）。新しいAPIは server/ に置いて、下の一覧に足す。
 
-import { withUsage } from '../lib/ai-usage.js';
+import { withUsage, setBlocked, allCalls } from '../lib/ai-usage.js';
+import { kvFrom } from '../lib/kv.js';
+import { check as budgetCheck, record as budgetRecord } from '../lib/budget.js';
 import agents from '../server/agents.js';
 import assets from '../server/assets.js';
 import brandNote from '../server/brand-note.js';
@@ -31,6 +33,7 @@ import search from '../server/search.js';
 import seedIdeas from '../server/seed-ideas.js';
 import thief from '../server/thief.js';
 import trends from '../server/trends.js';
+import worker from '../server/worker.js';
 
 export const ROUTES = {
   'agents': agents,
@@ -60,7 +63,8 @@ export const ROUTES = {
   'search': search,
   'seed-ideas': seedIdeas,
   'thief': thief,
-  'trends': trends
+  'trends': trends,
+  'worker': worker
 };
 
 export default async function handler(req, res) {
@@ -72,5 +76,24 @@ export default async function handler(req, res) {
     return res.end(JSON.stringify({ error: 'このAPIはありません' }));
   }
   // このリクエストで呼んだAIの使用量をまとめる（応答に aiUsage として付く）
-  return withUsage(() => route(req, res));
+  // 保存場所があるときは、サーバー側で月の上限を確かめ（超えていればAIを呼ばない）、使った費用（実測）を記録する
+  return withUsage(async () => {
+    const env = process.env;
+    let kv = null;
+    try { kv = AI_ROUTES.has(name) ? kvFrom(env) : null; } catch { kv = null; }
+    if (kv) {
+      try { const c = await budgetCheck(kv, env, { estimate: 0 }); if (!c.ok) setBlocked(c.reason); } catch { /* 保存場所の障害では止めない（画面の上限は別にある） */ }
+    }
+    try {
+      return await route(req, res);
+    } finally {
+      if (kv) {
+        const yen = allCalls().reduce((a, c) => a + (c.yen || 0), 0);
+        try { await budgetRecord(kv, yen, { auto: false }); } catch { /* 記録の失敗で画面を止めない */ }
+      }
+    }
+  });
 }
+
+// AIを呼ぶことがあるAPI（予算の確認をするもの）。worker は自分で確認する
+const AI_ROUTES = new Set(['pitch', 'company', 'agents', 'pr', 'explore', 'buyer', 'thief', 'intros', 'room-hashtags', 'instagram', 'assets', 'coord', 'coord-image', 'ideas', 'seed-ideas', 'release-ideas', 'plan-titles', 'plans', 'brand-note', 'discover', 'search', 'health']);
