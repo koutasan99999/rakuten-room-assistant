@@ -1,10 +1,10 @@
 // 自律運営のAPI（2026-11-14）：/api/worker
-// action: tick（定期実行：GitHub Actions／Vercel Cron。合言葉 CRON_SECRET が必要）／sync（アプリ→サーバー：仕事を選ぶための情報）／state（サーバー→アプリ：状態・成果物・記録）
+// action: tick（定期実行：GitHub Actions／Vercel Cron。合言葉 CRON_SECRET が必要）／pause・resume（社長の停止スイッチ）／sync（アプリ→サーバー：仕事を選ぶための情報）／state（サーバー→アプリ：状態・成果物・記録）
 // 保存場所（Upstash Redis の無料枠）が設定されていなければ「未接続」と返し、何もしない（今までの機能には影響しない）。
 import crypto from 'node:crypto';
 import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
-import { tick, state, readSnapshot, WORKER_KEYS } from '../lib/worker.js';
+import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import { maskSecrets } from '../lib/ai.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
@@ -35,6 +35,8 @@ export default async function handler(req, res, env = process.env) {
       return send(res, 200, { ok: true, at: snap.at, outreachPosts: snap.outreachPosts.length, themes: snap.themes.length });
     }
     if (action === 'state') return send(res, 200, await state(kv, env));
+    // 停止スイッチ：止めている間は定期実行が何もしない（AIを呼ばない）。途中の仕事・成果物・記録は消さない
+    if (action === 'pause' || action === 'resume') return send(res, 200, { ok: true, paused: await setPaused(kv, action === 'pause', String(body.reason || '').slice(0, 100)) });
     return send(res, 400, { error: '操作が分かりません' });
   } catch (e) {
     return send(res, 200, { configured: true, ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });

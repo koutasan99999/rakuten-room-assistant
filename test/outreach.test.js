@@ -82,7 +82,7 @@ test('第1段階：出勤状況。記録がなければ「今は仕事してい�
   assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'running' }] }).key, 'working');
   assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'failed' }] }).key, 'error');
   assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'unknown' }] }).key, 'unknown');
-  // 社長の判断待ちがあるだけでは出勤にしない（2026-11-16）。今日AIを呼び出して仕事をしたときだけ「今日は出勤」
+  // 社長の判断待ちがあるだけでは出勤にしない（2026-11-16）。今日AIを呼び出して仕事をしたときだけ「今日は出勤済み」
   assert.equal(W.stateOf({ items: [{ start: iso(now - 3 * 86400000), end: iso(now - 3 * 86400000), state: 'ok', pending: 2 }] }).key, 'off');
   assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok', calls: [{ ok: true }] }] }).key, 'today');
   assert.equal(W.workedToday({ items: [{ start: iso(now), end: iso(now), state: 'ok', calls: [] }] }), false, 'AIを呼んでいない仕事は出勤に数えない');

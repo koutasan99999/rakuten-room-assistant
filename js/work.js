@@ -1,6 +1,6 @@
 // 第1段階（2026-11-14）：AI社員の出勤状況・業務日報（経営報告のいちばん上。会社のトップ画面からも開ける）。
 // 表示するのは、実際に動いた記録だけ（AIの呼び出し・コードの処理・保存された成果物）。架空の日報・活動は作らない。常に働いているような演出もしない。
-// 稼働状況：仕事中（この画面で実際に処理が動いている）／途中（自律運営の仕事を定期実行で続けている）／今日は出勤／今日は未出勤／エラー（最後の仕事が失敗）／状態未確認（途中で通信が切れた・アプリが閉じられた等で、完了を確かめられない）
+// 稼働状況：仕事中（この画面で実際に処理が動いている）／途中（自律運営の仕事を定期実行で続けている）／今は仕事していません（今日は出勤済み）／今は仕事していません／エラー（最後の仕事が失敗）／状態未確認（途中で通信が切れた・アプリが閉じられた等で、完了を確かめられない）
 // 出勤＝その日に最初の仕事を始めた時刻、退勤＝その日の最後の仕事が終わった時刻（仕事中なら退勤なし）。
 // 2026-11-16：「社長確認待ち」（過去の成果物が社長の判断を待っている数）は、出勤・業務実績と完全に分けて別欄に出す。
 //   出勤の欄には、その日に実際にAIを呼び出して仕事をした社員だけを出す。承認待ちがあるだけでは出勤にしない。
@@ -210,8 +210,8 @@
     if (sv && sv.configured && sv.job && jobOwner(sv.job) === s.key) return { key: 'inprogress', label: '途中（定期実行で続き）', server: sv.job };
     if (last && last.state === 'unknown') return { key: 'unknown', label: '状態未確認' };
     if (last && last.state === 'failed' && Date.now() - new Date(last.end || last.start).getTime() < DAY) return { key: 'error', label: 'エラー' };
-    if (workedToday(s)) return { key: 'today', label: '今日は出勤' };
-    return { key: 'off', label: '今日は未出勤' };
+    if (workedToday(s)) return { key: 'today', label: '今は仕事していません（今日は出勤済み）' };
+    return { key: 'off', label: '今は仕事していません' };
   }
   // 今日、実際にAIを呼び出して仕事をしたか（社長確認待ちの数は関係ない）
   function workedToday(s) { var t = today(); return (s.items || []).some(function (x) { return x.start && jst(x.start) === t && x.calls && x.calls.length; }); }
@@ -299,12 +299,21 @@
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
     ];
+    if (sv.paused) lines.unshift('停止中：' + stamp(sv.paused.at) + ' に止めました（' + sv.paused.reason + '）。定期実行はAIを呼びません。途中の仕事と成果物は残っています');
     if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
     else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);
     if (!sv.snapshotAt) lines.push('アプリの情報がまだサーバーに届いていません');
     if (sv.board) lines.push('仕事探し（' + stamp(sv.board.at) + '）：' + (sv.board.items || []).map(function (x) { return (AGENT[x.agent] || x.agent) + '＝' + BOARD[x.status] + '（' + x.reason + '）'; }).join('／'));
     lines.push('投稿セットにまだ使っていない合格候補：' + (sv.backlog || 0) + '件');
     var ul = el('ul', 'co-facts'); lines.forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);
+    // 停止スイッチ（本番で問題があれば、ここで追加の自律実行を止める）
+    box.appendChild(btn(sv.paused ? '自律運営を再開する' : '自律運営を止める', sv.paused ? 'btn btn-primary wk-pause' : 'btn btn-secondary wk-pause', function () {
+      var on = !sv.paused;
+      if (on && !window.confirm('自律運営を止めますか？（定期実行がAIを呼ばなくなります。途中の仕事・成果物・記録は消えません）')) return;
+      K.postJson('api/worker', { action: on ? 'pause' : 'resume', reason: on ? '社長がアプリから停止' : '' }).then(function (r) {
+        if (r.status === 200 && r.data && r.data.ok) { K.showToast(on ? '自律運営を止めました' : '自律運営を再開しました'); window.ServerSync.refresh(); } else K.showToast('切り替えられませんでした：' + ((r.data && r.data.error) || r.status));
+      });
+    }));
     if ((sv.log || []).length) {
       var det = el('details');
       det.appendChild(el('summary', null, '定期実行の記録（最近 ' + Math.min(10, sv.log.length) + '件）'));

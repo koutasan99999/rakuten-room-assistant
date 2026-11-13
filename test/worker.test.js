@@ -107,6 +107,19 @@ test('仕事探し：合格候補がたまっていればバイヤーAIは待ち
   assert.equal(mock.calls.openai.length, 0);
 });
 
+test('停止スイッチ：止めている間は定期実行がAIを呼ばない。再開すると動く', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  const call = async (body) => { const req = { method: 'POST', url: '/api/worker', headers: { host: 'x.app' }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, { ...ENV, __kv: kv }); return JSON.parse(res.body); };
+  assert.equal((await call({ action: 'pause', reason: 'テスト' })).paused.on, true);
+  assert.match((await run(kv)).skipped, /停止中/);
+  assert.equal(mock.calls.openai.length, 0);
+  assert.equal((await call({ action: 'state' })).paused.on, true);
+  await call({ action: 'resume' });
+  assert.ok((await run(kv)).worked, '再開すると仕事をする');
+});
+
 test('二重実行の防止：鍵を持っている間は、次の実行は何もしない', async () => {
   mock = fetchMock();
   const kv = memoryKv();
