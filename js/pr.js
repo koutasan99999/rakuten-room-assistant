@@ -338,6 +338,8 @@
     if (!container || !container.isConnected) return;
     var y = window.scrollY;
     container.innerHTML = '';
+    // P0：投稿ごとの実績（公式APIか社長の手入力。未取得は推測しない）
+    if (window.PerfView) container.appendChild(window.PerfView.panel(paint));
     container.appendChild(dashboard());
     container.appendChild(autoCard());
     container.appendChild(placesCard());

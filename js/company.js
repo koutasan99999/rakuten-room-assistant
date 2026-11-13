@@ -493,6 +493,7 @@
     if (!C.consented()) {
       head.appendChild(el('p', 'hint', 'AI社員が毎日1回、経営会議を開きます（アプリを開いたとき、その日にまだ会議がなければ自動で開きます）。AIの呼び出しは1日3回程度（会議1回＋社員の作業2件まで）、今のOpenAIのキーで1日約2〜3円の見込みです。新しいサービスの契約はありません。'));
       head.appendChild(btn('了承して、毎日の経営会議を始める', 'btn btn-discover', function () { C.setConsent(); runMeeting(false); }));
+      if (window.Backup) head.appendChild(btn('データのバックアップを保存', 'link-btn', function () { window.Backup.save(); }));
       container.appendChild(head);
       return;
     }
@@ -506,6 +507,8 @@
       head.appendChild(mr);
     }
     if (!busy) head.appendChild(btn(tm ? 'もう一度会議を開く' : '今すぐ会議を開く', 'link-btn', function () { runMeeting(true); }));
+    // データのバックアップ（このiPhoneの会社のデータを1つのファイルに保存。読み出すだけ）
+    if (window.Backup) head.appendChild(btn('データのバックアップを保存', 'link-btn', function () { window.Backup.save().then(function (r) { K.showToast(r === 'shared' ? 'バックアップを保存しました' : 'バックアップのファイルを書き出しました'); }, function () { K.showToast('保存できませんでした'); }); }));
     container.appendChild(head);
     // AI社員（試験）：バイヤーAI×監査AI（別々のAI呼び出し・採点・修正・社長の承認）。今までの会議はそのまま
     if (window.AgentsView) container.appendChild(window.AgentsView.panel(paint));

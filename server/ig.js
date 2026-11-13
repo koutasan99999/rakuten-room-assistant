@@ -1,8 +1,8 @@
-// Instagramの公式APIのAPI：action: status（設定と基本の数字）／insights（アカウントと最近の投稿の数字）／refresh（トークンの更新）／publish（自分の投稿）
+// Instagramの公式APIのAPI：action: status（設定と基本の数字）／insights（アカウントと最近の投稿の数字）／media（P0：投稿ごとの実績）／refresh（トークンの更新）／publish（自分の投稿）
 // トークンが設定されていなければ「未設定」と返すだけ。他人へのフォロー・コメントの機能はない。
 import { send, readBody } from '../lib/http.js';
 import crypto from 'node:crypto';
-import { igConfig, accountSummary, accountInsights, recentMedia, refreshToken, publish, publishNext } from '../lib/ig-graph.js';
+import { igConfig, accountSummary, accountInsights, recentMedia, followTypeBreakdown, refreshToken, publish, publishNext } from '../lib/ig-graph.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
@@ -38,6 +38,11 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'insights') {
       const days = Math.max(1, Math.min(30, Number(body.days) || 7));
       return send(res, 200, { ready: true, account: await accountSummary(cfg), insights: await accountInsights(cfg, { days }), media: await recentMedia(cfg, { limit: 10 }) });
+    }
+    // P0：投稿ごとの実績（最近の投稿・最大12件。追加の指標と、アカウント全体のフォロワー以外の内訳も）。取れない指標は null／error のまま返す（推測で埋めない）
+    if (action === 'media') {
+      const limit = Math.max(1, Math.min(12, Number(body.limit) || 12));
+      return send(res, 200, { ready: true, fetchedAt: new Date().toISOString(), account: await accountSummary(cfg), followType: await followTypeBreakdown(cfg, { days: 7 }), media: await recentMedia(cfg, { limit, extra: true }) });
     }
     if (action === 'refresh') {
       // 長期トークンの期限を延ばす。返ってきたトークンが今と同じなら、入れ直しは要らない（違うときだけ知らせる。トークン自体は返さない）
