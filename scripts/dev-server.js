@@ -10,6 +10,8 @@ const PITCH_KWS = new Set(PITCH_MAJORS.flatMap((m) => m.subs.flatMap((s) => s[3]
 import exploreHandler from '../server/explore.js';
 import introsHandler from '../server/intros.js';
 import healthHandler from '../server/health.js';
+import agentsHandler from '../server/agents.js';
+import { withUsage } from '../lib/ai-usage.js';
 import instagramHandler from '../server/instagram.js';
 import imageHandler from '../server/image.js';
 import plansHandler from '../server/plans.js';
@@ -280,15 +282,56 @@ if (process.env.MOCK) {
       })
       : aiReply({ picks: [0, 4, 8, 12, 16, 19].map((id, i) => ({ id, want: 8, role: ['一番外しにくい', '実用性重視', 'もらうと嬉しい', 'センスが良く見える', '価格を抑えるなら', '少し奮発するなら'][i], basis: ['ブランドで選ぶ', 'トレンド枠', '機能で選ぶ', 'デザインで選ぶ', '', ''][i], reason: '中身が見えないフタ付きで、棚に並べてもごちゃっと見えない。', intro: GOOD_INTRO })) })
   });
+  // AI社員（バイヤーAI×監査AI）の画面確認用：楽天の商品と、バイヤーAI・監査AIの偽の返事（1回目は1件が引用の不一致で不合格→修正で合格）
+  const AG = [['ag:lid', 'ステンレス 鍋蓋スタンド 収納トレー付き', 1000, '鍋のふたを立てて置ける。水受けトレー付きで、水滴がたれにくい。'], ['ag:tong', 'シリコン トング 耐熱230℃', 1200, 'フライパンを傷つけにくいシリコン製。耐熱230℃。'], ['ag:guard', '油はねガード 3面 折りたたみ', 1500, '3面で油はねを防ぐ。折りたたみ式で収納しやすい。']]
+    .map(([c, n, p, cap]) => ({ itemCode: c, itemName: n, itemPrice: p, itemUrl: `https://item.rakuten.co.jp/ag/${c.slice(3)}/`, mediumImageUrls: [`https://thumbnail.image.rakuten.co.jp/ag/${c.slice(3)}.jpg?_ex=128x128`], shopName: 'キッチンショップ', itemCaption: cap, reviewCount: 30, reviewAverage: 4.4 }));
+  let agAudit = 0;
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('openapi.rakuten.co.jp') || u.includes('app.rakuten.co.jp')) {
+      const q = new URL(u);
+      const code = q.searchParams.get('itemCode') || '';
+      if (code.startsWith('ag:')) return json(200, { items: AG.filter((x) => x.itemCode === code) });
+      if ((q.searchParams.get('keyword') || '').startsWith('キッチン便利')) { await new Promise((r) => setTimeout(r, 300)); return json(200, { items: AG, pageCount: 1 }); }
+    }
+    if (u.includes('api.openai.com/v1/chat')) {
+      const b = JSON.parse(opts.body);
+      const sys = b.messages[0].content;
+      const usage = { prompt_tokens: 1800 + Math.floor(Math.random() * 600), completion_tokens: 500 + Math.floor(Math.random() * 300), completion_tokens_details: { reasoning_tokens: 200 } };
+      const wait = () => new Promise((r) => setTimeout(r, 700));
+      if (sys.includes('バイヤーAIです') && sys.includes('検索語を決めます')) { await wait(); return aiReply({ keywords: [{ keyword: 'キッチン便利 フライパン', why: 'フライパンまわりの道具' }] }, usage); }
+      if (sys.includes('バイヤーAIです') && sys.includes('候補を最大3件選びます')) { await wait(); return aiReply({ candidates: [
+        { ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで、ふたを立てても水滴がたれにくい', target: 'フライパン料理をよくする一人暮らし', problem: 'ふたの置き場所がない', roomValue: '1,000円で置き場所の悩みが片づく', cautions: '対応するふたの大きさを商品ページで確認' },
+        { ref: 'R2', quotes: ['食洗機対応'], reason: '食洗機で洗えて手入れが楽', target: '料理する人', problem: 'トングの手入れ', roomValue: '1,200円', cautions: '商品ページで仕様を確認' },
+        { ref: 'R3', quotes: ['3面で油はねを防ぐ'], reason: '3面で油はねを防ぐ', target: '揚げ物をする人', problem: 'コンロまわりの油汚れ', roomValue: '1,500円', cautions: 'コンロの幅を確認' }
+      ], notes: '' }, usage); }
+      if (sys.includes('バイヤーAIです') && sys.includes('修正指示に従って')) { await wait(); return aiReply({ revisions: [
+        { id: 'c2', quotes: ['フライパンを傷つけにくいシリコン製', '耐熱230℃'], reason: 'シリコン製でフライパンを傷つけにくく、耐熱230℃と説明にある', target: 'コーティングのフライパンを使う人', problem: 'フライパンの表面の傷', roomValue: '1,200円でフライパンを長く使う工夫になる', cautions: '長さを商品ページで確認' },
+        { id: 'c3', needResearch: 'コンロの幅に合うサイズが説明にない' }
+      ] }, usage); }
+      if (sys.includes('監査AIです')) {
+        await wait();
+        agAudit++;
+        const ids = [...b.messages[1].content.matchAll(/^候補 (c\d+)/gm)].map((m) => m[1]);
+        const sc = (a, e, u2, r, c) => ({ accuracy: { score: a, evidence: ['P1', 'K1-1'] }, evidence: { score: e, deductions: e < 25 ? '引用が少ない' : '', evidence: ['P1'] }, usefulness: { score: u2, deductions: u2 < 20 ? '場面がやや抽象的' : '' }, revenue: { score: r, deductions: r < 15 ? '価格に見合う理由が弱い' : '' }, compliance: { score: c } });
+        return aiReply({ audits: ids.map((id) => id === 'c1' ? { id, scores: sc(25, 22, 17, 13, 15), flags: {}, fixes: [], proposal: 'pass', summary: '根拠と用途が具体的' }
+          : id === 'c2' ? (agAudit === 1 ? { id, scores: sc(20, 5, 15, 10, 15), flags: { fabrication: true, why: '「食洗機対応」は説明にない' }, fixes: ['quotes と reason の「食洗機対応」を削り、説明にある「耐熱230℃」「シリコン製」を根拠にする'], proposal: 'revise', summary: '根拠が説明にない' } : { id, scores: sc(25, 23, 17, 12, 15), flags: {}, fixes: [], proposal: 'pass', summary: '直した根拠は説明と一致' })
+          : { id, scores: sc(23, 18, 14, 10, 15), flags: {}, fixes: ['target を「揚げ物をする人」から、どの場面かまで具体的にする', 'コンロの幅に合うかの注意を、商品ページの数字で書く'], needResearch: '', proposal: 'revise', summary: '用途が抽象的' }) }, usage);
+      }
+    }
+    return prevFetch(url, opts);
+  };
   env = { RAKUTEN_APP_ID: 'mock', OPENAI_API_KEY: 'mock', ...(process.env.APP_PASSCODE ? { APP_PASSCODE: process.env.APP_PASSCODE } : {}) };
 }
 
-http.createServer(async (req, res) => {
+http.createServer((req, res) => withUsage(async () => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/discover') return handler(req, res, env);
   if (url.pathname === '/api/explore') return exploreHandler(req, res, env);
   if (url.pathname === '/api/intros') return introsHandler(req, res, env);
   if (url.pathname === '/api/health') return healthHandler(req, res, env);
+  if (url.pathname === '/api/agents') return agentsHandler(req, res, env);
   if (url.pathname === '/api/instagram') return instagramHandler(req, res, env);
   if (url.pathname === '/api/image') return imageHandler(req, res, env);
   if (url.pathname === '/api/plans') return plansHandler(req, res, env);
@@ -321,4 +364,4 @@ http.createServer(async (req, res) => {
     res.statusCode = 404;
     res.end('not found');
   }
-}).listen(process.env.PORT || 3000, () => console.log(`http://localhost:${process.env.PORT || 3000}`));
+})).listen(process.env.PORT || 3000, () => console.log(`http://localhost:${process.env.PORT || 3000}`));

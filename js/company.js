@@ -507,6 +507,8 @@
     }
     if (!busy) head.appendChild(btn(tm ? 'もう一度会議を開く' : '今すぐ会議を開く', 'link-btn', function () { runMeeting(true); }));
     container.appendChild(head);
+    // AI社員（試験）：バイヤーAI×監査AI（別々のAI呼び出し・採点・修正・社長の承認）。今までの会議はそのまま
+    if (window.AgentsView) container.appendChild(window.AgentsView.panel(paint));
     container.appendChild(dashboard());
     var m = tm || C.lastMeeting();
 
@@ -643,7 +645,8 @@
     grid.appendChild(tile('ROOM登録', col.st.roomDone + '件', '採用' + col.st.adopted + '件のうち（社長の申告）'));
     grid.appendChild(tile('公開できる投稿', col.st.ready + '件', '社員の工程を通過した投稿セット'));
     grid.appendChild(tile('プレゼンした商品', presented7 + '件', '通常のプレゼンの累計'));
-    grid.appendChild(tile('AIの費用（今月）', '約' + cost.yen + '円', cost.calls + '回・上限' + caps.capYen + '円（推定）', cost.yen > caps.capYen * 0.8 ? 'co-warn' : ''));
+    var meas = window.AiUsage.measured ? window.AiUsage.measured() : { calls: 0, yen: 0, failed: 0 };
+    grid.appendChild(tile('AIの費用（今月）', '約' + cost.yen + '円', cost.calls + '回・上限' + caps.capYen + '円｜うち実測 ' + meas.calls + '回・' + meas.yen + '円' + (meas.failed ? '（失敗' + meas.failed + '回）' : '') + '・残りは推定', cost.yen > caps.capYen * 0.8 ? 'co-warn' : ''));
     box.appendChild(grid);
     // 投稿の準備状況（工程ごと）
     var stages = Object.keys(STAGES).filter(function (k) { return (pipe[k] || []).length; }).map(function (k) { return STAGES[k].label + ' ' + pipe[k].length + '件'; });

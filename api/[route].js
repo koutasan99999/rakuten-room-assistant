@@ -2,6 +2,8 @@
 // 機能が増えて12個を超え、デプロイが失敗していた（2026-10-29 の #39 以降）。そのため、機能ごとのAPI（server/*.js）を
 // この1つの関数から呼び分ける。URLは今までどおり /api/○○（[route] の部分が ○○）。新しいAPIは server/ に置いて、下の一覧に足す。
 
+import { withUsage } from '../lib/ai-usage.js';
+import agents from '../server/agents.js';
 import assets from '../server/assets.js';
 import brandNote from '../server/brand-note.js';
 import buyer from '../server/buyer.js';
@@ -31,6 +33,7 @@ import thief from '../server/thief.js';
 import trends from '../server/trends.js';
 
 export const ROUTES = {
+  'agents': agents,
   'assets': assets,
   'brand-note': brandNote,
   'buyer': buyer,
@@ -68,5 +71,6 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.end(JSON.stringify({ error: 'このAPIはありません' }));
   }
-  return route(req, res);
+  // このリクエストで呼んだAIの使用量をまとめる（応答に aiUsage として付く）
+  return withUsage(() => route(req, res));
 }
