@@ -103,3 +103,20 @@ test('C0：画像の客観確認。はみ出し・小さい文字・途中で切
   assert.ok(post.some((x) => x.key === 'rights' && x.level === 'ng'));
   assert.equal(C.postChecks({ copy: { caption: '【PR】楽天アフィリエイトを利用しています\n本文' }, noPhoto: true }).length, 0);
 });
+
+test('バックアップ：room- で始まるデータだけを、そのまま書き出す（データは変えない）', () => {
+  const { ctx, store } = loadBrowser([], {});
+  store['room-pitch'] = '{"items":{"a":1}}'; store['room-delivery'] = '{"sets":{}}'; store['other'] = 'x';
+  const keys = Object.keys(store);
+  ctx.localStorage.length = 0;
+  Object.defineProperty(ctx.localStorage, 'length', { get: () => Object.keys(store).length });
+  ctx.localStorage.key = (i) => Object.keys(store)[i];
+  ctx.document = { querySelector: () => ({ src: 'js/backup.js?v=2026-11-14.1' }) };
+  vm.runInContext(fs.readFileSync(new URL('../js/backup.js', import.meta.url), 'utf8'), ctx);
+  const b = ctx.Backup.collect();
+  assert.equal(b.keys, 2);
+  assert.equal(b.data['room-pitch'], '{"items":{"a":1}}');
+  assert.equal(b.data.other, undefined);
+  assert.equal(b.version, '2026-11-14.1');
+  assert.deepEqual(Object.keys(store), keys, 'データは変えない');
+});
