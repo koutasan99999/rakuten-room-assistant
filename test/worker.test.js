@@ -208,26 +208,48 @@ test('制作担当AI：商品カードの文字も直せる。直した場所を
   assert.ok(codeCheck(set).checks.find((k) => k.key === 'pr').ok, 'PR表記はキャプション全文で確認する');
 });
 
+// 本番（Vercel）と同じように、本文を流れ（stream）で受け取る要求を作る。
+// vercelHelpers：Vercel の実行環境と同じく、本文をいったん読んでから data／end で読み直せるように戻し、req.body は使われたときに解析する（解析に失敗すると例外）
+import { PassThrough } from 'node:stream';
+function streamReq({ url = '/api/worker?action=tick', headers = {}, raw = '', vercelHelpers = false } = {}) {
+  const req = new PassThrough();
+  Object.assign(req, { method: 'POST', url, headers: { host: 'x.app', ...headers } });
+  if (vercelHelpers) {
+    const copy = new PassThrough();
+    const on = copy.on.bind(copy); const originalOn = req.on.bind(req);
+    req.read = copy.read.bind(copy);
+    req.on = req.addListener = (name, cb) => (name === 'data' || name === 'end' ? on(name, cb) : originalOn(name, cb));
+    copy.write(raw); copy.end();
+    Object.defineProperty(req, 'body', { configurable: true, get() { throw new Error('req.body に触れた（生の本文が失われる）'); } });
+  } else { req.end(raw); }
+  return req;
+}
+async function callWorker(env, opts) {
+  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
+  await worker(streamReq(opts), res, env);
+  return { status: res.statusCode, data: JSON.parse(res.body) };
+}
+
 // QStash の署名（JWT・HS256）をテスト用に作る
 import crypto from 'node:crypto';
 const b64u = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 function qsig(key, { sub = 'https://x.app/api/worker?action=tick', body = '', iss = 'Upstash', exp = Math.floor(Date.now() / 1000) + 300 } = {}) {
   const h = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const p = b64u(JSON.stringify({ iss, sub, exp, nbf: Math.floor(Date.now() / 1000) - 1, iat: Math.floor(Date.now() / 1000), jti: 'j', body: crypto.createHash('sha256').update(body).digest('base64') }));
+  const p = b64u(JSON.stringify({ iss, sub, exp, nbf: Math.floor(Date.now() / 1000) - 1, iat: Math.floor(Date.now() / 1000), jti: 'j', body: crypto.createHash('sha256').update(body).digest('base64url') }));
   return `${h}.${p}.${b64u(crypto.createHmac('sha256', key).update(`${h}.${p}`).digest())}`;
 }
 
 test('QStash：署名を確かめる（今の鍵・次の鍵）。鍵違い・期限切れ・発行者違い・本文違い・呼び先違いは受け付けない', async () => {
   const { verifyQstash } = await import('../lib/qstash.js');
   const keys = ['cur', 'next'];
-  assert.equal(verifyQstash({ signature: qsig('cur'), keys }).ok, true);
-  assert.equal(verifyQstash({ signature: qsig('next'), keys }).ok, true, '鍵の入れ替え中も受け付ける');
-  assert.match(verifyQstash({ signature: qsig('bad'), keys }).why, /一致しない/);
-  assert.match(verifyQstash({ signature: qsig('cur', { exp: 1 }), keys }).why, /期限/);
-  assert.match(verifyQstash({ signature: qsig('cur', { iss: 'x' }), keys }).why, /発行者/);
-  assert.match(verifyQstash({ signature: qsig('cur', { body: '{"a":1}' }), keys }).why, /本文/);
-  assert.match(verifyQstash({ signature: qsig('cur', { sub: 'https://x.app/api/pitch' }), keys }).why, /URL/);
-  assert.match(verifyQstash({ signature: qsig('cur'), keys: [] }).why, /未設定/);
+  assert.equal(verifyQstash({ signature: qsig('cur'), body: '', keys }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('next'), body: '', keys }).ok, true, '鍵の入れ替え中も受け付ける');
+  assert.match(verifyQstash({ signature: qsig('bad'), body: '', keys }).why, /一致しない/);
+  assert.match(verifyQstash({ signature: qsig('cur', { exp: 1 }), body: '', keys }).why, /期限/);
+  assert.match(verifyQstash({ signature: qsig('cur', { iss: 'x' }), body: '', keys }).why, /発行者/);
+  assert.match(verifyQstash({ signature: qsig('cur', { body: '{"a":1}' }), body: '', keys }).why, /本文/);
+  assert.match(verifyQstash({ signature: qsig('cur', { sub: 'https://x.app/api/pitch' }), body: '', keys }).why, /URL/);
+  assert.match(verifyQstash({ signature: qsig('cur'), body: '', keys: [] }).why, /未設定/);
 });
 
 test('QStash：署名が正しい定期実行だけ動き、きっかけを qstash と記録する。同じ呼び出しの再送は何もしない', async () => {
@@ -235,7 +257,7 @@ test('QStash：署名が正しい定期実行だけ動き、きっかけを qsta
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   const env = { ...ENV, __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur', QSTASH_NEXT_SIGNING_KEY: 'next' };
-  const call = async (headers) => { const req = { method: 'POST', url: '/api/worker?action=tick', headers: { host: 'x.app', ...headers } }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, env); return { status: res.statusCode, data: JSON.parse(res.body) }; };
+  const call = (headers) => callWorker(env, { headers });
   assert.equal((await call({ 'upstash-signature': qsig('bad'), 'upstash-message-id': 'm0' })).status, 401);
   assert.equal(mock.calls.openai.length, 0, '署名が違えばAIを呼ばない');
   const r = await call({ 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm1' });
@@ -248,16 +270,21 @@ test('QStash：署名が正しい定期実行だけ動き、きっかけを qsta
   assert.equal(st.health.lastTrigger, 'qstash');
 });
 
-test('QStash：断った理由を残す（原因を調べられるように）。本文が {} で届いても署名が正しければ受け付ける', async () => {
+test('QStash：断った理由を残す（原因を調べられるように）。Vercel と同じ本文の受け取り方でも、req.body に触れずに生の本文で厳密に確かめる', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   const env = { ...ENV, __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur', QSTASH_NEXT_SIGNING_KEY: 'next' };
-  const call = async (headers, body) => { const req = { method: 'POST', url: '/api/worker?action=tick', headers: { host: 'x.app', ...headers }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await worker(req, res, env); return { status: res.statusCode, data: JSON.parse(res.body) }; };
+  const call = (headers, raw = '') => callWorker(env, { headers, raw, vercelHelpers: true });
   const bad = await call({ 'upstash-signature': qsig('wrong'), 'upstash-message-id': 'x1' });
   assert.equal(bad.status, 401);
   assert.match((await kv.getJson('worker:qstash:reject')).why, /一致しない/);
-  const ok = await call({ 'upstash-signature': qsig('cur', { body: '{}' }), 'upstash-message-id': 'x2' }, {});
+  // 本文が {} のとき：署名も {} に対して付いていれば受け付ける（生の本文で厳密に確かめる）
+  const strict = await call({ 'upstash-signature': qsig('cur', { body: '' }), 'upstash-message-id': 'x3', 'content-type': 'application/json' }, '{}');
+  assert.equal(strict.status, 401, '署名は空の本文・届いた本文は {}：本文を作り直して合わせない');
+  assert.match((await kv.getJson('worker:qstash:reject')).why, /本文が署名と一致しない/);
+  assert.equal((await kv.getJson('worker:qstash:reject')).bodyLength, 2);
+  const ok = await call({ 'upstash-signature': qsig('cur', { body: '{}' }), 'upstash-message-id': 'x2', 'content-type': 'application/json' }, '{}');
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.equal(ok.data.worked.trigger, 'qstash');
   assert.match(ok.data.qstashReject.why, /一致しない/, '応答にも断った最後の記録を付ける');
@@ -268,21 +295,31 @@ test('QStash：URLに ?action=tick が無くても、署名つきなら定期実
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   const env = { ...ENV, APP_PASSCODE: 'pass', __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur' };
-  const req = { method: 'POST', url: '/api/worker', headers: { host: 'x.app', 'upstash-signature': qsig('cur', { sub: 'https://x.app/api/worker' }), 'upstash-message-id': 'y1' } };
-  const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
-  await worker(req, res, env);
-  assert.equal(res.statusCode, 200, res.body);
-  assert.equal(JSON.parse(res.body).worked.trigger, 'qstash');
+  const r = await callWorker(env, { url: '/api/worker', headers: { 'upstash-signature': qsig('cur', { sub: 'https://x.app/api/worker' }), 'upstash-message-id': 'y1' }, vercelHelpers: true });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.worked.trigger, 'qstash');
 });
 
 test('QStash：環境変数に貼り付けたときの前後の空白・改行・引用符があっても、同じ鍵なら受け付ける。違う鍵・HS256以外は受け付けない。断った記録に鍵の値は残さない', async () => {
   const { verifyQstash, keyInfo } = await import('../lib/qstash.js');
-  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: [' sig_cur\n', ''] }).ok, true);
-  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: ['"sig_cur"'] }).ok, true);
-  assert.equal(verifyQstash({ signature: qsig('sig_cur'), keys: ['sig_cu'] }).ok, false, '鍵の一部だけでは受け付けない');
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), body: '', keys: [' sig_cur\n', ''] }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), body: '', keys: ['"sig_cur"'] }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('sig_cur'), body: '', keys: ['sig_cu'] }).ok, false, '鍵の一部だけでは受け付けない');
   const none = qsig('sig_cur').split('.'); none[0] = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
-  assert.match(verifyQstash({ signature: none.join('.'), keys: ['sig_cur'] }).why, /HS256/);
+  assert.match(verifyQstash({ signature: none.join('.'), body: '', keys: ['sig_cur'] }).why, /HS256/);
   const info = keyInfo([' sig_cur\n', undefined]);
   assert.equal(JSON.stringify(info), JSON.stringify([{ set: true, sigPrefix: true, hadExtra: true }, { set: false, sigPrefix: false, hadExtra: false }]));
   assert.ok(!JSON.stringify(info).includes('sig_cur'), '鍵の値は出さない');
+});
+
+test('QStash：生の本文の読み取り。本文の要約値は base64url（公式と同じ）で、末尾の = の有無は問わない。1文字でも違えば受け付けない', async () => {
+  const { verifyQstash, readRawBody } = await import('../lib/qstash.js');
+  assert.equal((await readRawBody(streamReq({ raw: '{"x":"日本語"}' }))).toString('utf8'), '{"x":"日本語"}');
+  assert.equal((await readRawBody(streamReq({ raw: '{"x":1}', vercelHelpers: true }))).toString('utf8'), '{"x":1}', 'Vercel が戻した本文も読める');
+  assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: Buffer.from('abc'), keys: ['k'] }).ok, true, 'バイト列のまま確かめる');
+  assert.equal(await readRawBody({}), null, '流れの無い要求は読めない（検証は失敗にする）');
+  assert.match(verifyQstash({ signature: qsig('k'), body: null, keys: ['k'] }).why, /生の本文/);
+  assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc', keys: ['k'] }).ok, true);
+  assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abd', keys: ['k'] }).ok, false);
+  assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc ', keys: ['k'] }).ok, false);
 });
