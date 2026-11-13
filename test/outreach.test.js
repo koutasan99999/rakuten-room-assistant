@@ -70,22 +70,35 @@ test('監査AIの採点は別の呼び出し。合計はコードが計算し、
   assert.equal(decide({ check: { hardFail: true, checks: [{ hard: true, ok: false, label: '宣伝' }] }, audit: { ...a, flags: {}, proposal: 'pass' }, revisions: 0 }).status, 'revise');
 });
 
-test('第1段階：AI社員の仕事。記録がなければ「待機中」、失敗は「失敗」、社長の判断待ちは「承認待ち」、実行中は「実行中」', () => {
+test('第1段階：出勤状況。記録がなければ「今は仕事していません」、失敗は「エラー」、確かめられない仕事は「状態未確認」（成功にしない）、社長の判断待ちは「承認待ち」、実際に動いているときだけ「仕事中」。出勤・退勤は実際の時刻から', () => {
   const ctx = { window: {}, console, localStorage: { getItem: () => null, setItem() {} }, location: {}, setTimeout };
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(new URL('../js/work.js', import.meta.url), 'utf8'), ctx);
   const W = ctx.WorkView;
-  const now = new Date().toISOString();
-  assert.equal(W.stateOf({ items: [] }).key, 'idle');
-  assert.equal(W.stateOf({ items: [{ at: now, ok: null }] }).key, 'running');
-  assert.equal(W.stateOf({ items: [{ at: now, ok: false }] }).key, 'failed');
-  assert.equal(W.stateOf({ items: [{ at: now, ok: true, pending: 2 }] }).key, 'approval');
-  assert.equal(W.stateOf({ items: [{ at: now, ok: true }] }).key, 'done');
-  assert.equal(W.stateOf({ items: [{ at: new Date(Date.now() - 3 * 86400000).toISOString(), ok: true }] }).key, 'idle', '24時間以上動いていなければ待機中');
-  // 記録が何もなければ、全員「待機中」か、判断待ちだけ（架空の仕事を作らない）
-  const s = W.staff();
-  assert.ok(s.length >= 6);
-  assert.ok(s.every((x) => x.items.length === 0));
-  assert.ok(s.every((x) => ['idle', 'approval'].includes(W.stateOf(x).key)));
+  const now = Date.now();
+  const iso = (ms) => new Date(ms).toISOString();
+  assert.equal(W.stateOf({ items: [] }).key, 'off');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'running' }] }).key, 'working');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'failed' }] }).key, 'error');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), state: 'unknown' }] }).key, 'unknown');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok', pending: 2 }] }).key, 'approval');
+  assert.equal(W.stateOf({ items: [{ start: iso(now), end: iso(now), state: 'ok' }] }).key, 'off', '仕事が終わったら「仕事中」は終わる');
+  assert.equal(W.stateOf({ items: [{ start: iso(now - 3 * 86400000), end: iso(now - 3 * 86400000), state: 'failed' }] }).key, 'off', '古い失敗はエラーにしない');
+  // 出勤・退勤：その日の最初の開始と最後の終了。仕事中なら退勤なし
+  const s = { items: [{ start: iso(now - 3600000), end: iso(now - 3000000), state: 'ok' }, { start: iso(now - 600000), end: iso(now - 300000), state: 'ok' }] };
+  const today = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
+  const sameDay = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10) === today;
+  if (sameDay(now - 3600000)) {
+    const a = W.attendance(s, { key: 'off' });
+    assert.equal(a.in, iso(now - 3600000));
+    assert.equal(a.out, iso(now - 300000));
+    assert.equal(W.attendance(s, { key: 'working' }).out, '');
+  }
+  assert.equal(W.attendance({ items: [] }, { key: 'off' }).in, '', '仕事がなければ出勤もない');
+  // 記録が何もなければ、全員「今は仕事していません」（判断待ちの数がなければ）。架空の仕事を作らない
+  const staff = W.staff();
+  assert.ok(staff.length >= 6);
+  assert.ok(staff.every((x) => x.items.length === 0));
+  assert.ok(staff.every((x) => ['off', 'approval'].includes(W.stateOf(x).key)));
 });

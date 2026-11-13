@@ -1010,9 +1010,14 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 .wk-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 4px 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .wk-name { font-weight: 700; }
 .wk-state { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eee; color: #555; }
-.wk-state-running { background: #fff3c4; color: #7a5a00; }
-.wk-state-failed { background: #fde2e1; color: #a1260d; }
+.wk-state-working { background: #e2f4e5; color: #23683a; }
+.wk-state-error { background: #fde2e1; color: #a1260d; }
+.wk-state-unknown { background: #fff3c4; color: #7a5a00; }
 .wk-state-approval { background: #e3efff; color: #1b4f9c; }
-.wk-state-done { background: #e2f4e5; color: #23683a; }
+.wk-state-off { background: #eee; color: #666; }
+.wk-title { font-size: 12px; color: #888; }
+.wk-summary { font-weight: 600; }
+.wk-detail { padding: 4px 0 6px; }
+.wk-top-link { display: block; margin: 0 0 8px; font-size: 14px; }
 .wk-last { flex-basis: 100%; font-size: 12px; color: #777; }
 .wk-item { background: #faf8f5; border-radius: 8px; padding: 8px; margin: 6px 0; }

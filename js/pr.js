@@ -505,7 +505,7 @@
     paint();
     if (!imported) { imported = true; importRefs().then(function (n) { if (n) { K.showToast('登録済みの参考アカウント' + n + '件をフォロー候補に入れました'); paint(); } }); }
   }
-  window.PrView = { render: render, places: places, GENRES: GENRES };
+  window.PrView = { render: render, places: places, GENRES: GENRES, liveRunId: function () { return running ? running.id : ''; } };
   var v = document.getElementById('pr-body');
   if (location.hash.indexOf('#pr') === 0 && v) render(v);
 })();
