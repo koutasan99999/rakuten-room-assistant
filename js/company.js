@@ -487,6 +487,8 @@
   function paint() {
     if (!container || !container.isConnected) return;
     container.innerHTML = '';
+    // 第1段階：AI社員の仕事（実際に動いた記録だけ）をいちばん上に
+    if (window.WorkView) container.appendChild(window.WorkView.panel(paint));
     var tm = C.todayMeeting();
     var head = el('div', 'card');
     head.appendChild(el('h3', 'cand-name', '本日の経営報告（' + C.today().slice(5).replace('-', '/') + '）'));

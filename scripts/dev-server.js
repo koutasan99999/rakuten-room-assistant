@@ -332,6 +332,22 @@ if (process.env.MOCK) {
         { id: 'c2', quotes: ['フライパンを傷つけにくいシリコン製', '耐熱230℃'], reason: 'シリコン製でフライパンを傷つけにくく、耐熱230℃と説明にある', target: 'コーティングのフライパンを使う人', problem: 'フライパンの表面の傷', roomValue: '1,200円でフライパンを長く使う工夫になる', cautions: '長さを商品ページで確認' },
         { id: 'c3', needResearch: 'コンロの幅に合うサイズが説明にない' }
       ] }, usage); }
+      // 営業・交流担当AI（第2段階の画面確認用）：1件目は合格、2件目は最初に宣伝の言葉を入れて不合格 → 修正で合格
+      if (sys.includes('営業・交流担当AIです')) {
+        await wait();
+        const ids = [...b.messages[1].content.matchAll(/^投稿 (\S+)（/gm)].map((m) => m[1]);
+        const revise = sys.includes('修正指示に従って');
+        const capOf = (id) => (b.messages[1].content.split('投稿 ' + id + '（')[1] || '').split('\n')[1] || '';
+        return aiReply({ drafts: ids.map((id) => /水受け/.test(capOf(id)) ? { id, anchor: '水受けトレー付き', comment: '水受けトレー付きなら、ふたを立てても台が濡れにくそうですね', relevance: 80, relevanceWhy: 'キッチンの便利グッズで今のテーマに近い', follow: 70, followWhy: '台所の道具の投稿が多い' }
+          : revise ? { id, anchor: '耐熱230℃', comment: '耐熱230℃あると、揚げ物のときも気にせず使えそうですね', relevance: 75, relevanceWhy: '調理道具', follow: 60, followWhy: '料理の投稿' }
+          : { id, anchor: '耐熱230℃', comment: '耐熱230℃いいですね、ぜひフォローお願いします', relevance: 75, relevanceWhy: '調理道具', follow: 60, followWhy: '料理の投稿' }) }, usage);
+      }
+      if (sys.includes('監査AIです') && sys.includes('コメント案を')) {
+        await wait();
+        const ids = [...b.messages[1].content.matchAll(/^案 (\S+)$/gm)].map((m) => m[1]);
+        const sc = (a) => ({ specific: { score: a[0] }, natural: { score: a[1] }, relevance: { score: a[2] }, distance: { score: a[3] }, compliance: { score: a[4] } });
+        return aiReply({ audits: ids.map((id) => /フォロー/.test(b.messages[1].content.split('案 ' + id)[1].split('\n')[2] || '') ? { id, scores: sc([20, 15, 15, 10, 0]), flags: { promo: true, why: 'フォローのお願い' }, fixes: ['「ぜひフォローお願いします」を削り、耐熱の点について感想か質問にする'], proposal: 'revise', summary: '宣伝になっている' } : { id, scores: sc([23, 21, 17, 14, 15]), flags: {}, fixes: [], proposal: 'pass', summary: '投稿の内容に触れた自然な感想' }) }, usage);
+      }
       if (sys.includes('監査AIです')) {
         await wait();
         agAudit++;

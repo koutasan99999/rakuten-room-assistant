@@ -12,6 +12,8 @@
     s.accounts = s.accounts && typeof s.accounts === 'object' ? s.accounts : {};
     s.posts = s.posts && typeof s.posts === 'object' ? s.posts : {};
     s.log = Array.isArray(s.log) ? s.log : [];
+    // 営業・交流担当AIの実行の記録（第2段階・2026-11-14。実際にAIを呼んだ記録だけ。最新50件）
+    s.runs = Array.isArray(s.runs) ? s.runs : [];
     // 社長が登録したブランドの公式サイト（ブランド名→URL）。自動発掘で使う
     s.sites = s.sites && typeof s.sites === 'object' ? s.sites : {};
     return s;
@@ -86,7 +88,11 @@
       if (!b || !/^https:\/\/[^\s]+$/.test(u)) return false;
       s.sites[b] = u.slice(0, 300); write(s); return true;
     },
-    log: function () { return read().log; }
+    log: function () { return read().log; },
+    runs: function () { return read().runs.slice(); },
+    saveRun: function (r) { var s = read(); var i = s.runs.findIndex(function (x) { return x.id === r.id; }); if (i === -1) s.runs.unshift(r); else s.runs[i] = r; s.runs = s.runs.slice(0, 50); write(s); return r; },
+    // 過去に使ったコメント（社長が送ったもの・合格したコメント案）：使い回しの確認に使う
+    pastComments: function () { var s = read(); var out = []; Object.keys(s.posts).forEach(function (k) { var p = s.posts[k]; if (p.commentedText) out.push(p.commentedText); if (p.outreach && p.outreach.final) out.push(p.outreach.final); }); return out.slice(-50); }
   };
   window.PrStore = api;
 })();

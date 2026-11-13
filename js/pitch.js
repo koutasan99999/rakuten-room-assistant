@@ -378,6 +378,13 @@
   function render(showLegacy) {
     if (showLegacy === true) { main = 'present'; tab = 'deck'; }
     body.innerHTML = '';
+    // 会社のトップ（最初の画面）から、社員の出勤状況・業務日報へ（経営報告のいちばん上）
+    if (window.WorkView) {
+      var ws = window.WorkView.staff().map(function (x) { return window.WorkView.stateOf(x).key; });
+      var cnt = function (k) { return ws.filter(function (x) { return x === k; }).length; };
+      var wl = btn('社員の出勤状況：仕事中 ' + cnt('working') + '人・承認待ち ' + cnt('approval') + '人・エラー ' + cnt('error') + '人' + (cnt('unknown') ? '・状態未確認 ' + cnt('unknown') + '人' : '') + ' ›', 'link-btn wk-top-link', function () { location.hash = '#company'; setTimeout(function () { var t = document.getElementById('staff-attendance'); if (t) t.scrollIntoView(); }, 400); });
+      body.appendChild(wl);
+    }
     var counts = { adopt: S.list('adopt').length, hold: S.list('hold').length, reject: S.list('reject').length };
     var nav = el('div', 'pitch-main-tabs');
     [['present', 'プレゼン'], ['explore', '広げる'], ['adopted', '採用済み（' + counts.adopt + '）'], ['sets', '投稿セット']].forEach(function (t) {

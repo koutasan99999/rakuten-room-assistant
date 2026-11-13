@@ -20,6 +20,7 @@
 - 社長、これどうすか？（プレゼン・広げる・採用済み・投稿セット）：js/pitch.js・js/explore.js・js/delivery.js、lib/pitch.js・lib/pitch-genres.js・lib/expand.js・lib/postset.js
 - 経営報告（ダッシュボード・会議・提言・業務）：js/company.js・lib/company.js（事実はコードが集め、AIは番号で根拠を示すだけ）
 - AIの費用：js/app.js の AiUsage（呼ぶ前に予算を確認。推定1回0.5円）
+- AI社員の仕事（経営報告のいちばん上）：js/work.js（実際の記録だけで表示）。営業・交流担当AI：lib/outreach.js・server/pr.js（outreach_draft／outreach_audit）
 - Instagram広報部（#pr）：js/pr.js・js/pr-store.js・server/pr.js・lib/ig-discovery.js。自動発掘：(1) 公式サイトのHTMLがリンクしているInstagramを候補に（費用0円・推測しない）(2) Facebookログイン方式の公式API（IG_FB_ACCESS_TOKEN・IG_FB_USER_ID）で、ビジネス／クリエイターの直近の投稿を集めてコメント案まで（未設定なら動かない）(3) ハッシュタグ検索は Meta の審査後に IG_HASHTAG_SEARCH=on。今の「Instagramログイン」方式の公式APIでは、ハッシュタグ検索・他のアカウントの調査・第三者へのフォロー/コメントはできない。自動化は探す場所の用意・分類・優先度・重複防止・コメント案・履歴まで
 
 ## 守ること（社長の方針）

@@ -27,7 +27,7 @@
   }
   function step(x, name) { var s = { name: name, status: 'running', startedAt: new Date().toISOString() }; x.steps.push(s); progress = name; A.save(x); paintFn(); return s; }
   function endStep(x, s, ok, note) { s.status = ok ? 'ok' : 'failed'; s.endedAt = new Date().toISOString(); if (note) s.note = note; A.save(x); paintFn(); }
-  function fail(x, s, why) { endStep(x, s, false, why); x.status = 'failed'; x.failedStep = s.name; x.error = why; running = null; progress = ''; A.save(x); paintFn(); }
+  function fail(x, s, why) { endStep(x, s, false, why); x.status = 'failed'; x.endedAt = new Date().toISOString(); x.failedStep = s.name; x.error = why; running = null; progress = ''; A.save(x); paintFn(); }
   function addRuns(x, data) { if (data && Array.isArray(data.runs)) x.runs = x.runs.concat(data.runs.map(function (r) { return Object.assign({ at: new Date().toISOString() }, r); })); }
   function call(x, s, body) {
     return K.postJson('api/agents', body).then(function (r) {
@@ -66,7 +66,7 @@
       x.rakutenCalls += (d.searched || []).length;
       x.candidates = (d.candidates || []).map(function (c) { return { id: c.id, status: 'running', versions: [{ v: 1, data: c, at: new Date().toISOString() }], revisions: 0 }; });
       endStep(x, s1, true, (d.candidates || []).length + '件');
-      if (!x.candidates.length) { x.status = 'done'; x.note = '候補が0件でした（数合わせはしていません）' + (x.notes ? '：' + x.notes : ''); running = null; progress = ''; A.save(x); paintFn(); return; }
+      if (!x.candidates.length) { x.status = 'done'; x.endedAt = new Date().toISOString(); x.note = '候補が0件でした（数合わせはしていません）' + (x.notes ? '：' + x.notes : ''); running = null; progress = ''; A.save(x); paintFn(); return; }
       return checkAndAudit(x, x.candidates.map(function (c) { return c.id; }), 0);
     });
   }
@@ -116,7 +116,7 @@
   }
   function finish(x) {
     x.candidates.forEach(function (c) { if (c.status === 'revise' || c.status === 'running') { c.status = 'hold'; c.why = (c.why ? c.why + '。' : '') + '修正' + MAX_REV + '回でも合格にならなかった（無理に合格にしない）'; } });
-    x.status = 'done'; running = null; progress = '';
+    x.status = 'done'; x.endedAt = new Date().toISOString(); running = null; progress = '';
     A.save(x); paintFn();
   }
 
@@ -228,8 +228,8 @@
     var wrap = el('div', 'ag-session');
     var co = costOf(x);
     var head = el('div', 'card');
-    head.appendChild(el('p', 'field-label', stamp(x.at) + '｜テーマ：' + x.theme + '｜' + ({ running: '実行中', done: '完了', failed: '失敗' }[x.status] || x.status)));
-    if (x.status === 'failed') head.appendChild(el('p', 'hint pitch-warn', '失敗した段階：' + x.failedStep + '｜理由：' + x.error));
+    head.appendChild(el('p', 'field-label', stamp(x.at) + '｜テーマ：' + x.theme + '｜' + ({ running: '実行中', done: '完了', failed: '失敗', unknown: '状態未確認' }[x.status] || x.status)));
+    if (x.status === 'failed' || x.status === 'unknown') head.appendChild(el('p', 'hint pitch-warn', (x.status === 'unknown' ? '状態未確認：止まった段階：' : '失敗した段階：') + x.failedStep + '｜理由：' + x.error));
     if (x.note) head.appendChild(el('p', 'hint', x.note));
     head.appendChild(el('p', 'hint', '費用（実測）：' + yen(co.yen) + '（AI ' + co.calls + '回' + (co.failed ? '・うち失敗' + co.failed + '回' : '') + '）｜楽天の検索 ' + x.rakutenCalls + '回（無料）｜画像の生成・有料の検索：なし'));
     var steps = el('div');
@@ -273,15 +273,17 @@
     var list = A.sessions();
     if (list.length) {
       var tabs = el('div', 'xp-filter');
-      list.slice(0, 8).forEach(function (s) { tabs.appendChild(btn(stamp(s.at) + ' ' + ({ running: '実行中', done: '完了', failed: '失敗' }[s.status] || ''), 'xp-chip' + ((openSession || list[0].id) === s.id ? ' active' : ''), function () { openSession = s.id; paintFn(); })); });
+      list.slice(0, 8).forEach(function (s) { tabs.appendChild(btn(stamp(s.at) + ' ' + ({ running: '実行中', done: '完了', failed: '失敗', unknown: '状態未確認' }[s.status] || ''), 'xp-chip' + ((openSession || list[0].id) === s.id ? ' active' : ''), function () { openSession = s.id; paintFn(); })); });
       box.appendChild(tabs);
       var cur = A.get(openSession) || list[0];
       // 前に開いていたときに途中で閉じた実行は、失敗として扱う（正常終了にしない）
-      if (cur.status === 'running' && running !== cur.id) { cur.status = 'failed'; cur.failedStep = (cur.steps[cur.steps.length - 1] || {}).name || '不明'; cur.error = '途中でアプリが閉じられたため、止まりました'; A.save(cur); }
+      // 前に開いていたときに途中で閉じた実行は、完了を確かめられないので「状態未確認」（成功にも失敗にもしない）
+      if (cur.status === 'running' && running !== cur.id) { cur.status = 'unknown'; cur.failedStep = (cur.steps[cur.steps.length - 1] || {}).name || '不明'; cur.error = '途中でアプリが閉じられた・通信が切れたため、完了を確認できません'; A.save(cur); }
       box.appendChild(sessionView(cur));
     }
     return box;
   }
 
-  window.AgentsView = { panel: panel, run: run };
+  // いま実際に動いている実行（この画面で動かしているものだけ。保存された「実行中」は信じない）
+  window.AgentsView = { panel: panel, run: run, liveId: function () { return running; } };
 })();
