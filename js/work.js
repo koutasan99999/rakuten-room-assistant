@@ -88,7 +88,7 @@
     ((sv && sv.production) || []).concat(D && D.autoRuns ? D.autoRuns() : []).forEach(function (r) { if (r && r.id && !seen[r.id]) { seen[r.id] = true; out.push(r); } });
     return out.sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 30);
   }
-  var RESULT = { pass: '監査に合格 → 社長の確認待ちに提出', hold: '保留（社長には出さない）', reject: '不合格（社長には出さない）', failed: '失敗' };
+  var RESULT = { pass: '文章と表紙画像が基準に合格 → 社長の確認待ちに提出', cover_wait: '文章は合格・表紙画像待ち（社長には出さない。文章と商品は保存）', hold: '保留（社長には出さない）', reject: '不合格（社長には出さない）', failed: '失敗' };
   function prodItems(role) {
     return productionRecords().map(function (rec) {
       var runs = (rec.runs || []).filter(function (r) { return r.role === role; });
@@ -99,7 +99,7 @@
       var dl = role === 'planner' ? (rec.items || []).map(function (it) { return String(it.name).slice(0, 28) + '（' + it.price + '円）' + (it.source === 'buyer' ? '・バイヤーAIの合格候補' : '・企画担当AIが楽天で選定'); })
         : role === 'auditor' ? (rec.audits || []).map(function (a, i) { return (i + 1) + '回目：' + (a.audit ? a.audit.total + '点' : '採点なし') + '・' + ({ pass: '合格', revise: '修正', hold: '保留', reject: '不合格' }[a.decision && a.decision.status] || '') + (a.check && a.check.hardFail ? '・コードの確認でNG' : '・コードの確認OK'); })
         : steps.map(function (x) { return x.name.replace(/^[^：]+：/, '') + '：' + (x.status === 'ok' ? (x.note || '完了') : '失敗 ' + (x.note || '')); });
-      if (role === 'auditor' || (role === 'planner' && rec.result === 'hold' && !(rec.audits || []).length) || role === 'editor') dl = dl.concat(['結果：' + (RESULT[rec.result] || rec.result || '') + (rec.result !== 'pass' && rec.why ? '：' + rec.why : '')]);
+      if (role === 'illustrator' || role === 'auditor' || (role === 'planner' && rec.result === 'hold' && !(rec.audits || []).length) || role === 'editor') dl = dl.concat(['結果：' + (RESULT[rec.result] || rec.result || '') + (rec.result !== 'pass' && rec.why ? '：' + rec.why : '')]);
       var failed = steps.some(function (x) { return x.status === 'failed'; }) && rec.result === 'failed';
       var extra = [];
       var FLAG = { fabrication: '根拠のない記述（捏造の疑い）', unverified: '確認できない断定', policy: '規約・表現' };

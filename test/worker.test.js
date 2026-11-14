@@ -6,7 +6,8 @@ import { check, record } from '../lib/budget.js';
 import { withUsage } from '../lib/ai-usage.js';
 import worker from '../server/worker.js';
 import router from '../api/[route].js';
-import { installFetchMock, json, aiReply, GOOD_INTRO } from './mock.js';
+import { installFetchMock, json, aiReply, GOOD_INTRO, imageResponse } from './mock.js';
+import fs from 'node:fs';
 
 let mock;
 let setAuditUsers = [];
@@ -16,7 +17,8 @@ const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name,
 const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
 function fetchMock({ failAi = false } = {}) {
   let setAudits = 0;
-  return installFetchMock({
+  const m = installFetchMock({
+    thumbnail: () => imageResponse(),
     rakuten: (url) => json(200, { Items: url.searchParams.get('itemCode') ? SHOP.filter((x) => x.itemCode === url.searchParams.get('itemCode')) : SHOP }),
     openai: (body) => {
       if (failAi) return json(500, { error: { message: 'server error' } });
@@ -40,14 +42,20 @@ function fetchMock({ failAi = false } = {}) {
       if (sys.includes('候補を最大3件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認' }] });
       if (sys.includes('監査AIです') && sys.includes('コメント案を')) return aiReply({ audits: [{ id: 'AAA1', scores: { specific: 23, natural: 21, relevance: 17, distance: 14, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
       if (sys.includes('監査AIです')) return aiReply({ audits: [{ id: 'c1', scores: { accuracy: 25, evidence: 22, usefulness: 17, revenue: 13, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
-      if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ place: 'キッチン', time: '夕方', action: '鍋のふたを置いている', outfit: 'エプロン', usage: '水受けトレー付き', usageQuote: '水受けトレー付き', mood: '落ち着いた' }] });
+      if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ usage: '鍋のふたを立てて置く', usageQuote: user.includes('水受けトレー付き') ? '水受けトレー付き' : (user.match(/商品の説明：([^。\n]{4,12})/) || [])[1] || '', place: 'キッチン', time: '夕方', action: '料理の途中で鍋のふたをスタンドに立てている', consistency: 'ふたはスタンドの溝に立つ', camera: '斜め上', productPlacement: '手前で大きく', outfit: 'エプロン', mood: '落ち着いた' }] });
+      if (sys.includes('品質確認の担当')) return aiReply({ single: true, character: true, sameAsMaster: true, plush3d: true, productLarge: true, productMatches: true, usingProduct: true, consistent: true, noText: true, noLogo: true, handsOk: true, noMedical: true, warmScene: true, topSpace: true, issues: [] });
       if (sys.includes('営業・交流担当AIです')) return aiReply({ drafts: [{ id: 'AAA1', anchor: '水受けトレー付き', comment: '水受けトレー付きなら台が濡れにくそうですね', relevance: 80, relevanceWhy: 'x', follow: 70, followWhy: 'y' }] });
       return aiReply({});
     }
   });
+  // 自分のサイトの静的ファイル（マスター画像・方向性の参考画像）は、リポジトリのファイルを返す
+  const mocked = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { const u = String(url); if (u.startsWith(APP)) return new Response(fs.readFileSync(new URL('../' + u.slice(APP.length), import.meta.url)), { status: 200, headers: { 'Content-Type': 'image/png' } }); return mocked(url, opts); };
+  return m;
 }
+const APP = 'https://app.test/';
 const SNAP = { themes: ['キッチンの便利グッズ'], avoid: [], past: [], outreachPosts: [{ id: 'AAA1', url: 'https://www.instagram.com/p/AAA1/', handle: 'k', caption: '鍋のふたの置き場所に困って、水受けトレー付きのスタンドを置きました。', source: '社長が追加' }], pendingBuyer: 0 };
-const run = (kv, env = ENV) => withUsage(() => tick({ kv, env, startedAt: Date.now() }));
+const run = (kv, env = ENV) => withUsage(() => tick({ kv, env, origin: APP, startedAt: Date.now() }));
 
 test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー → 合格候補を社長の確認なしで制作ライン（企画→制作→監査→修正）へ渡し、合格した投稿セットを社長の確認待ちにする。成果物はサーバーに残り、アプリが受け取れる。費用（実測）をサーバー側で記録する', async () => {
   mock = fetchMock();
@@ -58,8 +66,8 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
   assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
     'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true',
-    // 表紙画像：場面を決める → 画像（このテストではマスター画像を取れないため、画像なしで渡す）
-    'production:scene:true', 'production:image:true:done',
+    // 表紙画像：場面を決める → 画像を作る → 品質確認（合格して、社長の確認待ちへ）
+    'production:scene:true', 'production:image:true', 'production:imgcheck:true:done',
     'buyer:buyer:true:done', 'inspect:inspect:true:done', 'idle'], steps.join(' / '));
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
@@ -70,14 +78,19 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.equal(st.buyer[0].candidates.length, 0, '投稿セットに使用済みの商品は、2回目の候補から外す（コードで判断）');
   assert.equal(st.buyer[0].dropped[0].code, 's:lid');
   assert.ok(st.buyer[1].runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録（応答ID）');
-  assert.ok(st.budget.spent.month > 0 && st.budget.spent.dayAuto === st.budget.spent.month);
+  // 費用：文章のAIは自律運営の1日の上限に、画像は画像の上限に数える。どちらも月の上限（全体）に入る
+  const { imageSpent } = await import('../lib/budget.js');
+  const img = await imageSpent(kv);
+  assert.equal(img.dayCount, 1, '表紙画像は1枚');
+  assert.ok(st.budget.spent.month > 0 && Math.abs(st.budget.spent.dayAuto + img.month - st.budget.spent.month) < 0.01, JSON.stringify({ spent: st.budget.spent, img }));
   assert.equal(st.log[0].ok, true);
   // 制作ライン：社長の確認なしで次の社員へ渡り、合格した投稿セットだけが社長の確認待ちになる（採用・公開はしない）
   const pr = st.production[0];
   assert.equal(pr.result, 'pass', pr.why);
   assert.equal(pr.revisions, 1, '監査AIの指示で制作担当AIが1回直した');
   assert.deepEqual([...new Set(pr.runs.map((r) => r.role))].sort(), ['auditor', 'editor', 'illustrator', 'planner', 'producer']);
-  assert.ok(pr.runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録');
+  assert.ok(pr.runs.filter((r) => r.imageYen == null).every((r) => r.openaiId), '実際のAIの呼び出しの記録（文章のAI）');
+  assert.ok(pr.runs.some((r) => r.role === 'illustrator' && r.imageYen > 0), '画像生成の記録（費用つき）');
   assert.equal(pr.set.items.length, 3);
   assert.equal(pr.set.items[0].source, 'buyer', '社長が採用した商品とは書かない');
   assert.match(pr.set.copy.caption, /アフィリエイト/);
