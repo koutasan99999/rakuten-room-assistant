@@ -63,3 +63,35 @@ test('AIに見せる前のふるい分け（プログラム・0円）：扱わ�
   assert.equal(prefilter({ ...ok, price: 45000 }), '価格の範囲外');
   assert.equal(prefilter({ ...ok, caption: '' }), '説明がほとんど無い');
 });
+
+test('合格候補の消費：実際に投稿セットに入った候補だけを使用済みにする。企画で選ばれなかった候補は在庫に戻す。失敗した投稿セットの候補は2回まで使い直す', async () => {
+  const { tick, backlog, MAX_CANDIDATE_TRIES } = await import('../lib/worker.js');
+  const kv = memoryKv();
+  const ENV2 = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', KUMA_COVER: 'off' };
+  const cand = (code) => ({ id: 'c-' + code, status: 'pass', versions: [{ data: { id: 'c-' + code, code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
+  await kv.pushJson(WORKER_KEYS.buyer, { id: 'sA', candidates: [cand('a'), cand('b')] }, 30);
+  await kv.setJson(WORKER_KEYS.snap, { at: new Date().toISOString() });
+  const source = [{ code: 'a', name: 'a' }, { code: 'b', name: 'b' }];
+  const job = (id, step) => ({ id, type: 'production', step, startedAt: new Date().toISOString(), steps: 9, attempts: 0, source,
+    set: { id: 'set-' + id, title: 't', items: [{ code: 'a', source: 'buyer', name: 'a', price: 1000 }, { code: 'z', source: 'search', name: 'z', price: 1000 }] },
+    rec: { id, origin: 'server', at: new Date().toISOString(), status: 'running', steps: [], runs: [], audits: [], revisions: 0, rakutenCalls: 0, result: 'pass', score: 86 } });
+  const drive = async () => { for (let i = 0; i < 6; i++) { const r = await withUsage(() => tick({ kv, env: ENV2, origin: 'https://app.test/', startedAt: Date.now() })); if (!r.worked || r.worked.final) break; } };
+  // 1. 表紙画像待ち（文章と商品は保存）：投稿セットに入った a だけ使用済み。企画で使われなかった b は在庫に残る
+  await kv.setJson('worker:job', job('j1', 'scene'));
+  await drive();
+  let stock = (await backlog(kv, {})).map((c) => c.code);
+  assert.deepEqual(stock, ['b']);
+  // 2. 失敗した投稿セットの候補は、2回まで在庫に戻す
+  await kv.pushJson(WORKER_KEYS.buyer, { id: 'sB', candidates: [cand('c')] }, 30);
+  const failing = () => ({ ...job('j' + Math.random().toString(36).slice(2, 6), 'nope'), source: [{ code: 'c', name: 'c' }], set: { id: 'set-f', title: 't', items: [{ code: 'c', source: 'buyer', name: 'c', price: 1000 }] } });
+  assert.equal(MAX_CANDIDATE_TRIES, 2);
+  for (let n = 1; n <= 2; n++) {
+    await kv.setJson('worker:job', failing());
+    for (let i = 0; i < 5; i++) { await kv.del('worker:health'); const r = await withUsage(() => tick({ kv, env: ENV2, origin: 'https://app.test/', startedAt: Date.now() })); if (!r.worked || r.worked.final) break; }
+    stock = (await backlog(kv, {})).map((c) => c.code);
+    if (n === 1) assert.ok(stock.includes('c'), '1回目の失敗では在庫に戻る');
+    else assert.ok(!stock.includes('c'), '2回失敗したら使わない');
+  }
+  const prod = (await kv.listJson('worker:results:production', 5)).find((r) => r.id === 'j1');
+  assert.deepEqual(prod.sourceUse, { offered: 2, inSet: 1, released: 1 });
+});
