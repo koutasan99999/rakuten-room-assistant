@@ -105,5 +105,5 @@ test('第1段階：出勤状況。記録がなければ「今は仕事してい�
   assert.ok(staff.every((x) => x.items.length === 0));
   assert.ok(staff.every((x) => W.stateOf(x).key === 'off'));
   assert.ok(staff.every((x) => x.auto && typeof x.auto.can === 'boolean' && (x.auto.can ? x.auto.how : x.auto.why)), '社員ごとに、自律運営できるか・できない理由');
-  assert.equal(staff.filter((x) => x.auto.can).map((x) => x.key).sort().join(','), 'auditor,buyer,editor,outreach,planner,set');
+  assert.equal(staff.filter((x) => x.auto.can).map((x) => x.key).sort().join(','), 'auditor,buyer,editor,outreach,planner,planning,set');
 });
