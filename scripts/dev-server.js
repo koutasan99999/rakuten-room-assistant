@@ -13,6 +13,7 @@ import healthHandler from '../server/health.js';
 import agentsHandler from '../server/agents.js';
 import igHandler from '../server/ig.js';
 import workerHandler from '../server/worker.js';
+import dataHandler from '../server/data.js';
 import { memoryKv } from '../lib/kv.js';
 import { withUsage } from '../lib/ai-usage.js';
 import instagramHandler from '../server/instagram.js';
@@ -404,6 +405,7 @@ http.createServer((req, res) => withUsage(async () => {
   if (url.pathname === '/api/pr') return prHandler(req, res, env);
   if (url.pathname === '/api/ig') return igHandler(req, res, env);
   if (url.pathname === '/api/worker') return workerHandler(req, res, env);
+  if (url.pathname === '/api/data') return dataHandler(req, res, env);
   const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!file.startsWith(root)) { res.statusCode = 403; return res.end(); }
   try {
