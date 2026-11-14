@@ -192,3 +192,44 @@ test('修正：購入理由の項目（購入動機・競合との比較など�
   const c = r.revisions[0].candidate;
   assert.equal(c.motive, 'fix'); assert.equal(c.vsOthers, 'R2と違い水受け付き'); assert.equal(c.priceReason, '2,000円以下'); assert.equal(c.problem, 'ふたの置き場所');
 });
+
+test('自律運営の1日25円：手動の定期実行（workflow_dispatch）と自動の定期実行（qstash）のどちらも、同じ記録で数え、上限に近づいたらAIを1回も呼ばずに止まる', async () => {
+  const { tick, WORKER_KEYS: WK } = await import('../lib/worker.js');
+  const { spent } = await import('../lib/budget.js');
+  const kv = memoryKv();
+  let aiCalls = 0;
+  // 1回のAI呼び出しが高くつく（約1.6円）偽物：上限に早く届くようにする
+  mock = installFetchMock({
+    rakuten: () => json(200, { Items: makeItems(15, 'b') }),
+    openai: () => { aiCalls++; return aiReply({ keywords: [{ keyword: 'キッチン 便利', why: 'x' }], candidates: [] }, { prompt_tokens: 20000, completion_tokens: 5000 }); }
+  });
+  await kv.setJson(WK.snap, { at: new Date().toISOString(), themes: ['キッチン'], avoid: [], past: [], outreachPosts: [] });
+  const trig = ['workflow_dispatch', 'qstash'];
+  let stoppedAt = null;
+  for (let i = 0; i < 60; i++) {
+    const before = aiCalls;
+    const r = await withUsage(() => tick({ kv, env: { ...ENV, __noWait: true }, origin: 'https://app.test/', startedAt: Date.now(), trigger: trig[i % 2] }));
+    const s = await spent(kv);
+    assert.ok(s.dayAuto <= 25 + 3, `1日の記録 ${s.dayAuto}円（上限25円＋最後の1段階分まで）`);
+    if (r.skipped && /上限/.test(r.skipped)) { stoppedAt = s.dayAuto; assert.equal(aiCalls, before, '上限で止まったときはAIを呼ばない'); break; }
+    if (r.idle) {
+      assert.equal(aiCalls, before, '仕事が無い・待ちのときはAIを呼ばない');
+      const why = (r.board.items.find((x) => x.agent === 'buyer') || {}).reason || '';
+      if (/費用の残り/.test(why)) { stoppedAt = s.dayAuto; break; } // 残りが仕事の見込みより少ないので始めない
+      await kv.del(`worker:quota:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}:buyer`); // 回数の上限ではなく費用の上限で止まることを確かめる
+    }
+  }
+  assert.ok(stoppedAt != null && stoppedAt > 18 && stoppedAt <= 25, `費用の上限で止まった（${stoppedAt}円）`);
+  const s = await spent(kv);
+  assert.equal(s.month, s.dayAuto, '同じ費用が月の上限にも数えられている');
+});
+
+test('購入動機をAIが文章で返しても読み取る。監査AIには楽天のレビュー件数・平均点（確認日つき）を渡す', async () => {
+  const { readMotive } = await import('../lib/buyer-angles.js');
+  assert.equal(readMotive('fix'), 'fix'); assert.equal(readMotive('日常の不便を解消したい'), 'fix'); assert.equal(readMotive('プレゼント'), 'gift'); assert.equal(readMotive('新作と型落ちを比べる'), 'compare'); assert.equal(readMotive('なし'), '');
+  const { auditStep } = await import('../lib/agents.js');
+  let user = '';
+  mock = installFetchMock({ rakuten: () => json(200, { Items: [] }), openai: (body) => { user = body.messages[1].content; return aiReply({ audits: [] }); } });
+  await withUsage(() => auditStep({ candidates: [{ id: 'c1', ref: 'R1', name: 'スタンド', price: 1980, shop: 's', quotes: ['q'], reason: 'r', target: 't', problem: 'p', roomValue: 'v', cautions: 'c' }], results: [{ ref: 'R1', caption: '説明', reviewCount: 165, reviewAverage: 4.65, checkedAt: '2026-11-15T00:00:00Z' }], checks: [], env: ENV }));
+  assert.match(user, /レビュー165件（平均4.65）/); assert.match(user, /2026-11-15T00:00:00Z 確認/);
+});
