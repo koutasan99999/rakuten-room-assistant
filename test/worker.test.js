@@ -207,9 +207,9 @@ test('API：定期実行は合言葉が必要。保存場所が未接続なら�
   assert.equal(s.data.outreachPosts, 1, 'Instagramの投稿のURLでなければ受け取らない');
 });
 
-test('制作担当AI：商品カードの文字も直せる。直した場所を記録する', async () => {
+test('制作担当AI：商品カードの文字も直せる（商品データにある言葉だけ）。直した場所を記録する', async () => {
   const { applyEdit, fixCheck, codeCheck } = await import('../lib/production.js');
-  const set = { title: 't', items: [{ name: 'a', price: 1000 }], copy: { body: '本文', caption: '本文\n\n※楽天アフィリエイトを利用しています。', hashtags: [], items: [{ shortName: 'a', subline: '人気No.1', memo: 'メモ' }] }, roomTexts: [{ intro: 'x' }] };
+  const set = { title: 't', items: [{ name: 'a', price: 1000, caption: '水受けトレー付き。' }], copy: { body: '本文', caption: '本文\n\n※楽天アフィリエイトを利用しています。', hashtags: [], items: [{ shortName: 'a', subline: '人気No.1', memo: 'メモ' }] }, roomTexts: [{ intro: 'x' }] };
   const r = applyEdit(set, { caption: '', card: [{ n: 1, subline: '水受けトレー付き', memo: '' }], room: [] });
   assert.equal(r.set.copy.items[0].subline, '水受けトレー付き');
   assert.equal(set.copy.items[0].subline, '人気No.1', '元の版は変えない');
