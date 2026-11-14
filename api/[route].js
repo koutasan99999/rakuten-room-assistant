@@ -36,6 +36,7 @@ import trends from '../server/trends.js';
 import worker from '../server/worker.js';
 import data from '../server/data.js';
 import kumaMaster from '../server/kuma-master.js';
+import media from '../server/media.js';
 
 export const ROUTES = {
   'agents': agents,
@@ -68,7 +69,8 @@ export const ROUTES = {
   'trends': trends,
   'worker': worker,
   'data': data,
-  'kuma-master': kumaMaster
+  'kuma-master': kumaMaster,
+  'media': media
 };
 
 export default async function handler(req, res) {
