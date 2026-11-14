@@ -140,3 +140,42 @@ test('制作に渡す合格候補：点数の高い順に、切り口が重な�
   assert.deepEqual(s.map((x) => x.code), ['a', 'c']);
   assert.deepEqual(pickSource([{ code: 'a', angle: 'classic', score: 95 }, { code: 'b', angle: 'classic', score: 92 }], 2).map((x) => x.code), ['a', 'b'], '切り口が1種類しかなければ同じ切り口でも選ぶ');
 });
+
+test('購入動機：3つ（日常の不便・プレゼント・比べて買う）。直近の投稿セットで少ない動機から企画し、その動機の合格候補を渡す', async () => {
+  const { MOTIVES, chooseMotive, motiveOfAngle } = await import('../lib/buyer-angles.js');
+  assert.deepEqual(MOTIVES.map((m) => m.id), ['fix', 'gift', 'compare']);
+  assert.equal(chooseMotive(['fix', 'fix', 'gift'], 0).id, 'compare');
+  assert.equal(motiveOfAngle('gift').id, 'gift'); assert.equal(motiveOfAngle('old_model').id, 'compare'); assert.equal(motiveOfAngle('unique').id, 'fix');
+});
+
+test('コードの確認：誰が買うか・困りごと・なぜ今・競合との比較（ほかの検索結果のR番号つき）・価格に納得できる理由・投稿の案がそろっていなければ不合格', async () => {
+  const { checkOne } = await import('../lib/agents.js');
+  mock = installFetchMock({ rakuten: () => json(200, { Items: [] }), openai: () => aiReply({}) });
+  const full = { id: 'c1', ref: 'R1', code: 's:x', name: 'ステンレス 鍋蓋スタンド', price: 1980, url: 'https://item.rakuten.co.jp/s/x/', image: 'x', quotes: ['水受けトレー付き'], reason: '水受けトレー付き', target: 't', problem: '鍋のふたの置き場所', roomValue: 'v', cautions: 'c',
+    angle: 'unique', motive: 'fix', whoBuys: '自炊する社会人', whyNow: '鍋料理の季節', vsOthers: 'R3と違い水受けトレー付き', priceReason: '2,000円以下', postIdea: 'くまがふたを立てる', evidence: [] };
+  const result = { ref: 'R1', code: 's:x', caption: '水受けトレー付きで、水滴がたれにくい。', keyword: 'k', checkedAt: 'x', affiliateRate: 4 };
+  let k = await checkOne(full, result, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'brief').ok, true);
+  k = await checkOne({ ...full, vsOthers: 'ほかより丈夫' }, result, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'brief').ok, false, '比べたほかの商品の番号が無い');
+  k = await checkOne({ ...full, vsOthers: 'R1より良い' }, result, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'brief').ok, false, '自分自身との比較は不可');
+  k = await checkOne({ ...full, priceReason: '', motive: '' }, result, { env: ENV, referer: 'https://x/' });
+  assert.match(k.checks.find((x) => x.key === 'brief').detail, /購入動機・価格に納得できる理由/);
+});
+
+test('販売導線：本文はストーリーズのハイライト（購入動機ごと）のリンクへ案内する。商品ごとのリンクスタンプ・測る数字・要確認の点を投稿セットに残す。企画担当AIに購入動機と商品ごとの購入理由を渡す', async () => {
+  const { funnelOf, motiveNote } = await import('../lib/production.js');
+  const { assembleCaption } = await import('../lib/instagram.js');
+  const f = funnelOf({ items: [{ name: '鍋蓋スタンド', url: 'https://item.rakuten.co.jp/s/x/' }] }, 'gift');
+  assert.equal(f.highlight, 'プレゼント');
+  assert.match(f.captionCta, /ハイライト「プレゼント」のリンクから1回で開けます/);
+  assert.equal(f.stories[0].link, 'https://item.rakuten.co.jp/s/x/');
+  assert.ok(f.measure.some((x) => /ストーリーズのリンクのタップ/.test(x)) && f.measure.some((x) => /報酬/.test(x)));
+  assert.ok(f.unverified.length >= 2, '規約が未確認の点を残す');
+  const cap = assembleCaption({ body: '本文', collection: 'c', hashtags: ['#a'], cta: f.captionCta });
+  assert.match(cap, /ハイライト「プレゼント」/); assert.match(cap, /楽天アフィリエイト/);
+  assert.match(assembleCaption({ body: '本文', hashtags: [] }), /プロフィールのリンクから見られます/, 'ほかの投稿は今までどおり');
+  const n = motiveNote('fix', [{ name: '鍋蓋スタンド', whoBuys: '自炊する社会人', problem: 'ふたの置き場所', vsOthers: 'R3と違い水受け付き', priceReason: '2,000円以下' }]);
+  assert.match(n, /購入動機：日常の不便を解消したい/); assert.match(n, /競合との比較「R3と違い水受け付き」/);
+});

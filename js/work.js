@@ -373,6 +373,18 @@
     };
     box.appendChild(el('p', 'hint', line('直近7日', since(7))));
     box.appendChild(el('p', 'hint', line('直近30日', since(30))));
+    // 購入動機ごとの比較（2026-11-14 販売戦略）：閲覧・リンクのタップ・ROOMへの流入・売上・報酬は、投稿の実績（公式APIか手入力）だけ。無ければ「未取得」
+    var MOT = { fix: '日常の不便を解消', gift: '失敗しないプレゼント', compare: '新作・定番・型落ちを比べる' };
+    var PS = window.PerfStore;
+    var posts = PS && PS.all ? PS.all() : [];
+    Object.keys(MOT).forEach(function (mid) {
+      var ss = sets.filter(function (x) { return x.motive === mid; });
+      if (!ss.length) return;
+      var ids = {}; ss.forEach(function (x) { ids[x.id] = true; });
+      var mine = posts.filter(function (p) { return p.setId && ids[p.setId]; });
+      var sum = function (key) { var v = null; mine.forEach(function (p) { var l = PS.latest ? PS.latest(p) : null; if (l && l[key] && l[key].value != null) v = (v || 0) + Number(l[key].value); }); return v == null ? '未取得' : v.toLocaleString('ja-JP'); };
+      box.appendChild(el('p', 'hint', '購入動機「' + MOT[mid] + '」：投稿セット ' + ss.length + '件・採用 ' + ss.filter(function (x) { return x.status === 'adopted'; }).length + '件・投稿 ' + mine.length + '件｜閲覧 ' + sum('views') + '・ストーリーズのリンクのタップ ' + sum('storyLinkTaps') + '・ROOMへの流入 ' + sum('roomClicks') + '・売上 ' + sum('sales') + '円・報酬 ' + sum('commission') + '円'));
+    });
     return box;
   }
 

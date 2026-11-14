@@ -19,8 +19,10 @@
     { key: 'profileVisits', label: 'プロフィールへのアクセス', api: 'profile_visits' },
     { key: 'follows', label: 'フォロー（この投稿から）', api: 'follows' },
     { key: 'linkTaps', label: 'プロフィールのリンクのタップ', api: '', note: 'アカウント全体ではAPIで取れる。投稿ごとは手入力' },
+    { key: 'storyLinkTaps', label: 'ストーリーズのリンクのタップ', api: '', note: 'ストーリーズのインサイトで見て手入力（2026-11-14 販売導線の比較用）' },
     { key: 'roomClicks', label: 'ROOMへの流入（クリック）', api: '', note: '楽天にAPIがないため手入力' },
-    { key: 'sales', label: '売上（円）', api: '', note: '楽天アフィリエイトの報告から手入力' }
+    { key: 'sales', label: '売上（円）', api: '', note: '楽天アフィリエイトの報告から手入力' },
+    { key: 'commission', label: '報酬（円）', api: '', note: '楽天アフィリエイトの報告から手入力（月3万円の目標と比べる数字）' }
   ];
   var FORMATS = { carousel: 'カルーセル', reel: 'リール', image: '画像1枚', story: 'ストーリー', other: 'その他' };
 

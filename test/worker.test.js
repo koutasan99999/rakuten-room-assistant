@@ -39,7 +39,7 @@ function fetchMock({ failAi = false } = {}) {
       if (sys.includes('制作担当AIです')) return aiReply({ caption: '料理のたびに、ふたやトングの置き場所に迷う人へ。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', room: [], giveUp: '' });
       void user;
       if (sys.includes('検索語を決めます')) return aiReply({ keywords: [{ keyword: 'キッチン 便利', why: 'x' }] });
-      if (sys.includes('候補を最大6件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認' }] });
+      if (sys.includes('候補を最大6件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認', motive: 'fix', whoBuys: '平日に自炊する社会人', whyNow: '鍋料理が増える季節', vsOthers: 'R2のトングと違い、水受けトレー付き', priceReason: '1,000円で送料はショップで確認', postIdea: 'くまが鍋のふたをスタンドに立てる' }] });
       if (sys.includes('監査AIです') && sys.includes('コメント案を')) return aiReply({ audits: [{ id: 'AAA1', scores: { specific: 23, natural: 21, relevance: 17, distance: 14, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
       if (sys.includes('監査AIです')) return aiReply({ audits: [{ id: 'c1', scores: { accuracy: 25, evidence: 22, usefulness: 17, revenue: 13, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
       if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ usage: '鍋のふたを立てて置く', usageQuote: user.includes('水受けトレー付き') ? '水受けトレー付き' : (user.match(/商品の説明：([^。\n]{4,12})/) || [])[1] || '', place: 'キッチン', time: '夕方', action: '料理の途中で鍋のふたをスタンドに立てている', consistency: 'ふたはスタンドの溝に立つ', camera: '斜め上', productPlacement: '手前で大きく', outfit: 'エプロン', mood: '落ち着いた' }] });

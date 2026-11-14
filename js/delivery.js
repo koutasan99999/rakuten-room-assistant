@@ -276,6 +276,13 @@
     if (set.coverImage) c.appendChild(el('p', 'hint', set.coverImage.status === 'ok'
       ? '表紙画像：表紙画像担当AIが作成（' + ((set.coverImage.scene || {}).place || '') + '・' + ((set.coverImage.scene || {}).action || '') + '）｜品質確認 12項目すべて合格｜費用 ' + (set.coverImage.measured ? '実測' : '見込み') + ' ' + set.coverImage.costYen + '円｜AI生成イメージと表記'
       : '表紙画像：なし（' + (set.coverImage.reason || '') + '）。今までの表紙を使います'));
+    // 購入動機と販売導線（2026-11-14）：投稿は社長が行う。リンク先・測る数字・未確認の点を出す
+    if (set.funnel) {
+      var fn = set.funnel;
+      c.appendChild(el('p', 'hint', '購入動機：' + (fn.motiveLabel || '') + '｜本文の案内：' + (fn.captionCta || '')));
+      c.appendChild(el('p', 'hint', 'ストーリーズ（ハイライト「' + fn.highlight + '」）：' + (fn.stories || []).map(function (x) { return x.n + '. ' + x.name + ' → リンクスタンプ：' + x.link; }).join('／') + '（' + ((fn.stories || [])[0] || {}).linkNote + '）'));
+      c.appendChild(el('p', 'hint', '測る数字：' + (fn.measure || []).join('・') + '｜要確認：' + (fn.unverified || []).join('・')));
+    }
     c.addEventListener('click', function () { openId = set.id; paint(); window.scrollTo(0, 0); });
     return c;
   }
