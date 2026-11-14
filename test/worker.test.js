@@ -11,7 +11,7 @@ import { installFetchMock, json, aiReply, GOOD_INTRO } from './mock.js';
 let mock;
 let setAuditUsers = [];
 afterEach(() => { if (mock) mock.restore(); mock = null; setAuditUsers = []; });
-const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec' };
+const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec', __noWait: true };
 const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 3 });
 const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
 function fetchMock({ failAi = false } = {}) {
@@ -57,7 +57,7 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
   assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
     'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true:done',
-    'buyer:buyer:true:done', 'idle'], steps.join(' / '));
+    'buyer:buyer:true:done', 'inspect:inspect:true:done', 'idle'], steps.join(' / '));
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
   assert.equal(st.outreach[0].outreach.status, 'pass');
@@ -92,7 +92,17 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.match(pr.versions[0].texts.caption, /台所の置き場所/);
   assert.ok(pr.audits[1].check.checks.every((k) => k.ok !== false), JSON.stringify(pr.audits[1].check.checks));
   // 仕事探しの記録：仕事がない社員は理由つきで「仕事なし」
-  assert.ok(st.board && st.board.items.length === 3);
+  assert.equal(st.board.items.map((x) => x.agent).join(','), 'production,outreach,buyer,inspect,measure,publish');
+  // サーバーの正本：合格した投稿セットが入り、公開待ちへ繰り上がっている。点検の記録もある
+  const S = await import('../lib/store.js');
+  const recs = await S.list(kv);
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].state, 'ready');
+  assert.equal(recs[0].origin, 'server');
+  assert.ok(recs[0].set.inspection && recs[0].set.inspection.checked >= 1, '棚の点検：楽天で引き直した');
+  assert.ok(recs[0].rev >= 3, '作成→繰り上げ→点検で更新番号が上がる');
+  assert.match(st.board.items.find((x) => x.agent === 'measure').reason, /API未設定/);
+  assert.match(st.board.items.find((x) => x.agent === 'publish').reason, /未実装.*IG_ACCESS_TOKEN/);
   assert.ok(st.board.items.every((x) => ['work', 'wait', 'none'].includes(x.status) && x.reason));
   assert.equal(st.backlog, 0, '使った合格候補は二度と使わない');
 });
@@ -322,4 +332,29 @@ test('QStash：生の本文の読み取り。本文の要約値は base64url（�
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc', keys: ['k'] }).ok, true);
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abd', keys: ['k'] }).ok, false);
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc ', keys: ['k'] }).ok, false);
+});
+
+test('段階1：未公開（公開待ち3＋控え6）が満杯なら新しく作らず、点検・効果測定・公開の準備に優先を移す。社長の判断が7日ないときは制作を1日1件に落とす', async () => {
+  mock = fetchMock();
+  const S = await import('../lib/store.js');
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], themes: [] }));
+  const cand = (code) => ({ id: 'c1', status: 'pass', versions: [{ data: { id: 'c1', code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
+  await kv.pushJson(WORKER_KEYS.buyer, { id: 'sx', candidates: [cand('s:lid')] }, 30);
+  for (let i = 1; i <= 9; i++) await S.create(kv, { id: `f${i}`, set: { id: `f${i}`, title: 't', items: [{ name: 'n', price: 1000, code: 's:lid' }] }, state: 'shelf', score: 80 + i });
+  const r = await run(kv);
+  const by = Object.fromEntries((await state(kv, ENV)).board.items.map((x) => [x.agent, x]));
+  assert.match(by.production.reason, /満杯（公開待ち3件・控え6件）/);
+  assert.equal(by.production.kind, 'backlog');
+  assert.equal(r.worked.agent, 'inspect', '満杯でも止まらず、棚の点検に移る');
+  assert.equal(mock.calls.openai.length, 0, '満杯のときはAIの費用を使わない');
+  // 社長の判断が無く7日：空きがあっても1日1件まで
+  const kv2 = memoryKv();
+  await kv2.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], themes: [] }));
+  await kv2.pushJson(WORKER_KEYS.buyer, { id: 'sx', candidates: [cand('s:lid')] }, 30);
+  await S.create(kv2, { id: 'g1', set: { id: 'g1', title: 't', items: [] }, state: 'ready' });
+  await kv2.incr(`worker:quota:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}:production`);
+  await run(kv2);
+  const by2 = Object.fromEntries((await state(kv2, ENV)).board.items.map((x) => [x.agent, x]));
+  assert.match(by2.production.reason, /7日以上ない.*1件/);
 });

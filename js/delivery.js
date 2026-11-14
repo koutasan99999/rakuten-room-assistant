@@ -112,6 +112,9 @@
   function approved() { try { return localStorage.getItem(OK_KEY) === '1'; } catch (e) { return false; } }
   function ensureStock() {
     // 社長が投稿セットを開いている間・差し替えの途中は、新しい制作を始めない（差し替えを先に進めるため）
+    // サーバーの正本につながっているときは、投稿セットはサーバーの制作ラインが作る（この端末では自動で作らない＝同じ仕事に二重に費用をかけない）
+    var ss = window.ServerSync && window.ServerSync.status();
+    if (ss && ss.data && ss.data.ok) return;
     if (busy || fails >= 2 || !approved() || openId || !container || !container.isConnected || Object.keys(altBusy).length || location.hash.indexOf('#pitch') !== 0) return;
     if (D.pendingCount() < STOCK) produce();
   }
@@ -789,13 +792,16 @@
     if (lastError) container.appendChild(el('p', 'hint pitch-warn', '直近の制作に失敗しました：' + lastError + (fails >= 2 ? '（2回続いたので止めています）' : '')));
     if (fails >= 2 && !busy) container.appendChild(btn('もう一度作ってもらう', 'btn btn-discover', function () { fails = 0; produce(); }));
     var list = D.all();
-    var tabs = [['new', '確認待ち'], ['adopted', '採用'], ['rejected', '却下']];
+    // サーバーの正本の状態で分ける：公開待ち（最大3件・社長に見せる）／控え（最大6件・公開待ちが空けば自動で繰り上がる）／期限切れ（消さない）
+    var sv = function (x) { return x._server ? x._server.state : ''; };
+    var tabs = [['new', '確認待ち（公開待ち）', function (x) { return x.status === 'new' && (!sv(x) || sv(x) === 'ready'); }], ['shelf', '控え（公開待ちが空けば自動で繰り上がります）', function (x) { return x.status === 'new' && sv(x) === 'shelf'; }], ['adopted', '採用', function (x) { return x.status === 'adopted'; }], ['rejected', '却下', function (x) { return x.status === 'rejected'; }], ['expired', '期限切れ（14日たった・控えの上限を超えた。消していません）', function (x) { return x.status === 'new' && sv(x) === 'expired'; }]];
     tabs.forEach(function (t) {
-      var xs = list.filter(function (x) { return x.status === t[0]; });
+      var xs = list.filter(t[2]);
       if (!xs.length && t[0] !== 'new') return;
       container.appendChild(el('p', 'field-label', t[1] + '（' + xs.length + '）'));
       if (!xs.length) container.appendChild(el('p', 'manage-empty', busy ? '最初の投稿セットを作っています。' : 'まだありません。'));
-      xs.forEach(function (x) { container.appendChild(card(x)); });
+      if (t[0] === 'shelf' || t[0] === 'expired') { var det = el('details'); det.appendChild(el('summary', null, '開いて見る（' + xs.length + '件）')); xs.forEach(function (x) { det.appendChild(card(x)); }); container.appendChild(det); }
+      else xs.forEach(function (x) { container.appendChild(card(x)); });
     });
   }
 

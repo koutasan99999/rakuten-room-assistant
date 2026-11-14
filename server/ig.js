@@ -1,4 +1,4 @@
-// Instagramの公式APIのAPI：action: status（設定と基本の数字）／insights（アカウントと最近の投稿の数字）／media（P0：投稿ごとの実績）／refresh（トークンの更新）／publish（自分の投稿）
+// Instagramの公式APIのAPI：action: readiness（公開に必要な設定の確認・読むだけ）／status（設定と基本の数字）／insights（アカウントと最近の投稿の数字）／media（P0：投稿ごとの実績）／refresh（トークンの更新）／publish（自分の投稿）
 // トークンが設定されていなければ「未設定」と返すだけ。他人へのフォロー・コメントの機能はない。
 import { send, readBody } from '../lib/http.js';
 import crypto from 'node:crypto';
@@ -32,6 +32,20 @@ export default async function handler(req, res, env = process.env) {
   const cfg = igConfig(env);
   const body = await readBody(req);
   const action = String(body.action || 'status');
+  // 公開（段階2）の接続テストの準備：必要な設定があるか（名前だけ。値は出さない）と、鍵があればアカウントを読めるか（読むだけ。投稿はしない）
+  if (action === 'readiness') {
+    const has = (k) => !!String(env[k] || '').trim();
+    const checks = [
+      { key: 'IG_ACCESS_TOKEN', label: 'Instagram公式APIの鍵（Instagramログイン方式・投稿の権限つき）', ok: has('IG_ACCESS_TOKEN') },
+      { key: 'IG_USER_ID', label: 'InstagramのユーザーID（無ければ me を使う）', ok: has('IG_USER_ID'), optional: true },
+      { key: 'IG_PUBLISH_ENABLED', label: '投稿をオンにする（1 のときだけ投稿する）', ok: String(env.IG_PUBLISH_ENABLED || '') === '1' },
+      { key: 'KV_REST_API_URL', label: '画像の一時保管とサーバーの正本（Upstash Redis）', ok: has('KV_REST_API_URL') || has('UPSTASH_REDIS_REST_URL') },
+      { key: 'PUBLIC_BASE_URL', label: '画像を公開するURLの元（無ければ要求のホスト名を使う）', ok: has('PUBLIC_BASE_URL'), optional: true }
+    ];
+    let account = null; let accountError = '';
+    if (cfg.ready) { try { account = await accountSummary(cfg); } catch (e) { accountError = String(e.message || e).slice(0, 200); } }
+    return send(res, 200, { readiness: true, checks, account, accountError, imagePipeline: '未実装（段階2：承認した投稿セットの画像をアプリでJPEGにして保存し、公開URLから配る）', missing: checks.filter((c) => !c.ok && !c.optional).map((c) => c.key) });
+  }
   if (!cfg.ready) return send(res, 200, { ready: false, notice: 'Instagramの公式APIのトークン（IG_ACCESS_TOKEN）がまだ設定されていません。' });
   try {
     if (action === 'status') return send(res, 200, { ready: true, publishEnabled: cfg.publishEnabled, dailyLimit: cfg.dailyLimit, account: await accountSummary(cfg) });

@@ -11,7 +11,7 @@
 ## 構成
 - 静的な画面（index.html・js/・css/）＋ Vercel の1つの関数（api/[route].js が server/*.js に振り分け。Hobby は関数12個まで）。
 - 外部API：楽天市場の商品検索（1秒1回）、OpenAI（lib/ai.js の runWithModels）、Instagram 公式API（lib/ig-graph.js。トークン未設定）。
-- 保存：会社のデータはすべて社長のiPhoneの localStorage（サーバーには保存場所がない）。主なキー：
+- 保存：投稿セットと社長の判断はサーバーが正本（2026-11-14・段階1・lib/store.js・/api/data・更新番号による楽観的排他制御。端末は写しで消さない）。ほかの会社のデータはまだ社長のiPhoneの localStorage。主なキー：
   room-pitch（プレゼン・採用）／room-explore（広げる）／room-delivery（投稿セット）／room-texts（ROOM紹介文）／room-company（経営会議・業務）／room-agents（AI社員の試験：バイヤーAI×監査AIの実行記録）／room-ig-perf（投稿ごとの実績：公式APIか手入力。未取得は推測しない）／IndexedDB room-creative（投稿画像の版と客観確認の結果）／room-ai-usage（AIの利用量と予算。実測の使用量と実行の記録も）／room-pr（Instagram広報部：フォロー候補・コメント候補）。
   既存のデータを消す・初期化する変更はしない。キーを変えるときは読み替え（互換）を入れる。
 - 定時実行：vercel.json の cron（Hobby は1日1回）。自律運営（2026-11-15）：QStash（Upstash の無料枠・15分ごと・署名を lib/qstash.js で確認。2026-11-16 に GitHub の定期実行から移した。GitHub Actions は手動の実行だけ）が /api/worker を呼び、サーバーの保存場所（Upstash Redis の無料枠・lib/kv.js）に仕事の途中経過と成果物を残す（lib/worker.js）。保存場所が未接続なら、会議や制作は「アプリを開いたとき」だけ動く。AIの費用の上限はサーバー側でも守る（lib/budget.js）。制作ライン（2026-11-16・lib/production.js）：監査AIが合格にした候補を、社長の確認なしで 企画担当AI→投稿セット制作AI→監査AI→制作担当AI へ渡し、合格した投稿セットだけを社長の確認待ちにする。社員は仕事探し（worker:board）で自分の仕事を見つける。出勤状況は「今日AIを呼んで仕事をした社員」だけ、社長確認待ちは別欄（js/work.js）。

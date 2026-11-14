@@ -34,6 +34,7 @@ import seedIdeas from '../server/seed-ideas.js';
 import thief from '../server/thief.js';
 import trends from '../server/trends.js';
 import worker from '../server/worker.js';
+import data from '../server/data.js';
 
 export const ROUTES = {
   'agents': agents,
@@ -64,7 +65,8 @@ export const ROUTES = {
   'seed-ideas': seedIdeas,
   'thief': thief,
   'trends': trends,
-  'worker': worker
+  'worker': worker,
+  'data': data
 };
 
 export default async function handler(req, res) {

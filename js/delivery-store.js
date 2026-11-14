@@ -12,6 +12,7 @@
     s = s && typeof s === 'object' ? s : {};
     s.sets = s.sets && typeof s.sets === 'object' ? s.sets : {};
     s.history = Array.isArray(s.history) ? s.history : [];
+    s.outbox = Array.isArray(s.outbox) ? s.outbox : []; // サーバーへまだ送っていない変更（2026-11-14・段階1）
     return s;
   }
   function write(s) {
@@ -25,6 +26,14 @@
     return false;
   }
 
+  // 送る予定に入れる（同じ投稿セットの同じ種類の予定は1つにまとめる。判断は順番どおり残す）
+  function queue(s, op) {
+    op.at = new Date().toISOString();
+    if (op.op !== 'decide') s.outbox = s.outbox.filter(function (x) { return !(x.id === op.id && (x.op === 'put' || x.op === 'import')); });
+    s.outbox.push(op);
+    s.outbox = s.outbox.slice(-200);
+  }
+
   window.DeliveryStore = {
     STATUS: STATUS,
     all: function () {
@@ -35,15 +44,31 @@
     save: function (set) {
       var s = read();
       s.sets[set.id] = Object.assign({ status: 'new' }, s.sets[set.id] || {}, set);
+      // サーバーの正本へ送る予定に入れる（サーバーに既にあれば中身の更新、無ければ新しく取り込む）。送るときに最新の中身を読む
+      queue(s, { op: s.sets[set.id]._server ? 'put' : 'import', id: set.id });
       write(s);
       return s.sets[set.id];
     },
+    // サーバーの正本の内容を、この端末の写しに書く（送る予定には入れない）。状態の読み替え：公開待ち・控え・期限切れ→確認待ち（_server.state で見分ける）／採用・公開済み→採用／却下→却下
+    applyServer: function (rec) {
+      var s = read();
+      var local = s.sets[rec.id] || {};
+      var status = rec.state === 'approved' || rec.state === 'published' ? 'adopted' : rec.state === 'rejected' ? 'rejected' : 'new';
+      s.sets[rec.id] = Object.assign({}, local, rec.set || {}, { id: rec.id, status: status, _server: { rev: rec.rev, state: rec.state, updatedAt: rec.updatedAt, score: rec.score, decision: rec.decision || null } });
+      write(s);
+      return s.sets[rec.id];
+    },
+    outbox: function () { return read().outbox.slice(); },
+    // 送り終えた（または競合で取りやめた）予定を外す
+    doneOp: function (op) { var s = read(); s.outbox = s.outbox.filter(function (x) { return !(x.op === op.op && x.id === op.id && x.at === op.at); }); write(s); },
     // 社長の判断（採用・差し替え・却下）を記録する。履歴は次の企画に渡す
     decide: function (id, status, reason, kind) {
       var s = read();
       var x = s.sets[id];
       if (!x) return null;
       if (status) { x.status = status; x.decidedAt = new Date().toISOString(); }
+      // 採用・却下はサーバーの正本へ（更新番号つき。ほかの端末が先に変えていたら競合になり、最新を読み直す）
+      if (status === 'adopted' || status === 'rejected') queue(s, { op: 'decide', id: id, decision: status === 'adopted' ? 'approve' : 'reject', reason: String(reason || '').slice(0, 200) });
       x.reason = String(reason || x.reason || '').slice(0, 120);
       s.history.unshift({ status: kind || (status === 'adopted' ? 'adopt' : status === 'rejected' ? 'reject' : 'revise'), pattern: x.pattern, title: x.title, reason: String(reason || '').slice(0, 100), at: Date.now() });
       s.history = s.history.slice(0, 60);
@@ -70,6 +95,7 @@
     },
     autoRuns: function () { var a = read().auto; return Array.isArray(a) ? a : []; },
     autoGet: function (id) { return window.DeliveryStore.autoRuns().filter(function (x) { return x.id === id; })[0] || null; },
-    pendingCount: function () { return window.DeliveryStore.all().filter(function (x) { return x.status === 'new' && !x.supersededBy; }).length; }
+    // 確認待ち（サーバーの正本があるものは「公開待ち」だけを数える。控え・期限切れは数えない）
+    pendingCount: function () { return window.DeliveryStore.all().filter(function (x) { return x.status === 'new' && !x.supersededBy && (!x._server || x._server.state === 'ready'); }).length; }
   };
 })();

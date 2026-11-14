@@ -87,6 +87,61 @@
     return n;
   }
 
+  // ---- サーバーの正本との同期（2026-11-14・段階1）：移行（冪等・照合つき）→ 送る予定を送る（更新番号つき）→ サーバーの内容を写す ----
+  var SYNC_KEY = 'room-data-sync'; // この端末の識別子・移行の記録（端末のデータは消さない）
+  function syncMeta() { var m; try { m = JSON.parse(localStorage.getItem(SYNC_KEY)); } catch (e) {} m = m && typeof m === 'object' ? m : {}; if (!m.deviceId) { m.deviceId = 'd' + Math.random().toString(36).slice(2, 10); saveMeta(m); } return m; }
+  function saveMeta(m) { try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch (e) {} }
+  function api(body) { return K.postJson('api/data', Object.assign({ deviceId: syncMeta().deviceId }, body)); }
+  function migrate(D) {
+    var m = syncMeta();
+    if (m.migratedAt) return Promise.resolve({ already: true });
+    var all = D.all().map(function (x) { var c = Object.assign({}, x); delete c._server; return c; });
+    var ids = all.map(function (x) { return x.id; });
+    var chunks = []; for (var i = 0; i < all.length; i += 10) chunks.push(all.slice(i, i + 10));
+    var created = 0; var skipped = 0;
+    return chunks.reduce(function (p, c) { return p.then(function () { return api({ action: 'import', sets: c }).then(function (r) { if (r.status !== 200 || !r.data.configured) throw new Error((r.data && (r.data.error || r.data.notice)) || '移行に失敗'); created += r.data.created.length; skipped += r.data.skipped.length; }); }); }, Promise.resolve())
+      .then(function () { return api({ action: 'verify', ids: ids }); })
+      .then(function (v) {
+        if (v.status !== 200 || !v.data.ok) throw new Error('照合で足りない投稿セットがありました：' + ((v.data && v.data.missing) || []).join('、'));
+        m = syncMeta(); m.migratedAt = new Date().toISOString(); m.migrated = { total: ids.length, created: created, skipped: skipped }; saveMeta(m);
+        return { total: ids.length, created: created, skipped: skipped };
+      });
+  }
+  function flush(D, notes) {
+    var ops = D.outbox();
+    return ops.reduce(function (p, op) {
+      return p.then(function (stop) {
+        if (stop) return true;
+        var x = D.get(op.id);
+        if (!x) { D.doneOp(op); return false; }
+        var body = op.op === 'import' ? { action: 'import', sets: [Object.assign({}, x, { _server: undefined })] }
+          : op.op === 'put' ? { action: 'put', id: op.id, expectedRev: x._server ? x._server.rev : 0, set: Object.assign({}, x, { _server: undefined, status: undefined }) }
+          : { action: 'decide', id: op.id, expectedRev: x._server ? x._server.rev : 0, decision: op.decision, reason: op.reason };
+        return api(body).then(function (r) {
+          if (r.status === 200 && r.data.rec) { D.applyServer(r.data.rec); D.doneOp(op); return false; }
+          if (r.status === 200 && op.op === 'import') { D.doneOp(op); return false; } // 取り込み済み（あとで一覧から写す）
+          if (r.status === 409 && r.data.current) { D.applyServer(r.data.current); D.doneOp(op); notes.push('「' + String(x.title || op.id).slice(0, 20) + '」はほかの端末で先に変更されたため、最新の内容に入れ替えました' + (op.op === 'decide' ? '（判断はもう一度してください）' : '（この端末の変更はサーバーに控えとして残しています）')); return false; }
+          if (r.status === 400) { D.doneOp(op); notes.push('送れなかった変更：' + ((r.data && r.data.error) || '')); return false; }
+          return true; // 通信の失敗：残りは次に送る
+        }, function () { return true; });
+      });
+    }, Promise.resolve(false));
+  }
+  function syncData() {
+    var D = window.DeliveryStore;
+    if (!D || !D.applyServer) return Promise.resolve(null);
+    var notes = [];
+    return migrate(D).then(function (mig) {
+      return flush(D, notes).then(function () { return api({ action: 'list' }); }).then(function (r) {
+        if (r.status !== 200 || !r.data.configured) return { error: (r.data && (r.data.error || r.data.notice)) || '一覧を読めませんでした', migration: mig, notes: notes };
+        var pending = {}; D.outbox().forEach(function (op) { pending[op.id] = true; });
+        r.data.sets.forEach(function (rec) { var local = D.get(rec.id); if (pending[rec.id]) return; if (!local || !local._server || local._server.rev !== rec.rev) D.applyServer(rec); });
+        var m = syncMeta(); m.lastPullAt = new Date().toISOString(); saveMeta(m);
+        return { ok: true, migration: mig, notes: notes, capacity: r.data.capacity, limits: r.data.limits, count: r.data.sets.length };
+      });
+    }).catch(function (e) { return { error: String(e && e.message || e), notes: notes }; });
+  }
+
   function refresh(force) {
     if (busy || !K) return Promise.resolve(last);
     busy = true;
@@ -95,7 +150,9 @@
       st.receivedAt = new Date().toISOString();
       if (st.configured && !st.error) {
         st.merged = merge(st);
-        return K.postJson('api/worker', { action: 'sync', snapshot: snapshot() }).then(function (s) { st.syncedAt = s.status === 200 && s.data && s.data.ok ? s.data.at : ''; if (st.syncedAt) st.snapshotAt = st.syncedAt; return st; });
+        return syncData().then(function (ds) { st.data = ds; if (ds && ds.notes && ds.notes.length && K.showToast) K.showToast(ds.notes[0]); }).then(function () {
+          return K.postJson('api/worker', { action: 'sync', snapshot: snapshot() }).then(function (s) { st.syncedAt = s.status === 200 && s.data && s.data.ok ? s.data.at : ''; if (st.syncedAt) st.snapshotAt = st.syncedAt; return st; });
+        });
       }
       return st;
     }, function () { return { configured: false, error: '通信できませんでした', receivedAt: new Date().toISOString() }; }).then(function (st) {
@@ -105,7 +162,7 @@
     });
   }
 
-  window.ServerSync = { refresh: refresh, status: function () { return last; }, on: function (fn) { listeners.push(fn); }, snapshot: snapshot };
+  window.ServerSync = { refresh: refresh, status: function () { return last; }, on: function (fn) { listeners.push(fn); }, snapshot: snapshot, syncData: syncData, syncMeta: syncMeta };
   // アプリを開いたとき・開いている間は10分ごと
   setTimeout(function () { refresh(); }, 2500);
   setInterval(function () { if (!document.hidden) refresh(); }, 10 * 60000);
