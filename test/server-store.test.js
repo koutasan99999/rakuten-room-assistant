@@ -74,19 +74,22 @@ test('移行：端末の投稿セットを取り込む。何度送っても増�
   assert.equal(changed.ok, false); assert.match(changed.different[0].why, /中身が違う/);
 });
 
-test('棚：公開待ちは最大3件（点数の高い順に繰り上げ）。控えは最大6件（超えた分・14日たった分は期限切れへ。消さない）', async () => {
+test('棚：公開待ちは最大3件（点数の高い順に繰り上げ）。控えは最大6件（作るときも上限。超えた分・14日たった分は期限切れへ。消さない）', async () => {
   const kv = memoryKv();
   const old = new Date(Date.now() - 20 * 86400000).toISOString();
-  for (let i = 1; i <= 11; i++) await S.create(kv, { id: `n${i}`, set: set(`n${i}`, { createdAt: i === 11 ? old : new Date(Date.now() - i * 60000).toISOString() }), score: 70 + i, state: 'shelf' });
+  // 14日以上前の n11 を先に作り、そのあと n1〜n10。控えは6件まで（n11・n1〜n5）、残り（n6〜n10）は作るときに期限切れへ
+  await S.create(kv, { id: 'n11', set: set('n11', { createdAt: old }), score: 99, state: 'shelf' });
+  for (let i = 1; i <= 10; i++) await S.create(kv, { id: `n${i}`, set: set(`n${i}`, { createdAt: new Date(Date.now() - i * 60000).toISOString() }), score: 70 + i, state: 'shelf' });
+  assert.deepEqual(await S.counts(kv), { ready: 0, shelf: 6, approved: 0, published: 0, rejected: 0, expired: 5 });
   const changes = await S.rebalance(kv);
   const c = await S.counts(kv);
-  assert.equal(c.ready, 3); assert.equal(c.shelf, 6); assert.equal(c.expired, 2);
+  assert.equal(c.ready, 3); assert.equal(c.shelf, 2); assert.equal(c.expired, 6);
   const ready = (await S.list(kv, { states: ['ready'] })).map((x) => x.id).sort();
-  assert.deepEqual(ready, ['n10', 'n8', 'n9'], '14日たった n11 は点数が高くても期限切れ。残りの上位3件が公開待ち');
+  assert.deepEqual(ready, ['n3', 'n4', 'n5'], '14日たった n11 は点数が高くても期限切れ。控えの上位3件が公開待ち');
   assert.equal((await S.get(kv, 'n11')).state, 'expired');
-  assert.ok(changes.length >= 5);
+  assert.ok(changes.length >= 4);
   assert.equal((await S.list(kv)).length, 11, '何も消さない');
-  assert.deepEqual(await S.capacity(kv), { ...c, unpublished: 9, room: 0 });
+  assert.deepEqual(await S.capacity(kv), { ...c, unpublished: 5, room: 4 });
 });
 
 test('API：/api/data は合言葉が必要。競合は409と今の中身を返す。移行・照合・一覧・判断', async () => {
@@ -164,7 +167,8 @@ test('Upstash 互換：原子的な操作は EVAL（Lua）で送り、競合・�
   const c = await S.create(kv, { id: 'z1', set: set('z1') });
   assert.equal(c.created, false);
   const ev = sent.find((b) => b[0] === 'EVAL');
-  assert.equal(ev[1], SCRIPTS.createIfAbsent); assert.equal(ev[2], '4'); assert.deepEqual(ev.slice(3, 7), ['data:set:z1', 'data:rev:z1', 'data:sets:index', 'data:state:shelf']);
+  assert.equal(ev[1], SCRIPTS.createIfAbsent); assert.equal(ev[2], '5'); assert.deepEqual(ev.slice(3, 8), ['data:set:z1', 'data:rev:z1', 'data:sets:index', 'data:state:shelf', 'data:state:expired']);
+  assert.equal(ev[9], '2', '置き場所の候補は2つ（控え→期限切れ）'); assert.equal(ev[10], '6', '控えの上限6');
   reply = (b) => (b[0] === 'EVAL' ? [0, '4'] : b[0] === 'GET' ? JSON.stringify({ id: 'z1', rev: 3, state: 'ready', set: {}, history: [] }) : 1);
   await assert.rejects(S.update(kv, 'z1', 3, { set: set('z1') }), S.ConflictError);
   assert.ok(sent.some((b) => b[0] === 'EVAL' && b[1] === SCRIPTS.casMove && b[2] === '5' && b[8] === '3'), '読んだ番号を添えて送る（鍵5つ：中身・番号・一覧・移る前と後の状態の集合）');

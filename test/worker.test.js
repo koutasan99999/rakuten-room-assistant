@@ -341,7 +341,7 @@ test('段階1：未公開（公開待ち3＋控え6）が満杯なら新しく�
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], themes: [] }));
   const cand = (code) => ({ id: 'c1', status: 'pass', versions: [{ data: { id: 'c1', code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
   await kv.pushJson(WORKER_KEYS.buyer, { id: 'sx', candidates: [cand('s:lid')] }, 30);
-  for (let i = 1; i <= 9; i++) await S.create(kv, { id: `f${i}`, set: { id: `f${i}`, title: 't', items: [{ name: 'n', price: 1000, code: 's:lid' }] }, state: 'shelf', score: 80 + i });
+  for (let i = 1; i <= 9; i++) await S.create(kv, { id: `f${i}`, set: { id: `f${i}`, title: 't', items: [{ name: 'n', price: 1000, code: 's:lid' }] }, state: i <= 3 ? 'ready' : 'shelf', score: 80 + i }); // 公開待ち3＋控え6＝満杯
   const r = await run(kv);
   const by = Object.fromEntries((await state(kv, ENV)).board.items.map((x) => [x.agent, x]));
   assert.match(by.production.reason, /満杯（公開待ち3件・控え6件）/);
