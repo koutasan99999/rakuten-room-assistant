@@ -26,12 +26,21 @@
     }
   }
 
+  function pruneResolved(s) {
+    var resolved = s.conflicts.filter(function (x) { return x.resolved; });
+    if (resolved.length <= 50) return;
+    var drop = resolved.slice(50).map(function (x) { return x.at; });
+    s.conflicts = s.conflicts.filter(function (x) { return !x.resolved || drop.indexOf(x.at) === -1; });
+  }
   // 送る予定に入れる（同じ投稿セットの同じ種類の予定は1つにまとめる。判断は順番どおり残す）
   function queue(s, op) {
     op.at = new Date().toISOString();
-    if (op.op !== 'decide') s.outbox = s.outbox.filter(function (x) { return !(x.id === op.id && (x.op === 'put' || x.op === 'import')); });
-    s.outbox.push(op);
-    s.outbox = s.outbox.slice(-200);
+    if (op.op !== 'decide') {
+      var prev = s.outbox.filter(function (x) { return x.id === op.id && (x.op === 'put' || x.op === 'import') && x.restoreOf; })[0];
+      if (prev && !op.restoreOf) op.restoreOf = prev.restoreOf; // まとめても、復旧中の印は引き継ぐ
+      s.outbox = s.outbox.filter(function (x) { return !(x.id === op.id && (x.op === 'put' || x.op === 'import')); });
+    }
+    s.outbox.push(op); // 件数の上限で消さない（送信の成功か、社長の明示的な「送らない」まで残す。容量が足りなければ保存の失敗として返す）
   }
 
   var api = window.DeliveryStore = {
@@ -62,17 +71,29 @@
     // 送れなかった予定に印を付ける（消さない）。blocked：直さないと送れない（社長の確認が必要）／retry：通信などの一時的な失敗（次に自動で送る）
     markOp: function (op, patch) { var s = read(); s.outbox.forEach(function (x) { if (x.op === op.op && x.id === op.id && x.at === op.at) Object.assign(x, patch); }); return write(s); },
     // 競合・移行の差異で採用されなかった、この端末の中身を残す（確認・復旧用）
-    addConflict: function (c) { var s = read(); s.conflicts.unshift(Object.assign({ at: new Date().toISOString() }, c)); s.conflicts = s.conflicts.slice(0, 30); return write(s); },
-    conflicts: function () { return read().conflicts.slice(); },
-    removeConflict: function (at) { var s = read(); s.conflicts = s.conflicts.filter(function (x) { return x.at !== at; }); return write(s); },
+    // 未解決の競合は件数にかかわらず残す。整理してよいのは解決済みだけ（新しい解決済み50件は残す）
+    addConflict: function (c) {
+      var s = read();
+      var at = new Date().toISOString(); while (s.conflicts.some(function (x) { return x.at === at; })) at = at.replace(/Z$/, '') + '1Z'; // 同じ時刻でも区別する
+      s.conflicts.unshift(Object.assign({ at: at }, c));
+      pruneResolved(s);
+      return write(s);
+    },
+    conflicts: function (opt) { var all = read().conflicts.slice(); return opt && opt.all ? all : all.filter(function (x) { return !x.resolved; }); },
+    // 「サーバーの内容のままにする」：解決済みにする（記録は残す）
+    removeConflict: function (at) { var s = read(); s.conflicts.forEach(function (x) { if (x.at === at && !x.resolved) { x.resolved = { at: new Date().toISOString(), how: 'サーバーの内容のまま' }; x.restoring = false; } }); pruneResolved(s); return write(s); },
+    // 復旧の結果：成功したら解決済みに／再競合なら未解決のまま（もう一度選べる）
+    resolveConflict: function (at, how) { var s = read(); s.conflicts.forEach(function (x) { if (x.at === at) { x.resolved = { at: new Date().toISOString(), how: how }; x.restoring = false; } }); pruneResolved(s); return write(s); },
+    reopenConflict: function (at, patch) { var s = read(); s.conflicts.forEach(function (x) { if (x.at === at) Object.assign(x, { restoring: false }, patch || {}); }); return write(s); },
     // 競合した端末の中身で、サーバーを上書きする（社長がはっきり選んだときだけ。今の更新番号で送る）
+    // 原本（c.local）は、サーバーへの書き込みが成功したと確かめるまで消さない
     restoreConflict: function (at) {
-      var s = read(); var c = s.conflicts.filter(function (x) { return x.at === at; })[0];
+      var s = read(); var c = s.conflicts.filter(function (x) { return x.at === at && !x.resolved; })[0];
       if (!c || !c.local) return false;
       var cur = s.sets[c.id] || {};
       s.sets[c.id] = Object.assign({}, c.local, { _server: cur._server, status: cur.status });
-      queue(s, { op: cur._server ? 'put' : 'import', id: c.id, restore: true });
-      s.conflicts = s.conflicts.filter(function (x) { return x.at !== at; });
+      queue(s, { op: cur._server ? 'put' : 'import', id: c.id, restoreOf: at });
+      c.restoring = true;
       return write(s);
     },
     // 社長の判断（採用・差し替え・却下）を記録する。履歴は次の企画に渡す

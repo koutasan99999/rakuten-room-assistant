@@ -164,11 +164,11 @@ test('Upstash 互換：原子的な操作は EVAL（Lua）で送り、競合・�
   const c = await S.create(kv, { id: 'z1', set: set('z1') });
   assert.equal(c.created, false);
   const ev = sent.find((b) => b[0] === 'EVAL');
-  assert.equal(ev[1], SCRIPTS.createIfAbsent); assert.equal(ev[2], '3'); assert.deepEqual(ev.slice(3, 6), ['data:set:z1', 'data:rev:z1', 'data:sets:index']);
+  assert.equal(ev[1], SCRIPTS.createIfAbsent); assert.equal(ev[2], '4'); assert.deepEqual(ev.slice(3, 7), ['data:set:z1', 'data:rev:z1', 'data:sets:index', 'data:state:shelf']);
   reply = (b) => (b[0] === 'EVAL' ? [0, '4'] : b[0] === 'GET' ? JSON.stringify({ id: 'z1', rev: 3, state: 'ready', set: {}, history: [] }) : 1);
   await assert.rejects(S.update(kv, 'z1', 3, { set: set('z1') }), S.ConflictError);
-  assert.ok(sent.some((b) => b[0] === 'EVAL' && b[1] === SCRIPTS.casUpdate && b[6] === '3'), '読んだ番号を添えて送る');
-  assert.ok(!SCRIPTS.casUpdate.includes('cjson'), '追加の機能に頼らない（標準の命令だけ）');
+  assert.ok(sent.some((b) => b[0] === 'EVAL' && b[1] === SCRIPTS.casMove && b[2] === '5' && b[8] === '3'), '読んだ番号を添えて送る（鍵5つ：中身・番号・一覧・移る前と後の状態の集合）');
+  assert.ok(!SCRIPTS.casMove.includes('cjson'), '追加の機能に頼らない（標準の命令だけ）');
 });
 
 test('鍵の解除：時間切れのあとにほかの実行が取った鍵は外さない', async () => {

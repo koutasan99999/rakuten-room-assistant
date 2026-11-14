@@ -133,10 +133,18 @@
           : { action: 'decide', id: op.id, expectedRev: x._server ? x._server.rev : 0, decision: op.decision, reason: op.reason };
         return api(body).then(function (r) {
           var st = r.status;
-          if (st === 200 && r.data.rec) { if (!D.applyServer(r.data.rec)) return true; D.doneOp(op); return false; }
+          if (st === 200 && r.data.rec) { if (!D.applyServer(r.data.rec)) return true; if (op.restoreOf) D.resolveConflict(op.restoreOf, 'この端末の中身でサーバーを上書き（書き込みの成功を確認）'); D.doneOp(op); return false; }
           if (st === 200 && op.op === 'import') {
             (r.data.different || []).forEach(function (d) { D.addConflict({ id: d.id, kind: 'import', why: d.why, local: Object.assign({}, x) }); notes.push('「' + String(x.title || op.id).slice(0, 20) + '」はサーバーの内容と違うため、この端末の中身を「同期の問題」に残しました'); });
             D.doneOp(op); return false;
+          }
+          if (st === 409 && r.data.current && op.restoreOf) {
+            // 復旧の再競合：原本は残したまま、もう一度選べる状態に戻す（新しい競合の記録は増やさない）
+            if (!D.reopenConflict(op.restoreOf, { serverRev: r.data.current.rev, again: (D.conflicts({ all: true }).filter(function (c) { return c.at === op.restoreOf; })[0] || {}).again + 1 || 1 })) return true;
+            if (!D.applyServer(r.data.current)) return true;
+            D.doneOp(op);
+            notes.push('「' + String(x.title || op.id).slice(0, 20) + '」の復旧は、ほかの端末がさらに変更していたため完了していません（この端末の中身は残っています。もう一度選べます）');
+            return false;
           }
           if (st === 409 && r.data.current) {
             if (!D.addConflict({ id: op.id, kind: op.op, decision: op.decision || '', reason: op.reason || '', local: Object.assign({}, x), serverRev: r.data.current.rev })) return true; // 控えを保存できなければ、予定を消さない

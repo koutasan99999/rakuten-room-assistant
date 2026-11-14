@@ -829,6 +829,8 @@
       var row = el('div', 'pitch-row');
       var what = c.kind === 'decide' ? 'この端末の判断（' + (c.decision === 'approve' ? '採用' : '却下') + '）' : c.kind === 'migration' || c.kind === 'import' ? 'この端末の中身（移行のときの差異：' + (c.why || '') + '）' : 'この端末の修正';
       row.appendChild(el('p', 'hint', '「' + String((c.local && (c.local.titleEdit || c.local.title)) || c.id).slice(0, 24) + '」：' + what + 'は、ほかの端末・サーバーの内容と競合したため採用されていません（' + stamp(c.at) + '）'));
+      if (c.restoring) { row.appendChild(el('p', 'hint', 'この端末の中身をサーバーへ送っています（書き込みの成功を確かめるまで、この控えは残します）')); box.appendChild(row); return; }
+      if (c.again) row.appendChild(el('p', 'hint pitch-warn', '前回の上書きは、ほかの端末がさらに変更していたため完了していません（' + c.again + '回目）'));
       if (c.kind !== 'decide') row.appendChild(btn('この端末の中身でサーバーを上書き', 'status-btn', function () { if (!window.confirm('この端末の中身で、サーバーの今の内容を上書きしますか？（サーバーの今の内容は、サーバーの控えに残ります）')) return; D.restoreConflict(c.at); window.ServerSync.syncData().then(function () { paint(); }); }));
       row.appendChild(btn('サーバーの内容のままにする', 'status-btn', function () { D.removeConflict(c.at); paint(); }));
       box.appendChild(row);
