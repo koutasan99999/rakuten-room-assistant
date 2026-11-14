@@ -14,7 +14,8 @@ import mediaHandler from '../server/media.js';
 import { aiReply, json, imageResponse, TINY_PNG } from './mock.js';
 
 const ORIGIN = 'https://app.test/';
-const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app' };
+// 作り直しありの設定で確かめる（初期値＝1日1枚・作り直しなし は最後のテストで確かめる）
+const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', KUMA_COVER_TRIES: '2', KUMA_COVER_ROUNDS: '3', IMAGE_DAILY_COUNT: '2' };
 const masterBuf = (f) => fs.readFileSync(new URL(`../assets/kuma-master/${f}`, import.meta.url));
 const ITEM = { name: '折りたたみ傘 晴雨兼用 完全遮光 軽量', caption: '完全遮光の生地で、遮蔽遮熱。軽量で持ち運びしやすい折りたたみ傘。', role: '本命', image: 'https://thumbnail.image.rakuten.co.jp/x/1.jpg', code: 's:umb', price: 2980 };
 const SET = { id: 'set-k1', title: '雨の日“装備”をスマートに', target: '通勤する人', createdAt: new Date().toISOString(), items: [ITEM, { ...ITEM, name: 'レインカバー', role: '名脇役', code: 's:rc' }, { ...ITEM, name: '長靴', role: '名脇役', code: 's:boot' }], copy: { caption: 'x', items: [] } };
@@ -221,4 +222,25 @@ test('制作ライン：画像生成が時間切れなら、作り直しは品�
   assert.equal(r2.prod.result, 'cover_wait');
   assert.match(r2.prod.why, /場面を決められなかった/);
   assert.equal((await coverWaitList(kv2))[0].set.id, SET.id, '文章・商品は表紙画像待ちとして保存');
+});
+
+test('初回の本番検証の初期値：画像は1日1枚、自動の作り直しなし（1回の仕事でも、あとからでも作り直さない）', async () => {
+  const { imageLimits } = await import('../lib/budget.js');
+  assert.equal(imageLimits({}).dayCount, 1); assert.equal(imageLimits({}).month, 200);
+  assert.equal(C.imageTries({}), 1);
+  const kv = memoryKv();
+  const base = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app' };
+  const calls = fake({ checks: [{ ...PASS, usingProduct: false }] });
+  await kv.setJson(WORKER_KEYS.snap, { at: new Date().toISOString() });
+  await kv.setJson('worker:job', { id: 'srvpk9', type: 'production', step: 'scene', startedAt: new Date().toISOString(), steps: 9, attempts: 0, source: [], set: JSON.parse(JSON.stringify(SET)),
+    rec: { id: 'srvpk9', origin: 'server', at: new Date().toISOString(), status: 'running', steps: [], runs: [], audits: [], revisions: 0, rakutenCalls: 0, result: 'pass', score: 86, title: SET.title } });
+  const steps = [];
+  for (let i = 0; i < 6; i++) { const r = await withUsage(() => tick({ kv, env: base, origin: ORIGIN, startedAt: Date.now() })); if (!r.worked) break; steps.push(`${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}`); if (r.worked.final) break; }
+  assert.deepEqual(steps, ['scene:true', 'image:true', 'imgcheck:true:done'], '不合格でも作り直さない');
+  assert.equal(calls.images.length, 1);
+  const prod = (await kv.listJson('worker:results:production', 5))[0];
+  assert.equal(prod.result, 'cover_wait'); assert.match(prod.why, /保留/);
+  assert.equal((await coverWaitList(kv)).length, 0, 'あとでの作り直しの一覧にも入れない');
+  assert.equal(await S.get(kv, SET.id), null, '社長の確認待ちには入れない');
+  assert.match((await imageCheck(kv, base)).reason, /今日の画像の上限（1枚）/);
 });
