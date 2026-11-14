@@ -32,7 +32,7 @@
 |---|---|---|
 | 商品ドロボー（js/thief.js・js/thief-store.js・server/thief.js・lib/thief.js） | 廃止済み | 広報（js/pr.js）が /api/thief の comment と参考アカウントを使っている → 先に広報側を lib/outreach.js に寄せてから |
 | 投稿管理（#manage・room-product-store）と検索（補助）の旧方式（企画から・完全ランダム・コーデ） | 投稿セットと別の仕組み・別の保存場所で、二重になっている | js/app.js（6,345行）の大部分。保存データは書き出してから |
-| バイヤー発掘便（#buyer）・ふるさと納税（#furusato）・コーデ（coord・coord-image）・レーダー・トレンド・企画案（ideas・plans・plan-titles・seed-ideas・release-ideas） | 入口を隠している・今の流れで使っていない | server の振り分け先 30 のうち約12。Vercel Hobby の関数数の心配はない（1関数に集約済み） |
+| バイヤー発掘便（#buyer）・ふるさと納税（#furusato）・コーデ（coord・coord-image）・レーダー・トレンド・企画案（ideas・plans・plan-titles・seed-ideas・release-ideas） | 入口を隠している・今の流れで使っていない | server の振り分け先 29 のうち11（商品ドロボーを含めると12）。Vercel Hobby の関数数の心配はない（1関数に集約済み） |
 | 経営会議（旧方式：1回のAI呼び出しで複数の役） | 事実を集める部分以外は成果に直結していない | 経営ダッシュボードの事実集め（js/company.js の collectFacts）は残す |
 | PR #85（設計書） | この計画で置き換える | コードの変更なし → 閉じる推奨 |
 
