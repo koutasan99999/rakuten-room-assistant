@@ -139,7 +139,8 @@
         // 表紙の大見出しは、企画のタイトル（直したものがあればそれ）にそろえる（表紙と中身がずれないように）
         cover: style === 'serious_think' ? null : (function () { var t = set.titleEdit || set.title; return { style: style, title: t, accent: cv.accent && t.indexOf(cv.accent) !== -1 ? cv.accent : '', sub: set.target || cv.sub || '', badge: cv.badge || '', price: cv.price || '' }; })(),
         bear: r[1], ctaMessage: ctaOf(set), coverHero: true, noPhoto: !!set.noPhoto,
-        items: set.items.map(function (it, i) { var c = ci[i] || {}; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: c.memo || it.feature, price: it.price, role: it.role, brand: it.brand, point: it.feature || c.subline || '' }; })
+        // 制作ラインの投稿セット（factOnly）：補足・メモは楽天の商品説明にそのままある言葉だけ。AIが書いた特徴（feature）で埋めない（空欄のまま）
+        items: set.items.map(function (it, i) { var c = ci[i] || {}; var fact = !!c.factOnly; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: fact ? (c.memo || '') : (c.memo || it.feature), price: it.price, role: it.role, brand: it.brand, point: fact ? (c.subline || '') : (it.feature || c.subline || '') }; })
       };
       var slides = window.IgRender.renderPost(post);
       // C0：客観的な品質確認（はみ出し・文字の大きさ・コントラスト・商品写真の一致・PR表記・権利）と、版の保存（修正前後の比較用）
