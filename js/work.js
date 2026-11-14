@@ -95,7 +95,7 @@
       var steps = (rec.steps || []).filter(function (x) { return x.role === role; });
       if (!runs.length && !steps.length) return null;
       var t = rec.title ? '「' + rec.title + '」' : '';
-      var what = { planner: '合格候補' + (rec.sourceCount || (rec.source || []).length) + '件から投稿企画を作り、商品をそろえる' + t, producer: '投稿セットの文章（Instagramの表紙・商品カード・キャプション、楽天ROOMの紹介文）を作る' + t, auditor: '投稿セットを採点（コードの確認と別のAI呼び出し）' + t, editor: '監査AIの指示で投稿セットを修正（' + (rec.revisions || 0) + '回）' + t }[role];
+      var what = { planner: '合格候補' + (rec.sourceCount || (rec.source || []).length) + '件から投稿企画を作り、商品をそろえる' + t, producer: '投稿セットの文章（Instagramの表紙・商品カード・キャプション、楽天ROOMの紹介文）を作る' + t, auditor: '投稿セットを採点（コードの確認と別のAI呼び出し）' + t, editor: '監査AIの指示で投稿セットを修正（' + (rec.revisions || 0) + '回）' + t, illustrator: '表紙画像（サングラスくま）を作る' + t + (rec.cover ? (rec.cover.status === 'ok' ? '：品質確認に合格' : '：画像なし（' + (rec.cover.reason || '') + '）') : '') }[role];
       var dl = role === 'planner' ? (rec.items || []).map(function (it) { return String(it.name).slice(0, 28) + '（' + it.price + '円）' + (it.source === 'buyer' ? '・バイヤーAIの合格候補' : '・企画担当AIが楽天で選定'); })
         : role === 'auditor' ? (rec.audits || []).map(function (a, i) { return (i + 1) + '回目：' + (a.audit ? a.audit.total + '点' : '採点なし') + '・' + ({ pass: '合格', revise: '修正', hold: '保留', reject: '不合格' }[a.decision && a.decision.status] || '') + (a.check && a.check.hardFail ? '・コードの確認でNG' : '・コードの確認OK'); })
         : steps.map(function (x) { return x.name.replace(/^[^：]+：/, '') + '：' + (x.status === 'ok' ? (x.note || '完了') : '失敗 ' + (x.note || '')); });
@@ -181,6 +181,8 @@
         auto: { can: true, how: '投稿セットにまだ使っていない合格候補があれば始める。社長の確認待ちの投稿セットが6件以上なら待つ' } },
       { key: 'set', name: '投稿セット制作AI', title: '制作部', duty: '企画と商品から、Instagramの表紙・商品カードの文字・キャプションと、楽天ROOMの紹介文・ハッシュタグを作る（画像はアプリで開いたときに描く）', items: aiLogItems(['pitch:set', 'pitch:roomtext', 'pitch:tags', 'pitch:intro'], function (t) { return /roomtext|tags|intro/.test(t) ? 'ROOM紹介文・ハッシュタグを作る（画面から）' : '投稿セットを作る（画面から）'; }, function () { go('#pitch', function () { if (window.PitchView && window.PitchView.show) window.PitchView.show('sets'); }); }).concat(prodItems('producer')), board: 'production', jobTypes: [],
         auto: { can: true, how: '企画担当AIの企画が届いたら作る。画像（スライド）はサーバーでは描かず、アプリで投稿セットを開いたときに描く' } },
+      { key: 'illustrator', name: '表紙画像担当AI', title: '制作部', duty: '合格した投稿セットの主役の商品を、サングラスくま（社長が選定したマスター画像）が日常で使う表紙画像にする。文字・ロゴは描かない（タイトルはプログラムで重ねる）。品質確認に合格したものだけを使う', items: prodItems('illustrator'), board: 'production',
+        auto: { can: true, how: '監査AIが投稿セットを合格にしたら作る。画像は月200円・1日2枚まで（作り直し1回を含む）。マスター画像が使えない・予算が足りないときは画像なしで渡す' } },
       { key: 'editor', name: '制作担当AI（修正）', title: '制作部', duty: '監査AIの修正指示に従って、投稿セットのキャプションとROOM紹介文を直す（最大2回。直せなければ推測せず保留）', items: prodItems('editor'), board: 'production',
         auto: { can: true, how: '監査AIが「修正」と判定したら直す' } },
       { key: 'outreach', name: '営業・交流担当AI', title: '営業部', duty: '他の人の投稿（文章を確認できたもの）へのコメント案とフォロー候補の評価。送信・フォローは社長', items: outreachItems(), board: 'outreach',
@@ -354,6 +356,26 @@
 
   if (window.ServerSync) window.ServerSync.on(function () { repaint(); });
 
+  // 成果の指標（2026-11-14 社長の方針）：AI社員の活動回数ではなく、完成した投稿セットの数と品質
+  function outcomeBox() {
+    var D = window.DeliveryStore;
+    var box = el('div', 'wk-section wk-outcome');
+    box.appendChild(el('p', 'field-label', '成果：完成した投稿セット（自律運営で監査に合格し、社長の確認待ちに届いたもの）'));
+    var sets = D ? D.all().filter(function (x) { return x.auto; }) : [];
+    var since = function (days) { var t = Date.now() - days * 86400000; return sets.filter(function (x) { return new Date(x.createdAt || x.copyAt || 0).getTime() >= t; }); };
+    var line = function (label, list) {
+      if (!list.length) return label + '：0件';
+      var withImg = list.filter(function (x) { return x.coverImage && x.coverImage.status === 'ok'; }).length;
+      var scores = list.map(function (x) { return Number(x.auto.score) || 0; }).filter(Boolean);
+      var avg = scores.length ? Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scores.length) : null;
+      var adopted = list.filter(function (x) { return x.status === 'adopted'; }).length, rejected = list.filter(function (x) { return x.status === 'rejected'; }).length;
+      return label + '：' + list.length + '件（表紙画像つき ' + withImg + '件・監査の平均 ' + (avg == null ? '未取得' : avg + '点') + '・社長の採用 ' + adopted + '件／却下 ' + rejected + '件）';
+    };
+    box.appendChild(el('p', 'hint', line('直近7日', since(7))));
+    box.appendChild(el('p', 'hint', line('直近30日', since(30))));
+    return box;
+  }
+
   function panel(rp) {
     repaint = rp || repaint;
     refreshJobs();
@@ -364,6 +386,7 @@
     if (window.Backup) head.appendChild(btn('データのバックアップを保存', 'btn btn-secondary wk-backup', function () { window.Backup.save().then(function (r) { K.showToast(r === 'shared' ? 'バックアップを保存しました' : 'バックアップのファイルを書き出しました'); }, function () { K.showToast('保存できませんでした'); }); }));
     wrap.appendChild(head);
     wrap.appendChild(el('p', 'hint', '実際に動いた記録（AIの呼び出し・処理・成果物）だけを表示します。動いていない社員は「今は仕事していません」です。途中で通信が切れた等で完了を確かめられない仕事は「状態未確認」とし、成功にはしません。社員を押すと、業務日報と成果物を見られます。'));
+    wrap.appendChild(outcomeBox());
     wrap.appendChild(autonomyBox());
     var all = staff();
     var rows = all.map(function (s) { return { s: s, st: stateOf(s) }; });

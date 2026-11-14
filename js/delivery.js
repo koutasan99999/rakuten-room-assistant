@@ -24,6 +24,8 @@
   function cleanName(n) { return String(n || '').replace(/[【\[].*?[】\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || n; }
   // 全商品がROOMに登録済みか（別の投稿セットで登録した同じ商品も、商品ごとの記録で数える）
   function allRoom(set) { return (set.items || []).every(function (it) { return it.room === 'registered' || (window.RoomTextStore && window.RoomTextStore.status(it, it) === 'registered'); }); }
+  // 表紙画像（品質確認に合格したものだけ）
+  function coverOf(set) { var c = set && set.coverImage; return c && c.status === 'ok' && /^[0-9a-f]{32}$/.test(String(c.mediaId || '')) ? c : null; }
   function styleOf(set) { return set.coverStyle || COVER_BY_PATTERN[set.pattern] || 'unique_pick'; }
   function stamp(iso) { try { return new Date(iso).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 
@@ -121,12 +123,16 @@
 
   // スライド（Instagram用の完成画像）を描く
   function slidesOf(set) {
-    var key = set.id + ':' + (set.copyAt || '') + ':' + styleOf(set) + ':' + (set.titleEdit || '') + ':' + allRoom(set) + ':' + (set.noPhoto ? 'np' : '') + ':' + set.items.map(function (it) { return it.code || it.name; }).join(',');
+    var kc = coverOf(set);
+    var key = set.id + ':' + (set.copyAt || '') + ':' + (kc ? kc.mediaId : '') + ':' + styleOf(set) + ':' + (set.titleEdit || '') + ':' + allRoom(set) + ':' + (set.noPhoto ? 'np' : '') + ':' + set.items.map(function (it) { return it.code || it.name; }).join(',');
     if (slideCache[key]) return Promise.resolve(slideCache[key]);
     // 商品写真を使わない版は、楽天の商品画像を読み込まない
     var images = set.noPhoto ? Promise.resolve(set.items.map(function () { return null; })) : Promise.all(set.items.map(function (it) { return K.loadProductImage(it.image); }));
     var bear = window.IgRender.loadImage(K.bearSrc).catch(function () { return null; });
-    return Promise.all([images, bear]).then(function (r) {
+    // サングラスくまの表紙画像（制作ラインが作り、品質確認に合格したもの）。読めなければ今までの表紙
+    var photo = kc ? window.IgRender.loadImage('api/media?id=' + encodeURIComponent(kc.mediaId)).catch(function () { return null; }) : Promise.resolve(null);
+    return Promise.all([images, bear, photo]).then(function (r) {
+      if (r[2]) r[2].__tag = 'bear';
       // C0：描いた画像の中で、どの商品の写真か分かるように印を付ける（客観確認で、商品写真の一致を確かめる）
       r[0].forEach(function (img, i) { if (img) img.__tag = 'item:' + i + ':' + (set.items[i].code || ''); });
       if (r[1]) r[1].__tag = 'bear';
@@ -137,8 +143,8 @@
       var post = {
         topic: copy.topic || set.title, category: set.patternLabel || '', subtitle: set.target || '',
         // 表紙の大見出しは、企画のタイトル（直したものがあればそれ）にそろえる（表紙と中身がずれないように）
-        cover: style === 'serious_think' ? null : (function () { var t = set.titleEdit || set.title; return { style: style, title: t, accent: cv.accent && t.indexOf(cv.accent) !== -1 ? cv.accent : '', sub: set.target || cv.sub || '', badge: cv.badge || '', price: cv.price || '' }; })(),
-        bear: r[1], ctaMessage: ctaOf(set), coverHero: true, noPhoto: !!set.noPhoto,
+        cover: style === 'serious_think' && !r[2] ? null : (function () { var t = set.titleEdit || set.title; return { style: r[2] ? 'kuma_scene' : style, title: t, accent: cv.accent && t.indexOf(cv.accent) !== -1 ? cv.accent : '', sub: set.target || cv.sub || '', badge: cv.badge || '', price: cv.price || '' }; })(),
+        bear: r[1], coverPhoto: r[2] || null, ctaMessage: ctaOf(set), coverHero: true, noPhoto: !!set.noPhoto,
         // 制作ラインの投稿セット（factOnly）：補足・メモは楽天の商品説明にそのままある言葉だけ。AIが書いた特徴（feature）で埋めない（空欄のまま）
         items: set.items.map(function (it, i) { var c = ci[i] || {}; var fact = !!c.factOnly; return { image: r[0][i], shortName: c.shortName || cleanName(it.name), subline: c.subline, memo: fact ? (c.memo || '') : (c.memo || it.feature), price: it.price, role: it.role, brand: it.brand, point: fact ? (c.subline || '') : (it.feature || c.subline || '') }; })
       };
@@ -266,6 +272,10 @@
     var nBy = set.items.filter(function (it) { return it.source === 'buyer'; }).length;
     c.appendChild(el('p', 'hint', set.items.length + '商品（社長が採用 ' + nAd + (nBy ? '・バイヤーAIの合格候補 ' + nBy : '') + '・AIの新規提案 ' + (set.items.length - nAd - nBy) + '）｜' + stamp(set.createdAt) + ' 作成'));
     if (set.auto) c.appendChild(el('p', 'hint', '自律運営で作成（企画担当AI→投稿セット制作AI→監査AI' + (set.auto.revisions ? '→制作担当AIが' + set.auto.revisions + '回修正' : '') + '）｜監査 ' + set.auto.score + '点・合格。採用・公開は社長が決めます'));
+    // 表紙画像：作った場面と品質確認の結果。作れなかったときは理由（今までの表紙を使う）
+    if (set.coverImage) c.appendChild(el('p', 'hint', set.coverImage.status === 'ok'
+      ? '表紙画像：表紙画像担当AIが作成（' + ((set.coverImage.scene || {}).place || '') + '・' + ((set.coverImage.scene || {}).action || '') + '）｜品質確認 12項目すべて合格｜費用 ' + (set.coverImage.measured ? '実測' : '見込み') + ' ' + set.coverImage.costYen + '円｜AI生成イメージと表記'
+      : '表紙画像：なし（' + (set.coverImage.reason || '') + '）。今までの表紙を使います'));
     c.addEventListener('click', function () { openId = set.id; paint(); window.scrollTo(0, 0); });
     return c;
   }

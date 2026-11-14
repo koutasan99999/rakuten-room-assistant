@@ -40,6 +40,7 @@ function fetchMock({ failAi = false } = {}) {
       if (sys.includes('候補を最大3件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認' }] });
       if (sys.includes('監査AIです') && sys.includes('コメント案を')) return aiReply({ audits: [{ id: 'AAA1', scores: { specific: 23, natural: 21, relevance: 17, distance: 14, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
       if (sys.includes('監査AIです')) return aiReply({ audits: [{ id: 'c1', scores: { accuracy: 25, evidence: 22, usefulness: 17, revenue: 13, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
+      if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ place: 'キッチン', time: '夕方', action: '鍋のふたを置いている', outfit: 'エプロン', usage: '水受けトレー付き', usageQuote: '水受けトレー付き', mood: '落ち着いた' }] });
       if (sys.includes('営業・交流担当AIです')) return aiReply({ drafts: [{ id: 'AAA1', anchor: '水受けトレー付き', comment: '水受けトレー付きなら台が濡れにくそうですね', relevance: 80, relevanceWhy: 'x', follow: 70, followWhy: 'y' }] });
       return aiReply({});
     }
@@ -56,7 +57,9 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   const steps = [];
   for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
   assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
-    'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true:done',
+    'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true',
+    // 表紙画像：場面を決める → 画像（このテストではマスター画像を取れないため、画像なしで渡す）
+    'production:scene:true', 'production:image:true:done',
     'buyer:buyer:true:done', 'inspect:inspect:true:done', 'idle'], steps.join(' / '));
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
@@ -73,7 +76,7 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   const pr = st.production[0];
   assert.equal(pr.result, 'pass', pr.why);
   assert.equal(pr.revisions, 1, '監査AIの指示で制作担当AIが1回直した');
-  assert.deepEqual([...new Set(pr.runs.map((r) => r.role))].sort(), ['auditor', 'editor', 'planner', 'producer']);
+  assert.deepEqual([...new Set(pr.runs.map((r) => r.role))].sort(), ['auditor', 'editor', 'illustrator', 'planner', 'producer']);
   assert.ok(pr.runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録');
   assert.equal(pr.set.items.length, 3);
   assert.equal(pr.set.items[0].source, 'buyer', '社長が採用した商品とは書かない');
