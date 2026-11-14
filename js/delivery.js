@@ -779,6 +779,7 @@
     if (noCopy && !busy && !Object.keys(copyBusy).length) setTimeout(function () { remakeCopy(noCopy.id); }, 0);
     if (set) { container.appendChild(detail(set)); return; }
     container.appendChild(el('p', 'editor-note', 'AI社員が企画を考え、実在の商品（3〜8点）・Instagram用の画像・キャプション・購入先までそろえた投稿セットです。開いて「採用」「差し替え・修正」「却下」を選ぶだけで大丈夫です。確認待ちが3件より少なくなると、AI社員が次を作ります。'));
+    var sp = syncProblems(); if (sp) container.appendChild(sp);
     container.appendChild(adoptedSection());
     var liveSets = D.all().filter(function (x) { return x.status !== 'rejected'; });
     if (liveSets.length) container.appendChild(regenBox(liveSets, '確認待ち・採用の投稿セット（' + liveSets.length + '件）'));
@@ -803,6 +804,36 @@
       if (t[0] === 'shelf' || t[0] === 'expired') { var det = el('details'); det.appendChild(el('summary', null, '開いて見る（' + xs.length + '件）')); xs.forEach(function (x) { det.appendChild(card(x)); }); container.appendChild(det); }
       else xs.forEach(function (x) { container.appendChild(card(x)); });
     });
+  }
+
+  // 同期の問題（2026-11-14）：競合・移行の差異で採用されなかった、この端末の中身と、送れなかった変更。消さずに残し、社長が選んで戻せる
+  function syncProblems() {
+    var cs = D.conflicts ? D.conflicts() : [];
+    var blocked = (D.outbox ? D.outbox() : []).filter(function (o) { return o.blocked; });
+    var waiting = (D.outbox ? D.outbox() : []).filter(function (o) { return !o.blocked; });
+    if (!cs.length && !blocked.length && !(D.lastError) && !waiting.some(function (o) { return o.retry; })) return null;
+    var box = el('div', 'card sync-problems');
+    box.appendChild(el('p', 'field-label', '同期の問題（データは消していません）'));
+    if (D.lastError) box.appendChild(el('p', 'hint pitch-warn', D.lastError));
+    var retrying = waiting.filter(function (o) { return o.retry; });
+    if (retrying.length) box.appendChild(el('p', 'hint', 'サーバーに送れていない変更：' + retrying.length + '件（通信などの一時的な失敗。次に自動で送ります）'));
+    blocked.forEach(function (o) {
+      var x = D.get(o.id) || {};
+      var row = el('div', 'pitch-row');
+      row.appendChild(el('p', 'hint pitch-warn', '送れなかった変更：「' + String(x.title || o.id).slice(0, 24) + '」の' + ({ put: '中身の修正', import: '取り込み', decide: '判断' }[o.op] || o.op) + '（' + (o.blocked.error || o.blocked.status) + '）'));
+      row.appendChild(btn('もう一度送る', 'status-btn', function () { window.ServerSync.retryOp(o).then(function () { paint(); }); }));
+      row.appendChild(btn('送らない（端末の中身は残る）', 'status-btn', function () { window.ServerSync.dropOp(o); paint(); }));
+      box.appendChild(row);
+    });
+    cs.forEach(function (c) {
+      var row = el('div', 'pitch-row');
+      var what = c.kind === 'decide' ? 'この端末の判断（' + (c.decision === 'approve' ? '採用' : '却下') + '）' : c.kind === 'migration' || c.kind === 'import' ? 'この端末の中身（移行のときの差異：' + (c.why || '') + '）' : 'この端末の修正';
+      row.appendChild(el('p', 'hint', '「' + String((c.local && (c.local.titleEdit || c.local.title)) || c.id).slice(0, 24) + '」：' + what + 'は、ほかの端末・サーバーの内容と競合したため採用されていません（' + stamp(c.at) + '）'));
+      if (c.kind !== 'decide') row.appendChild(btn('この端末の中身でサーバーを上書き', 'status-btn', function () { if (!window.confirm('この端末の中身で、サーバーの今の内容を上書きしますか？（サーバーの今の内容は、サーバーの控えに残ります）')) return; D.restoreConflict(c.at); window.ServerSync.syncData().then(function () { paint(); }); }));
+      row.appendChild(btn('サーバーの内容のままにする', 'status-btn', function () { D.removeConflict(c.at); paint(); }));
+      box.appendChild(row);
+    });
+    return box;
   }
 
   function render(target) {

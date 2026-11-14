@@ -92,50 +92,84 @@
   function syncMeta() { var m; try { m = JSON.parse(localStorage.getItem(SYNC_KEY)); } catch (e) {} m = m && typeof m === 'object' ? m : {}; if (!m.deviceId) { m.deviceId = 'd' + Math.random().toString(36).slice(2, 10); saveMeta(m); } return m; }
   function saveMeta(m) { try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch (e) {} }
   function api(body) { return K.postJson('api/data', Object.assign({ deviceId: syncMeta().deviceId }, body)); }
-  function migrate(D) {
+  // 移行：端末の投稿セットを取り込み、サーバーの中身・判断・件数と照合する。差異があれば黙って成功にせず、端末の中身を競合の控えに残して知らせる（端末のデータは消さない）
+  function migrate(D, notes) {
     var m = syncMeta();
     if (m.migratedAt) return Promise.resolve({ already: true });
     var all = D.all().map(function (x) { var c = Object.assign({}, x); delete c._server; return c; });
-    var ids = all.map(function (x) { return x.id; });
     var chunks = []; for (var i = 0; i < all.length; i += 10) chunks.push(all.slice(i, i + 10));
-    var created = 0; var skipped = 0;
-    return chunks.reduce(function (p, c) { return p.then(function () { return api({ action: 'import', sets: c }).then(function (r) { if (r.status !== 200 || !r.data.configured) throw new Error((r.data && (r.data.error || r.data.notice)) || '移行に失敗'); created += r.data.created.length; skipped += r.data.skipped.length; }); }); }, Promise.resolve())
-      .then(function () { return api({ action: 'verify', ids: ids }); })
+    var res = { total: all.length, created: 0, same: 0, different: [] };
+    return chunks.reduce(function (p, c) { return p.then(function () { return api({ action: 'import', sets: c }).then(function (r) {
+      if (r.status !== 200 || !r.data.configured) throw new Error('移行できませんでした（' + r.status + '：' + ((r.data && (r.data.error || r.data.notice)) || '通信できませんでした') + '）。端末のデータはそのまま残っています');
+      res.created += r.data.created.length; res.same += r.data.same.length; res.different = res.different.concat(r.data.different || []);
+    }); }); }, Promise.resolve())
+      .then(function () { var cs = []; for (var j = 0; j < all.length; j += 20) cs.push(all.slice(j, j + 20)); return cs.reduce(function (p, c) { return p.then(function (acc) { return api({ action: 'verify', sets: c }).then(function (v) { if (v.status !== 200) throw new Error('照合できませんでした（' + v.status + '）。端末のデータはそのまま残っています'); acc.matched += v.data.matched; acc.missing = acc.missing.concat(v.data.missing); acc.different = acc.different.concat(v.data.different); return acc; }); }); }, Promise.resolve({ matched: 0, missing: [], different: [] })); })
       .then(function (v) {
-        if (v.status !== 200 || !v.data.ok) throw new Error('照合で足りない投稿セットがありました：' + ((v.data && v.data.missing) || []).join('、'));
-        m = syncMeta(); m.migratedAt = new Date().toISOString(); m.migrated = { total: ids.length, created: created, skipped: skipped }; saveMeta(m);
-        return { total: ids.length, created: created, skipped: skipped };
+        m = syncMeta();
+        res.verified = { matched: v.matched, missing: v.missing, different: v.different };
+        // 差異のある投稿セットは、この端末の中身を競合の控えに残す（サーバーの内容に入れ替わっても、あとで戻せる）
+        v.different.forEach(function (d) { var x = D.get(d.id); if (x && !D.conflicts().some(function (c) { return c.id === d.id && c.kind === 'migration'; })) D.addConflict({ id: d.id, kind: 'migration', why: d.why, local: Object.assign({}, x) }); });
+        if (v.missing.length) throw new Error('照合で、サーバーに無い投稿セットがありました：' + v.missing.join('、') + '。端末のデータはそのまま残っています');
+        if (v.matched === all.length) { m.migratedAt = new Date().toISOString(); m.migrated = res; m.migrationIssue = null; }
+        else { m.migrationIssue = { at: new Date().toISOString(), matched: v.matched, total: all.length, different: v.different }; notes.push('移行の照合で、中身や判断がサーバーと違う投稿セットが ' + v.different.length + '件ありました（この端末の中身は「同期の問題」に残しています。消していません）'); }
+        saveMeta(m);
+        return res;
       });
   }
+  // 送る予定を順に送る。失敗の種類で分ける：
+  //   409 競合 → この端末の中身を競合の控えに残してから、サーバーの最新に入れ替える（確認・復旧できる）
+  //   400・404・422 → 直さないと送れない：消さずに「送れなかった変更」として残す（社長が もう一度送る／送らない を選ぶ）
+  //   401・403・503 → 合言葉・設定の問題：止めて、すべて残す
+  //   500台・通信の失敗 → 一時的：残して、次に自動で送る
   function flush(D, notes) {
     var ops = D.outbox();
     return ops.reduce(function (p, op) {
       return p.then(function (stop) {
-        if (stop) return true;
+        if (stop || op.blocked) return stop;
         var x = D.get(op.id);
-        if (!x) { D.doneOp(op); return false; }
+        if (!x) { D.markOp(op, { blocked: { status: 0, error: 'この端末に投稿セットが見つかりません', at: new Date().toISOString() } }); return false; }
         var body = op.op === 'import' ? { action: 'import', sets: [Object.assign({}, x, { _server: undefined })] }
           : op.op === 'put' ? { action: 'put', id: op.id, expectedRev: x._server ? x._server.rev : 0, set: Object.assign({}, x, { _server: undefined, status: undefined }) }
           : { action: 'decide', id: op.id, expectedRev: x._server ? x._server.rev : 0, decision: op.decision, reason: op.reason };
         return api(body).then(function (r) {
-          if (r.status === 200 && r.data.rec) { D.applyServer(r.data.rec); D.doneOp(op); return false; }
-          if (r.status === 200 && op.op === 'import') { D.doneOp(op); return false; } // 取り込み済み（あとで一覧から写す）
-          if (r.status === 409 && r.data.current) { D.applyServer(r.data.current); D.doneOp(op); notes.push('「' + String(x.title || op.id).slice(0, 20) + '」はほかの端末で先に変更されたため、最新の内容に入れ替えました' + (op.op === 'decide' ? '（判断はもう一度してください）' : '（この端末の変更はサーバーに控えとして残しています）')); return false; }
-          if (r.status === 400) { D.doneOp(op); notes.push('送れなかった変更：' + ((r.data && r.data.error) || '')); return false; }
-          return true; // 通信の失敗：残りは次に送る
-        }, function () { return true; });
+          var st = r.status;
+          if (st === 200 && r.data.rec) { if (!D.applyServer(r.data.rec)) return true; D.doneOp(op); return false; }
+          if (st === 200 && op.op === 'import') {
+            (r.data.different || []).forEach(function (d) { D.addConflict({ id: d.id, kind: 'import', why: d.why, local: Object.assign({}, x) }); notes.push('「' + String(x.title || op.id).slice(0, 20) + '」はサーバーの内容と違うため、この端末の中身を「同期の問題」に残しました'); });
+            D.doneOp(op); return false;
+          }
+          if (st === 409 && r.data.current) {
+            if (!D.addConflict({ id: op.id, kind: op.op, decision: op.decision || '', reason: op.reason || '', local: Object.assign({}, x), serverRev: r.data.current.rev })) return true; // 控えを保存できなければ、予定を消さない
+            if (!D.applyServer(r.data.current)) return true;
+            D.doneOp(op);
+            notes.push('「' + String(x.title || op.id).slice(0, 20) + '」はほかの端末で先に変更されたため、最新の内容に入れ替えました（この端末の' + (op.op === 'decide' ? '判断' : '中身') + 'は「同期の問題」に残しています）');
+            return false;
+          }
+          if (st === 400 || st === 404 || st === 422) { D.markOp(op, { blocked: { status: st, error: String((r.data && r.data.error) || '').slice(0, 200), at: new Date().toISOString() } }); notes.push('送れなかった変更があります（' + ((r.data && r.data.error) || st) + '）。「同期の問題」で確認してください'); return false; }
+          if (st === 401 || st === 403 || st === 503) { notes.push('サーバーの合言葉・設定の問題で送れませんでした（' + st + '）。変更は端末に残っています'); return true; }
+          D.markOp(op, { retry: { status: st, at: new Date().toISOString(), count: (op.retry ? op.retry.count : 0) + 1 } });
+          return true; // 一時的な失敗：残りは次に送る
+        }, function () { D.markOp(op, { retry: { status: 0, at: new Date().toISOString(), count: (op.retry ? op.retry.count : 0) + 1 } }); return true; });
       });
     }, Promise.resolve(false));
   }
+  // 送れなかった変更を、もう一度送る（社長が選んだとき）／送らない（端末の中身は残る）
+  function retryOp(op) { var D = window.DeliveryStore; D.markOp(op, { blocked: null, retry: null }); return syncData(); }
+  function dropOp(op) { return window.DeliveryStore.doneOp(op); }
   function syncData() {
     var D = window.DeliveryStore;
     if (!D || !D.applyServer) return Promise.resolve(null);
     var notes = [];
-    return migrate(D).then(function (mig) {
+    return migrate(D, notes).then(function (mig) {
       return flush(D, notes).then(function () { return api({ action: 'list' }); }).then(function (r) {
         if (r.status !== 200 || !r.data.configured) return { error: (r.data && (r.data.error || r.data.notice)) || '一覧を読めませんでした', migration: mig, notes: notes };
         var pending = {}; D.outbox().forEach(function (op) { pending[op.id] = true; });
-        r.data.sets.forEach(function (rec) { var local = D.get(rec.id); if (pending[rec.id]) return; if (!local || !local._server || local._server.rev !== rec.rev) D.applyServer(rec); });
+        var failed = 0;
+        r.data.sets.forEach(function (rec) {
+          var local = D.get(rec.id); if (pending[rec.id]) return;
+          if (!local || !local._server || local._server.rev !== rec.rev) { if (!D.applyServer(rec)) failed += 1; }
+        });
+        if (failed) notes.push('サーバーの内容 ' + failed + '件を端末に保存できませんでした（端末の保存容量）。サーバーの正本には残っています');
         var m = syncMeta(); m.lastPullAt = new Date().toISOString(); saveMeta(m);
         return { ok: true, migration: mig, notes: notes, capacity: r.data.capacity, limits: r.data.limits, count: r.data.sets.length };
       });
@@ -162,7 +196,7 @@
     });
   }
 
-  window.ServerSync = { refresh: refresh, status: function () { return last; }, on: function (fn) { listeners.push(fn); }, snapshot: snapshot, syncData: syncData, syncMeta: syncMeta };
+  window.ServerSync = { refresh: refresh, status: function () { return last; }, on: function (fn) { listeners.push(fn); }, snapshot: snapshot, syncData: syncData, syncMeta: syncMeta, retryOp: retryOp, dropOp: dropOp };
   // アプリを開いたとき・開いている間は10分ごと
   setTimeout(function () { refresh(); }, 2500);
   setInterval(function () { if (!document.hidden) refresh(); }, 10 * 60000);

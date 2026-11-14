@@ -1,6 +1,6 @@
 // サーバーの正本のAPI（2026-11-14・段階1）：/api/data
 // action: import（端末からの移行・冪等）／verify（読み戻しの照合）／list（一覧と中身）／put（中身の更新・更新番号が必要）／decide（社長の採用・却下・更新番号が必要）／conflicts（競合で書けなかった内容）
-// 合言葉（APP_PASSCODE）が必要。保存場所が未接続なら「未接続」と返す（端末の記録だけで今までどおり動く）。
+// 合言葉（APP_PASSCODE）が必須（未設定なら断る）。保存場所が未接続なら「未接続」と返す（端末の記録だけで今までどおり動く）。
 import crypto from 'node:crypto';
 import { send, readBody } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
@@ -11,7 +11,9 @@ const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update
 
 export default async function handler(req, res, env = process.env) {
   if (req.method !== 'POST') return send(res, 405, { error: 'POSTで呼び出してください' });
-  if (env.APP_PASSCODE && !same(req.headers['x-app-passcode'] || '', env.APP_PASSCODE)) return send(res, 401, { error: '合言葉が違います', needPasscode: true });
+  // 合言葉は必須：未設定なら読み書きを断る（誰でも投稿セットや社長の判断を見たり変えたりできないように）。合言葉の値は応答・記録に出さない
+  if (!String(env.APP_PASSCODE || '').trim()) return send(res, 503, { error: 'サーバーの合言葉（APP_PASSCODE）が未設定のため、サーバーの正本は使えません（端末の記録だけで動きます）' });
+  if (!same(req.headers['x-app-passcode'] || '', env.APP_PASSCODE)) return send(res, 401, { error: '合言葉が違います', needPasscode: true });
   const kv = kvFrom(env);
   if (!kv) return send(res, 200, { configured: false, notice: '保存場所が未接続のため、サーバーの正本は使えません（端末の記録だけで動きます）' });
   const body = await readBody(req);
@@ -19,7 +21,7 @@ export default async function handler(req, res, env = process.env) {
   const by = `device:${String(body.deviceId || '').replace(/[^\w-]/g, '').slice(0, 20)}`;
   try {
     if (action === 'import') { const r = await S.importSets(kv, body.sets, { deviceId: body.deviceId }); if (r.created.length) await S.rebalance(kv); return send(res, 200, { configured: true, ...r }); }
-    if (action === 'verify') return send(res, 200, { configured: true, ...(await S.verify(kv, (Array.isArray(body.ids) ? body.ids : []).slice(0, 500))) });
+    if (action === 'verify') return send(res, 200, { configured: true, ...(await S.verify(kv, Array.isArray(body.sets) ? body.sets : [])) });
     if (action === 'list') return send(res, 200, { configured: true, sets: await S.list(kv), capacity: await S.capacity(kv), meta: await S.meta(kv), limits: { ready: S.READY_MAX, shelf: S.SHELF_MAX, shelfDays: S.SHELF_DAYS } });
     if (action === 'put') {
       if (!body.set || typeof body.set !== 'object') return send(res, 400, { error: '中身がありません' });

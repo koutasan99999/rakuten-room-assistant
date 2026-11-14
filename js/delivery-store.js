@@ -13,17 +13,17 @@
     s.sets = s.sets && typeof s.sets === 'object' ? s.sets : {};
     s.history = Array.isArray(s.history) ? s.history : [];
     s.outbox = Array.isArray(s.outbox) ? s.outbox : []; // サーバーへまだ送っていない変更（2026-11-14・段階1）
+    s.conflicts = Array.isArray(s.conflicts) ? s.conflicts : []; // 競合・移行の差異で採用されなかった、この端末の中身（確認・復旧用）
     return s;
   }
+  // 保存する。容量が足りないときも、既存の投稿セットは消さない（2026-11-14 修正：以前は古い却下を自動で消していた）。
+  // 保存できなければ false を返し、lastError に理由を残す（呼んだ側は成功として扱わない）
   function write(s) {
-    // 古い却下から消して、保存できる量に収める
-    for (var i = 0; i < 5; i++) {
-      try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) {}
-      var old = Object.keys(s.sets).filter(function (k) { return s.sets[k].status === 'rejected'; }).sort(function (a, b) { return s.sets[a].createdAt < s.sets[b].createdAt ? -1 : 1; })[0];
-      if (!old) break;
-      delete s.sets[old];
+    try { localStorage.setItem(KEY, JSON.stringify(s)); api.lastError = ''; return true; } catch (e) {
+      api.lastError = '投稿セットを端末に保存できませんでした（' + (e && e.name === 'QuotaExceededError' ? '端末の保存容量が足りません' : (e && e.name) || '不明') + '）。データは消していません。サーバーにつながっていれば、サーバーの正本には残っています';
+      if (window.AppKit && window.AppKit.showToast) window.AppKit.showToast(api.lastError);
+      return false;
     }
-    return false;
   }
 
   // 送る予定に入れる（同じ投稿セットの同じ種類の予定は1つにまとめる。判断は順番どおり残す）
@@ -34,7 +34,7 @@
     s.outbox = s.outbox.slice(-200);
   }
 
-  window.DeliveryStore = {
+  var api = window.DeliveryStore = {
     STATUS: STATUS,
     all: function () {
       var st = read().sets;
@@ -46,8 +46,7 @@
       s.sets[set.id] = Object.assign({ status: 'new' }, s.sets[set.id] || {}, set);
       // サーバーの正本へ送る予定に入れる（サーバーに既にあれば中身の更新、無ければ新しく取り込む）。送るときに最新の中身を読む
       queue(s, { op: s.sets[set.id]._server ? 'put' : 'import', id: set.id });
-      write(s);
-      return s.sets[set.id];
+      return write(s) ? s.sets[set.id] : null; // 保存できなければ null（成功として扱わない）
     },
     // サーバーの正本の内容を、この端末の写しに書く（送る予定には入れない）。状態の読み替え：公開待ち・控え・期限切れ→確認待ち（_server.state で見分ける）／採用・公開済み→採用／却下→却下
     applyServer: function (rec) {
@@ -55,12 +54,27 @@
       var local = s.sets[rec.id] || {};
       var status = rec.state === 'approved' || rec.state === 'published' ? 'adopted' : rec.state === 'rejected' ? 'rejected' : 'new';
       s.sets[rec.id] = Object.assign({}, local, rec.set || {}, { id: rec.id, status: status, _server: { rev: rec.rev, state: rec.state, updatedAt: rec.updatedAt, score: rec.score, decision: rec.decision || null } });
-      write(s);
-      return s.sets[rec.id];
+      return write(s) ? s.sets[rec.id] : null;
     },
     outbox: function () { return read().outbox.slice(); },
     // 送り終えた（または競合で取りやめた）予定を外す
-    doneOp: function (op) { var s = read(); s.outbox = s.outbox.filter(function (x) { return !(x.op === op.op && x.id === op.id && x.at === op.at); }); write(s); },
+    doneOp: function (op) { var s = read(); s.outbox = s.outbox.filter(function (x) { return !(x.op === op.op && x.id === op.id && x.at === op.at); }); return write(s); },
+    // 送れなかった予定に印を付ける（消さない）。blocked：直さないと送れない（社長の確認が必要）／retry：通信などの一時的な失敗（次に自動で送る）
+    markOp: function (op, patch) { var s = read(); s.outbox.forEach(function (x) { if (x.op === op.op && x.id === op.id && x.at === op.at) Object.assign(x, patch); }); return write(s); },
+    // 競合・移行の差異で採用されなかった、この端末の中身を残す（確認・復旧用）
+    addConflict: function (c) { var s = read(); s.conflicts.unshift(Object.assign({ at: new Date().toISOString() }, c)); s.conflicts = s.conflicts.slice(0, 30); return write(s); },
+    conflicts: function () { return read().conflicts.slice(); },
+    removeConflict: function (at) { var s = read(); s.conflicts = s.conflicts.filter(function (x) { return x.at !== at; }); return write(s); },
+    // 競合した端末の中身で、サーバーを上書きする（社長がはっきり選んだときだけ。今の更新番号で送る）
+    restoreConflict: function (at) {
+      var s = read(); var c = s.conflicts.filter(function (x) { return x.at === at; })[0];
+      if (!c || !c.local) return false;
+      var cur = s.sets[c.id] || {};
+      s.sets[c.id] = Object.assign({}, c.local, { _server: cur._server, status: cur.status });
+      queue(s, { op: cur._server ? 'put' : 'import', id: c.id, restore: true });
+      s.conflicts = s.conflicts.filter(function (x) { return x.at !== at; });
+      return write(s);
+    },
     // 社長の判断（採用・差し替え・却下）を記録する。履歴は次の企画に渡す
     decide: function (id, status, reason, kind) {
       var s = read();
@@ -72,8 +86,7 @@
       x.reason = String(reason || x.reason || '').slice(0, 120);
       s.history.unshift({ status: kind || (status === 'adopted' ? 'adopt' : status === 'rejected' ? 'reject' : 'revise'), pattern: x.pattern, title: x.title, reason: String(reason || '').slice(0, 100), at: Date.now() });
       s.history = s.history.slice(0, 60);
-      write(s);
-      return x;
+      return write(s) ? x : null;
     },
     history: function () { return read().history.slice(0, 30); },
     // 直近の企画パターン（同じ企画ばかりにしないため）
