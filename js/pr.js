@@ -497,6 +497,8 @@
     container.appendChild(accountsCard());
     // P0：投稿ごとの実績（公式APIか社長の手入力。未取得は推測しない）
     if (window.PerfView) container.appendChild(window.PerfView.panel(paint));
+    // サングラスくまのマスター画像（表紙画像の生成用）：社長の承認だけ。AIは呼ばない
+    if (window.KumaMasterView) container.appendChild(window.KumaMasterView.panel(paint));
     window.scrollTo(0, y);
   }
   var imported = false;
