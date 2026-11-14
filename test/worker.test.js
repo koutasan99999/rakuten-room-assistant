@@ -63,13 +63,16 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.match((await run(kv)).skipped, /アプリの情報がまだ/);
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   const steps = [];
-  for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
-  assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
+  for (let i = 0; i < 80; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
+  const head = ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
     'production:plan:true', 'production:gather:true', 'production:pick:true', 'production:copy:true', 'production:roomtext:true', 'production:audit:true', 'production:revise:true', 'production:audit:true',
     // 表紙画像：場面を決める → 画像を作る → 品質確認（合格して、社長の確認待ちへ）
-    'production:scene:true', 'production:image:true', 'production:imgcheck:true:done',
-    // 在庫（合格候補）が目標の10件に届くまで、1日の上限（4回）まで補充しにいく（このテストの楽天は同じ商品しか返さないので、2回目以降は候補0件）
-    'buyer:buyer:true:done', 'buyer:buyer:true:done', 'buyer:buyer:true:done', 'inspect:inspect:true:done', 'idle'], steps.join(' / '));
+    'production:scene:true', 'production:image:true', 'production:imgcheck:true:done'];
+  assert.deepEqual(steps.slice(0, head.length), head, steps.join(' / '));
+  // そのあと：在庫（合格候補）が目標の10件に届くまで、バイヤーAIが補充しにいく（1日の安全上限まで）。使用済みの商品はAIに見せない
+  const rest = steps.slice(head.length);
+  assert.deepEqual(rest.slice(-2), ['inspect:inspect:true:done', 'idle'], steps.join(' / '));
+  assert.ok(rest.slice(0, -2).every((x) => x.startsWith('buyer:')), steps.join(' / '));
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
   assert.equal(st.outreach[0].outreach.status, 'pass');
@@ -77,8 +80,8 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.equal(st.buyer.length, QUOTA.buyer, '1日の上限まで');
   const firstBuyer = st.buyer[st.buyer.length - 1]; // 新しい順なので、最初の仕事はいちばん後ろ
   assert.equal(firstBuyer.candidates[0].status, 'pass');
-  assert.equal(st.buyer[0].candidates.length, 0, '投稿セットに使用済みの商品は、2回目の候補から外す（コードで判断）');
-  assert.equal(st.buyer[0].dropped[0].code, 's:lid');
+  // 投稿セットに使用済みの商品は、2回目以降はAIに見せる前に外す（コードで判断。選ぶ費用を無駄にしない）
+  assert.ok(st.buyer.slice(0, -1).every((ss) => (ss.results || []).every((r) => r.code !== 's:lid') && (ss.candidates || []).every((c) => c.versions[0].data.code !== 's:lid')), '使用済みの商品は2回目以降の検索結果・候補に出ない');
   assert.ok(firstBuyer.runs.every((r) => r.openaiId), '実際のAIの呼び出しの記録（応答ID）');
   // 費用：文章のAIは自律運営の1日の上限に、画像は画像の上限に数える。どちらも月の上限（全体）に入る
   const { imageSpent } = await import('../lib/budget.js');
