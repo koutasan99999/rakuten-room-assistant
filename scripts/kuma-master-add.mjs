@@ -1,5 +1,5 @@
 // マスター画像の取り込み（開発用）：画像を assets/kuma-master/ に写し、lib/kuma-master-manifest.js に「確認待ち」で記録する。
-// 社長の承認は、アプリの画面（広報のいちばん上）で行う。ここでは承認しない。
+// 社長が選定済みと明言した画像だけ --owner-selected を付ける（毎回の承認は求めない）。付けない画像は、アプリの画面で社長が確認する。
 // 使い方：node scripts/kuma-master-add.mjs <元の画像> <ID> <front|full|side> --single --no-text --no-logo [--note "メモ"]
 //   --single --no-text --no-logo は、画像を見て「くまが1体だけ」「文字が無い」「ロゴが無い」を確かめたときだけ付ける
 //   デザインの参考資料（assets/kuma-reference/）は取り込めない
@@ -21,6 +21,7 @@ const entry = {
   id, kind, file, format: info.format, width: info.width, height: info.height, bytes: buf.length, sha256: sha256(buf),
   addedAt: new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10),
   checked: { single: flag('--single'), noText: flag('--no-text'), noLogo: flag('--no-logo'), by: '開発（目視）' },
+  ...(flag('--owner-selected') ? { ownerSelected: { at: new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10), sha256: sha256(buf), note: '社長が選定した正式マスター' } } : {}),
   note: noteAt > 0 ? String(process.argv[noteAt + 1] || '').slice(0, 120) : ''
 };
 const others = MASTERS.filter((m) => m.id !== id);

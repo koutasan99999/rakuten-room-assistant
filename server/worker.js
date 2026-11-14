@@ -10,6 +10,14 @@ import { verifyQstash, keyInfo, readRawBody } from '../lib/qstash.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
+// このアプリ自身のURL（表紙画像の生成で、マスター画像を自分のサイトから取るため）
+function appOrigin(req, env) {
+  const prod = String(env.VERCEL_PROJECT_PRODUCTION_URL || '').trim();
+  if (prod) return `https://${prod.replace(/^https?:\/\//, '')}/`;
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return `https://${host}/`;
+}
+
 export default async function handler(req, res, env = process.env) {
   const startedAt = Date.now();
   const url = new URL(req.url || '/', 'http://localhost');
@@ -44,7 +52,7 @@ export default async function handler(req, res, env = process.env) {
       // QStash のやり直し（同じ呼び出しの再送）は、2回目以降は何もしない（同じ仕事を二重に進めない）
       const mid = String(req.headers['upstash-message-id'] || '').replace(/[^\w-]/g, '').slice(0, 80);
       if (trigger === 'qstash' && mid && !(await kv.set(`worker:qstash:${mid}`, '1', { nx: true, ex: 3600 }))) return send(res, 200, { ok: true, skipped: '同じ呼び出しの再送のため、何もしません（二重実行の防止）' });
-      return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), startedAt, trigger }));
+      return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger }));
     } catch (e) {
       return send(res, 200, { ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });
     }

@@ -1,0 +1,13 @@
+Create one vertical, photo-like 3D render: a candid everyday moment, not a posed advertisement.
+
+Reference image 1: the official character "Sunglasses Kuma". Keep this exact character: cute chibi-proportioned plush teddy bear, camel / caramel fluffy fur, round face, small dark-brown nose, short arms, large glossy black wayfarer sunglasses. Same face, fur texture, head-to-body ratio and sunglasses. Only one bear.
+Reference image 2: the real product, a silver aluminum foldable smartphone stand: a flat base plate with two round cut-out holes, a cylindrical hinge, an angled back plate, and a small lip at the front that holds the phone. Keep its shape, silver color and proportions faithful.
+Reference image 3: the previous render. Keep its world: warm golden-hour light from the window, cozy room, wooden desk, blurred bookshelf, plants, warm desk lamp, depth, the bear in a plain black hoodie, and the plain black mug with a small white eyeglasses icon on the desk.
+
+Camera: placed about 35 degrees to the side of the bear (three-quarter view), at desk height, slightly above the desk surface. Not frontal.
+Moment: the bear leans forward slightly over the desk, its face and sunglasses turned toward the phone screen (not looking at the camera), and taps the phone screen with the tip of one paw, as if starting a video. The other paw rests on the desk near the black mug. Relaxed, natural, caught in the middle of using it.
+Product placement: the smartphone stand stands on the near edge of the desk in the foreground, large enough to be clearly recognized as a phone stand (about a quarter to a third of the image width), shown from an angle where the base plate with its two holes, the hinge and the angled back plate are all visible. The phone sits on the stand in portrait orientation; its screen shows only soft blurred colors (no interface, no text). Natural composition; do not distort the product.
+Leave the upper part of the image (about the top 30%) calm and uncluttered (window light and blurred room) as space for a title added later.
+
+Style: high-quality 3D plush character render, cinematic warm lighting, realistic materials, shallow depth of field, cozy everyday life.
+Do NOT draw any text, letters, numbers, brand names, logos or watermarks anywhere (except the small white eyeglasses icon on the mug). No flat illustration. No second character.

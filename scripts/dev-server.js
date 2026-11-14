@@ -15,6 +15,7 @@ import igHandler from '../server/ig.js';
 import workerHandler from '../server/worker.js';
 import dataHandler from '../server/data.js';
 import kumaMasterHandler from '../server/kuma-master.js';
+import mediaHandler from '../server/media.js';
 import { memoryKv } from '../lib/kv.js';
 import { withUsage } from '../lib/ai-usage.js';
 import instagramHandler from '../server/instagram.js';
@@ -378,6 +379,7 @@ if (process.env.MOCK) {
 http.createServer((req, res) => withUsage(async () => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/kuma-master') return kumaMasterHandler(req, res, env);
+  if (url.pathname === '/api/media') return mediaHandler(req, res, env);
   if (url.pathname === '/api/discover') return handler(req, res, env);
   if (url.pathname === '/api/explore') return exploreHandler(req, res, env);
   if (url.pathname === '/api/intros') return introsHandler(req, res, env);

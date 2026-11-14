@@ -678,7 +678,7 @@
     var offset = (hasSummary ? 1 : 0) + (post.extraSlides || 0);
     var total = groups.length + 2 + offset;
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var coverCanvas = render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, images: post.release ? heroImages(post.items) : post.coverHero ? coverImages(post.items).slice(0, 1) : coverImages(post.items), items: post.items });
+    var coverCanvas = render('cover', { topic: post.topic, subtitle: post.subtitle, bear: post.bear, cover: post.cover, release: post.release, photo: post.coverPhoto || null, images: post.coverPhoto ? [] : post.release ? heroImages(post.items) : post.coverHero ? coverImages(post.items).slice(0, 1) : coverImages(post.items), items: post.items });
     if (post.noPhoto) drawCoverList(coverCanvas, post.items);
     var slides = [{ fileName: '01_cover.png', canvas: coverCanvas }];
     if (hasSummary) {

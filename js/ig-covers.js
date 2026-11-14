@@ -611,6 +611,31 @@
       bearCorner(ctx, d, '#151515', 180);
     },
 
+    // サングラスくまの表紙画像（2026-11-14）：AIが作った場面の画像（文字なし）を全面に敷き、タイトルはここでプログラムが重ねる。
+    // 画像の上3分の1は余白として作らせてある。読みやすいよう上を白くぼかし、下に「AI生成イメージ」の表記を必ず入れる
+    kuma_scene: function (ctx, d) {
+      var ph = d.photo;
+      ctx.fillStyle = '#EDE6DA'; ctx.fillRect(0, 0, W, H);
+      if (ph) {
+        var s = Math.max(W / ph.width, H / ph.height);
+        var w = ph.width * s, h = ph.height * s;
+        ctx.drawImage(ph, (W - w) / 2, -(h - H) * 0.3, w, h);
+      }
+      var g = ctx.createLinearGradient(0, 0, 0, 620);
+      g.addColorStop(0, 'rgba(255,255,255,0.94)'); g.addColorStop(0.62, 'rgba(255,255,255,0.86)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, 620);
+      ctx.font = f(40, 800); ctx.fillStyle = '#1E1E1E';
+      ctx.fillText(K.ACCOUNT.name + 'の', M, 150);
+      var t = drawTitle(ctx, d.cover.title, d.cover.accent, { x: M, y: 290, size: 118, minSize: 70, maxWidth: W - M * 2, weight: 900, color: '#1E1E1E', accentColor: '#B5522E', lineHeight: 1.22 });
+      if (d.cover.sub) { ctx.font = f(42, 700); ctx.fillStyle = '#3A3A3A'; ctx.fillText(d.cover.sub, M, Math.min(t.bottom + 90, 560)); }
+      // 表記：AIが作ったイメージ画像であること（実物の写真・使用の感想ではない）
+      var label = 'AI生成イメージ';
+      ctx.font = f(28, 700);
+      var lw = ctx.measureText(label).width + 36;
+      ctx.fillStyle = 'rgba(20,20,20,0.78)'; K.roundRect(ctx, M - 20, H - 96, lw, 52, 26); ctx.fill();
+      ctx.fillStyle = '#FFFFFF'; ctx.fillText(label, M - 2, H - 60);
+    },
+
     // 変わり種：少し遊び心。色の面と2行目を少しずらす。ただし安っぽくしない
     unique_pick: function (ctx, d) {
       ctx.fillStyle = '#F2EEE6'; ctx.fillRect(0, 0, W, H);
