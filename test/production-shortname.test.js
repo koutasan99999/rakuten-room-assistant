@@ -22,7 +22,7 @@ test('短い名前は商品名からプログラムで作る（AIが書いた「
     digits.forEach((d) => assert.ok(SET.items[i].name.normalize('NFKC').includes(d), `「${n}」の ${d} は商品名にない`));
     assert.ok(n.length > 0 && n.length <= 20);
   });
-  assert.match(names[0], /bitstrong/, 'ブランド名は残す');
+  assert.equal(names[0], 'bitstrong 不燃消火シート', 'ブランド名と何の商品かが分かる言葉を残す（型番 BS-BF-SH-481 は外す）');
   assert.ok(!/送料無料/.test(names[0]), '宣伝文句は削る');
 });
 
