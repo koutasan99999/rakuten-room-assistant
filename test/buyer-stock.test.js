@@ -95,3 +95,48 @@ test('合格候補の消費：実際に投稿セットに入った候補だけ�
   const prod = (await kv.listJson('worker:results:production', 5)).find((r) => r.id === 'j1');
   assert.deepEqual(prod.sourceUse, { offered: 2, inSet: 1, released: 1 });
 });
+
+test('発掘の切り口：楽天だけで確かめられる7つと、追加の情報源が要る4つを分ける。蓄えに少ない切り口から順に担当する', async () => {
+  const { ANGLES, ACTIVE_ANGLES, chooseAngle, seasonWords, UNSOURCED_CLAIM } = await import('../lib/buyer-angles.js');
+  assert.equal(ANGLES.length, 11);
+  assert.deepEqual(ACTIVE_ANGLES.map((a) => a.id), ['classic', 'new_label', 'old_model', 'season', 'sale', 'unique', 'gift']);
+  assert.ok(ANGLES.filter((a) => !a.rakutenOnly).every((a) => a.needs), '追加の情報源が要る切り口は、何が要るかを書いてある');
+  assert.equal(chooseAngle([], 0).id, 'classic');
+  assert.equal(chooseAngle(['classic', 'new_label', 'old_model', 'season', 'sale', 'unique'], 0).id, 'gift', '蓄えに無い切り口を優先');
+  assert.deepEqual(seasonWords(new Date('2026-11-14T03:00:00Z')).slice(0, 2), ['冬の乾燥対策', '早めのクリスマスギフト']);
+  assert.ok(UNSOURCED_CLAIM.test('SNSで話題の') && UNSOURCED_CLAIM.test('テレビで紹介') && !UNSOURCED_CLAIM.test('水受けトレー付き'));
+});
+
+test('切り口ごとの評価：定番はレビュー件数と平均、型落ちは表記、ギフトは価格帯で楽天を検索する。AIには切り口と評価基準を渡す（レビュー数だけで選ばない）', async () => {
+  const { ANGLES } = await import('../lib/buyer-angles.js');
+  const { angleLines } = await import('../lib/agents.js');
+  const a = (id) => ANGLES.find((x) => x.id === id);
+  assert.equal(a('classic').keep({ reviewCount: 150, reviewAverage: 4.5 }), true);
+  assert.equal(a('classic').keep({ reviewCount: 20, reviewAverage: 4.9 }), false);
+  assert.equal(a('old_model').keep({ name: '電気ケトル 旧モデル', caption: '' }), true);
+  assert.equal(a('unique').keep({ reviewCount: 2 }), true, '独自性はレビューが少なくてよい');
+  assert.equal(a('gift').minPrice, 2000);
+  const l = angleLines(a('season'), new Date('2026-11-14T03:00:00Z'));
+  assert.match(l, /発掘の切り口：季節・行事/); assert.match(l, /今の季節・行事：冬の乾燥対策/);
+});
+
+test('コードの確認：情報源のない話題性の主張（SNSで話題・テレビで紹介・芸能人が使用）は不合格。楽天ROOMの報酬対象（料率）を確かめる', async () => {
+  const { checkOne } = await import('../lib/agents.js');
+  mock = installFetchMock({ rakuten: () => json(200, { Items: [] }), openai: () => aiReply({}) });
+  const base = { id: 'c1', ref: 'R1', code: 's:x', name: 'ステンレス 鍋蓋スタンド', price: 1980, url: 'https://item.rakuten.co.jp/s/x/', image: 'x', quotes: ['水受けトレー付き'], reason: '水受けトレー付き', target: 't', problem: 'p', roomValue: 'v', cautions: 'c', whyNow: '冬の鍋料理の季節', whoBuys: '料理する人', postIdea: 'くまが鍋のふたを置く', evidence: [] };
+  const result = { ref: 'R1', code: 's:x', caption: '水受けトレー付きで、水滴がたれにくい。', keyword: 'k', checkedAt: 'x', affiliateRate: 4 };
+  let k = await checkOne(base, result, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'claims').ok, true);
+  assert.equal(k.checks.find((x) => x.key === 'room').ok, true);
+  k = await checkOne({ ...base, whyNow: 'SNSで話題になっている' }, result, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'claims').ok, false); assert.equal(k.hardFail, true);
+  k = await checkOne(base, { ...result, affiliateRate: 0 }, { env: ENV, referer: 'https://x/' });
+  assert.equal(k.checks.find((x) => x.key === 'room').ok, false);
+});
+
+test('制作に渡す合格候補：点数の高い順に、切り口が重ならないように2件選ぶ', async () => {
+  const { pickSource } = await import('../lib/worker.js');
+  const s = pickSource([{ code: 'a', angle: 'classic', score: 95 }, { code: 'b', angle: 'classic', score: 92 }, { code: 'c', angle: 'gift', score: 85 }], 2);
+  assert.deepEqual(s.map((x) => x.code), ['a', 'c']);
+  assert.deepEqual(pickSource([{ code: 'a', angle: 'classic', score: 95 }, { code: 'b', angle: 'classic', score: 92 }], 2).map((x) => x.code), ['a', 'b'], '切り口が1種類しかなければ同じ切り口でも選ぶ');
+});

@@ -13,7 +13,7 @@ let mock;
 let setAuditUsers = [];
 afterEach(() => { if (mock) mock.restore(); mock = null; setAuditUsers = []; });
 const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec', __noWait: true };
-const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 3 });
+const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 150, reviewAverage: 4.5, affiliateRate: 4 });
 const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
 function fetchMock({ failAi = false } = {}) {
   let setAudits = 0;
@@ -134,17 +134,18 @@ test('仕事探し：合格候補がたまっていればバイヤーAIは待ち
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 6 }));
   const cand = (code) => ({ id: 'c1', status: 'pass', versions: [{ data: { id: 'c1', code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
   for (const c of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']) await kv.pushJson(WORKER_KEYS.buyer, { id: 's' + c, candidates: [cand(c)] }, 30);
+  // 蓄えが10件あっても、費用に余裕があれば発掘を続ける（数では打ち切らない）。費用の残りが少ない日は制作に回す
+  await record(kv, 20, { auto: true });
   const r = await run(kv);
   assert.ok(r.idle, JSON.stringify(r));
   const by = Object.fromEntries(r.board.items.map((x) => [x.agent, x]));
   assert.equal(by.production.status, 'wait');
   assert.match(by.production.reason, /確認待ちの投稿セットが6件/);
   assert.equal(by.buyer.status, 'wait');
-  assert.match(by.buyer.reason, /合格候補の在庫が10件（目標10件）/);
+  assert.match(by.buyer.reason, /合格候補の蓄えが10件あり、今日の費用の残り.*制作に回す/);
   assert.equal(r.board.buyer.stock, 10); assert.equal(r.board.buyer.pass, 10, 'バイヤーAIの成績（合格候補の数）を記録に出す');
   assert.equal(by.outreach.status, 'none');
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 0 }));
-  await record(kv, 20, { auto: true });
   const r2 = await run(kv);
   assert.match(Object.fromEntries(r2.board.items.map((x) => [x.agent, x])).production.reason, /費用の残り/);
   assert.equal(mock.calls.openai.length, 0);
