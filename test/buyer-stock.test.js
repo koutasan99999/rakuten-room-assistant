@@ -179,3 +179,16 @@ test('販売導線：本文はストーリーズのハイライト（購入動�
   const n = motiveNote('fix', [{ name: '鍋蓋スタンド', whoBuys: '自炊する社会人', problem: 'ふたの置き場所', vsOthers: 'R3と違い水受け付き', priceReason: '2,000円以下' }]);
   assert.match(n, /購入動機：日常の不便を解消したい/); assert.match(n, /競合との比較「R3と違い水受け付き」/);
 });
+
+test('修正：購入理由の項目（購入動機・競合との比較など）を修正の指示に含め、書かれなかった項目は同じ商品なら前の版を引き継ぐ（本番で修正のたびに項目が消えて不合格になっていた）', async () => {
+  const { reviseStep } = await import('../lib/agents.js');
+  let user = '';
+  mock = installFetchMock({ rakuten: () => json(200, { Items: [] }), openai: (body) => { user = body.messages[1].content; return aiReply({ revisions: [{ id: 'c1', quotes: ['水受けトレー付き'], reason: '水受けトレー付き', target: 't', problem: '', roomValue: 'v', cautions: 'c' }] }); } });
+  const cand = { id: 'c1', ref: 'R1', code: 's:x', name: '鍋蓋スタンド', price: 1980, quotes: ['水受け'], reason: 'r', target: 't', problem: 'ふたの置き場所', roomValue: 'v', cautions: 'c', angle: 'unique', motive: 'fix', whoBuys: '自炊する社会人', whyNow: '鍋の季節', vsOthers: 'R2と違い水受け付き', priceReason: '2,000円以下', postIdea: 'くまがふたを立てる' };
+  const results = [{ ref: 'R1', code: 's:x', name: '鍋蓋スタンド', price: 1980, url: 'https://item.rakuten.co.jp/s/x/', image: 'x', caption: '水受けトレー付き', keyword: 'k', checkedAt: 'x' }, { ref: 'R2', code: 's:y', name: 'トング', price: 900, url: 'https://item.rakuten.co.jp/s/y/', image: 'x', caption: 'シリコン', keyword: 'k', checkedAt: 'x' }];
+  const r = await withUsage(() => reviseStep({ targets: [{ candidate: cand, why: '比較が弱い', fixes: ['理由を具体的に'] }], results, env: ENV }));
+  assert.equal(r.ok, true, r.error);
+  assert.match(user, /今の購入理由: 購入動機 fix／誰が買うか: 自炊する社会人/);
+  const c = r.revisions[0].candidate;
+  assert.equal(c.motive, 'fix'); assert.equal(c.vsOthers, 'R2と違い水受け付き'); assert.equal(c.priceReason, '2,000円以下'); assert.equal(c.problem, 'ふたの置き場所');
+});
