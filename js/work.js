@@ -122,6 +122,33 @@
         calls: runs, cost: sum(runs, 'yen'), tokens: tokens(runs), rakuten: role === 'planner' ? rec.rakutenCalls || 0 : 0, deliverables: dl, extra: extra, open: rec.result === 'pass' ? function () { go('#pitch', function () { if (window.PitchView && window.PitchView.show) window.PitchView.show('sets'); }); } : function () { go('#company'); } };
     }).filter(Boolean);
   }
+  // 経営企画AI・営業候補調査（サーバーの記録）
+  function serverRecs(key) { var sv = window.ServerSync && window.ServerSync.status(); return (sv && sv[key]) || []; }
+  function researchItems() {
+    return serverRecs('research').map(function (rec) {
+      var runs = rec.runs || []; var pr = rec.proposal;
+      var extra = [];
+      if (pr) {
+        extra.push({ title: '提案書の全文：' + pr.title, lines: ['結論：' + (pr.conclusion || '')].concat(pr.options.reduce(function (a, o, i) {
+          var L = { what: '何をする事業か', how: '収益の発生の仕方', demand: '想定顧客と需要の根拠', cost: '初期費用・維持費', ownerWork: '社長がする作業', aiWork: 'AI社員が自律的にできる作業', outlook: '収益化までの見込み（推定）', risks: '競合・規約・法的リスク', test: '小さく試す方法', priority: '今の事業と比べた優先順位' };
+          a.push('案' + (i + 1) + '：' + o.name);
+          Object.keys(L).forEach(function (k) { if (o[k]) a.push('　' + L[k] + '：' + o[k]); });
+          o.quotes.forEach(function (q) { var src = (pr.sourceMap || {})[q.source] || {}; a.push((q.verified ? '　根拠（本文と一致）' : 'NG 　根拠（本文に見つからない・未確認）') + '「' + q.text + '」' + (src.name ? '（' + src.name + '）' : '')); });
+          o.issues.forEach(function (x) { a.push('NG 　確認：' + x); });
+          return a;
+        }, [])).concat((pr.unknowns || []).map(function (u) { return '未確認：' + u; })) });
+      }
+      extra.push({ title: '読んだ公式ページ', lines: (rec.pages || []).map(function (p) { return (p.ok ? '読めた ' : 'NG 読めなかった ') + p.name + '（' + p.url + '）' + (p.error ? '：' + p.error : '・' + p.chars + '字'); }) });
+      return { start: startOf(runs, rec.at), end: rec.endedAt || endOf(runs, rec.at), state: rec.result === 'failed' ? 'failed' : 'ok', what: '新しい収益源の調査と提案書' + (rec.title ? '「' + rec.title + '」' : ''), error: rec.result === 'failed' ? (rec.failedStep || '') + '：' + (rec.error || '') : '',
+        calls: runs, cost: sum(runs, 'yen'), tokens: tokens(runs), deliverables: [rec.result === 'pass' ? '提案書（本文と一致した引用 ' + (pr ? pr.verifiedQuotes : 0) + '件）' : '提案書なし／未確認：' + (rec.why || '')], extra: extra, open: function () { go('#company'); } };
+    });
+  }
+  function leadsItems() {
+    return serverRecs('leads').map(function (rec) {
+      return { start: rec.at, end: rec.endedAt || rec.at, state: rec.result === 'failed' ? 'failed' : 'ok', what: '営業候補調査：公式サイトがリンクしているInstagramを探す（AIなし・0円）', error: rec.result === 'failed' ? rec.error || '' : '',
+        calls: [], cost: 0, tokens: 0, deliverables: (rec.results || []).map(function (x) { return x.brand + '：' + (x.handles.length ? x.handles.map(function (h) { return '@' + h; }).join('・') : (x.error || 'なし')); }).concat(rec.fbApi ? [] : ['最近の投稿の取得（Facebookログイン方式の公式API）は未設定のため、コメント案の材料（投稿の文章）はまだ集められない']), open: function () { go('#pr'); } };
+    });
+  }
   function outreachItems() {
     var R = window.PrStore;
     if (!R) return [];
@@ -183,8 +210,10 @@
         auto: { can: true, how: '企画担当AIの企画が届いたら作る。画像（スライド）はサーバーでは描かず、アプリで投稿セットを開いたときに描く' } },
       { key: 'editor', name: '制作担当AI（修正）', title: '制作部', duty: '監査AIの修正指示に従って、投稿セットのキャプションとROOM紹介文を直す（最大2回。直せなければ推測せず保留）', items: prodItems('editor'), board: 'production',
         auto: { can: true, how: '監査AIが「修正」と判定したら直す' } },
-      { key: 'outreach', name: '営業・交流担当AI', title: '営業部', duty: '他の人の投稿（文章を確認できたもの）へのコメント案とフォロー候補の評価。送信・フォローは社長', items: outreachItems(), board: 'outreach',
-        auto: { can: true, how: '文章を確認できた交流候補（社長が追加・公式APIで集めたもの）があれば作る。候補を自分で探すには、Instagram公式API（Facebookログイン方式）の鍵が必要' } },
+      { key: 'outreach', name: '営業・交流担当AI', title: '営業部', duty: '営業候補調査（公式サイトがリンクしているアカウント）と、他の人の投稿（文章を確認できたもの）へのコメント案。送信・フォローは社長', items: outreachItems().concat(leadsItems()), board: 'outreach',
+        auto: { can: true, how: '営業候補調査（公式サイトがリンクしているアカウントを7日ごとに確認・0円）は自分で進める。コメント案は、文章を確認できた投稿があるときだけ作る（投稿の文章を自動で集めるには、Instagram公式API（Facebookログイン方式）の鍵が必要）' } },
+      { key: 'planning', name: '経営企画AI', title: '経営企画', duty: '新しい収益源・事業モデルを、実際に読んだ公式ページを根拠に比べ、提案書を作る（3日に1回まで。始めるかどうかは社長が決める）', items: researchItems(), board: 'research',
+        auto: { can: true, how: '前回の調査から3日たっていて、費用の残りがあれば、公式ページを読んで提案書を作る。引用はコードが本文と照合する' } },
       { key: 'pitch', name: '商品の提案（プレゼン）', title: '商品部', duty: '「次の商品を探してもらう」「広げる」で、楽天の商品を探してプレゼンを書く', jobTypes: ['pitch', 'explore', 'explore_more'], items: aiLogItems(['pitch:scout', 'pitch:more', 'pitch:seed', 'pitch:expand', 'explore'], function (t) { return /expand|explore/.test(t) ? '「広げる」で関連商品を探す' : '商品を探してプレゼンを書く'; }, function () { go('#pitch'); }),
         auto: { can: false, kind: '担当外', why: 'バイヤーAIと同じ「商品を探す」仕事のため、自律運営はバイヤーAIに一本化（同じ仕事に二重に費用をかけない）。画面のボタンは今までどおり使えます' } },
       { key: 'meeting', name: '経営会議（旧方式）', title: '経営', duty: '毎日1回、事実を集めて会議の文章を作る（1回のAI呼び出しで複数の役。新方式に置き換え予定）', jobTypes: ['company'], items: meetingItems(),
@@ -203,6 +232,7 @@
       { label: '商品の候補（監査に合格・投稿セットにまだ使っていない）', n: A ? (function () { var inSet = {}; if (D) D.exclude().codes.forEach(function (c) { inSet[c] = true; }); return A.sessions().filter(function (x) { return x.status === 'done'; }).reduce(function (a, x) { return a + (x.candidates || []).filter(function (c) { var v = c.versions[c.versions.length - 1]; return c.status === 'pass' && !c.owner && !c.usedIn && !(v && v.data && inSet[v.data.code]); }).length; }, 0); })() : 0, open: function () { go('#company'); }, note: '正式な採用は社長が決めます' },
       { label: 'コメント案（監査に合格・まだ送っていない）', n: R ? R.posts().filter(function (p) { return p.status === 'todo' && p.outreach && p.outreach.status === 'pass'; }).length : 0, open: function () { go('#pr'); }, note: 'コメントの送信・フォローは社長がInstagramで行います' },
       { label: 'プレゼン（判断待ち）', n: P && P.queue ? P.queue().length : 0, open: function () { go('#pitch'); } },
+      { label: '新規事業の提案（経営企画AI・読んで判断。始めるときは社長の承認が必要）', n: serverRecs('research').filter(function (r) { return r.result === 'pass' && Date.now() - new Date(r.endedAt || r.at).getTime() < 14 * DAY; }).length, open: function () { open.planning = true; go('#company', function () { var t = document.getElementById('staff-attendance'); if (t) t.scrollIntoView(); }); } },
       { label: '提言・業務（判断待ち）', n: C ? C.proposals().filter(function (p) { return p.status === 'open'; }).length + C.tasks(true).filter(function (t) { return t.status === 'review'; }).length : 0, open: function () { go('#company'); } }
     ];
   }
@@ -298,16 +328,17 @@
   }
 
   // 自律運営（アプリを閉じていても、定期実行でサーバーが仕事を進める）の状態。サーバーから受け取った事実だけ
-  var AGENT = { buyer: 'バイヤーAI', outreach: '営業・交流担当AI', production: '制作ライン' };
+  var AGENT = { buyer: 'バイヤーAI', outreach: '営業・交流担当AI', production: '制作ライン', research: '経営企画AI', leads: '営業候補調査' };
   var ROLE_NAME = { planner: '企画担当AI', producer: '投稿セット制作AI', auditor: '監査AI', editor: '制作担当AI' };
   var BOARD = { work: '仕事あり', wait: '待ち', none: '仕事なし' };
   var TRIG = { qstash: 'QStashの定期実行（15分ごと）', schedule: 'GitHubの定期実行（15分ごと）', workflow_dispatch: '手動', 'vercel-cron': 'Vercelの予備（1日1回）', unknown: '不明' };
-  var KIND = { nodata: 'データ不足', waiting: '処理待ち', budget: '予算不足', quota: '今日の上限', backlog: '確認待ちが多い', nokey: 'API未設定', error: 'エラー', paused: '停止中' };
+  var KIND = { interval: '間隔待ち', nodata: 'データ不足', waiting: '処理待ち', budget: '予算不足', quota: '今日の上限', backlog: '確認待ちが多い', nokey: 'API未設定', error: 'エラー', paused: '停止中' };
   function boardOf(key) {
     var sv = window.ServerSync && window.ServerSync.status();
     var b = sv && sv.board;
     if (!b || !key) return null;
     var items = b.items || [];
+    if (key === 'outreach') { var o = items.filter(function (x) { return x.agent === 'outreach'; })[0]; var l = items.filter(function (x) { return x.agent === 'leads'; })[0]; if (o && o.status !== 'work' && l && l.status === 'work') items = [l]; }
     var hit = key === 'auditor' ? (items.filter(function (x) { return x.status === 'work'; })[0] || items[0]) : items.filter(function (x) { return x.agent === key; })[0];
     return hit ? { at: b.at, status: hit.status, kind: hit.kind, reason: key === 'auditor' ? (hit.status === 'work' ? (AGENT[hit.agent] || hit.agent) + 'の成果物を採点する予定' : '採点する成果物がまだない') : hit.reason } : null;
   }
@@ -326,6 +357,10 @@
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
     ];
+    var mo = sv.monitor;
+    if (mo && mo.stale) lines.unshift('注意：' + mo.why + (mo.last ? '（最後：' + stamp(mo.last) + '）' : '') + '。QStashの画面のLogsで失敗していないか確かめてください');
+    if (h.alert) lines.push('停止の検知の記録：' + stamp(h.alert.at) + '（' + h.alert.why + '）');
+    if (h.daily) { var dk = Object.keys(h.daily).sort().slice(-1)[0]; if (dk) lines.push('今日（' + dk.slice(5) + '）の起動回数：' + Object.keys(h.daily[dk]).map(function (k) { return (TRIG[k] || k) + ' ' + h.daily[dk][k] + '回'; }).join('／')); }
     if (sv.paused) lines.unshift('停止中：' + stamp(sv.paused.at) + ' に止めました（' + sv.paused.reason + '）。定期実行はAIを呼びません。途中の仕事と成果物は残っています');
     if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
     else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);
@@ -348,6 +383,7 @@
       sv.log.slice(0, 10).forEach(function (x) { det.appendChild(el('p', 'hint' + (x.ok ? '' : ' pitch-warn'), stamp(x.at) + '｜' + (x.trigger ? (TRIG[x.trigger] || x.trigger) + '｜' : '') + (AGENT[x.agent] || x.agent) + (x.role ? '（' + ROLE_NAME[x.role] + '）' : '') + '｜段階「' + x.step + '」｜' + (x.ok ? '成功' : '失敗：' + x.error) + (x.final ? '｜仕事を' + (x.final === 'done' ? '完了' : '打ち切り') : '') + '｜AI ' + x.calls + '回・' + yen(x.yen) + (x.openaiIds && x.openaiIds.length ? '｜応答ID ' + x.openaiIds.join('・') : ''))); });
       box.appendChild(det);
     }
+    if (sv.merged && sv.merged.leads) box.appendChild(el('p', 'hint', '営業候補調査で見つけた新しいフォロー候補：' + sv.merged.leads + '件（広報の画面）'));
     if (sv.merged && (sv.merged.buyer || sv.merged.outreach || sv.merged.production)) box.appendChild(el('p', 'hint', '今回受け取った成果物：商品の候補 ' + sv.merged.buyer + '件・コメント案 ' + sv.merged.outreach + '件・制作ラインの記録 ' + (sv.merged.production || 0) + '件（うち社長の確認待ちの投稿セット ' + (sv.merged.sets || 0) + '件）'));
     return box;
   }

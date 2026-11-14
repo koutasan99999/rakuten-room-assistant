@@ -36,14 +36,33 @@
       outreachPosts: posts.slice(0, 30).map(function (p) { return { id: p.id, url: p.url, handle: p.handle, caption: p.caption, source: p.source }; }),
       pendingBuyer: pending, auditModel: model,
       history: D ? D.history() : [], recentPatterns: D ? D.recentPatterns() : [],
-      setCodes: D ? D.exclude().codes : [], skipCodes: skip.slice(0, 300), pendingSets: D ? D.pendingCount() : 0
+      setCodes: D ? D.exclude().codes : [], skipCodes: skip.slice(0, 300), pendingSets: D ? D.pendingCount() : 0,
+      // 営業候補調査：採用した商品のブランドと、社長が登録した公式サイト
+      brands: (function () { var b = {}; (window.PitchStore ? window.PitchStore.list('adopt') : []).forEach(function (p) { if (p.brand) b[p.brand] = true; }); return Object.keys(b).slice(0, 40); })(),
+      sites: R && R.sites ? R.sites() : {},
+      // 経営企画AIに渡す会社の事実（記録にあるものだけ。無いものは「未記録」）
+      facts: facts()
     };
+  }
+
+  function facts() {
+    var out = [];
+    var C = window.CompanyStore; var month = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7);
+    var rev = C && C.revenue ? C.revenue()[month] : null;
+    out.push('今月の楽天アフィリエイトの報酬：' + (rev ? rev.amount + '円（社長の記録）' : '未記録'));
+    var D = window.DeliveryStore;
+    if (D) out.push('社長の確認待ちの投稿セット：' + D.pendingCount() + '件／採用済み：' + D.all().filter(function (x) { return x.status === 'adopted'; }).length + '件');
+    var P = window.PerfStore; var acc = P && P.accountLog ? P.accountLog().slice(-1)[0] : null;
+    out.push('Instagramのフォロワー：' + (acc && acc.followers != null ? acc.followers + '人（公式APIで取得）' : '未取得'));
+    out.push('楽天ROOMへの流入・クリック：取得する手段がない（未取得）');
+    var A = window.AiUsage; if (A && A.month) out.push('今月のAIの費用：約' + A.month().yen + '円（上限1,000円）');
+    return out;
   }
 
   // サーバーの成果物を、このiPhoneの記録に入れる
   function merge(st) {
     var A = window.AgentsStore; var R = window.PrStore;
-    var n = { buyer: 0, outreach: 0, sets: 0, production: 0 };
+    var n = { buyer: 0, outreach: 0, sets: 0, production: 0, leads: 0 };
     if (A) (st.buyer || []).forEach(function (s) {
       var cur = A.get(s.id);
       if (cur && cur.status === 'done') return; // 取り込み済み（社長の判断を消さない）
@@ -64,6 +83,13 @@
       var have = {}; R.runs().forEach(function (x) { have[x.id] = true; });
       (st.outreachRuns || []).forEach(function (run) { if (!have[run.id]) R.saveRun(run); });
     }
+    // 営業候補調査：公式サイトがリンクしていたアカウントを、フォロー候補に入れる（同じアカウントは入れない・興味なしにしたものも二度と出さない）
+    if (R && R.addAccount) (st.leads || []).forEach(function (rec) {
+      (rec.results || []).forEach(function (x) { (x.handles || []).forEach(function (h) {
+        var res = R.addAccount({ handle: h, genre: 'brand', official: true, priority: 3, auto: true, source: '公式サイトのリンク（自律運営）', reason: x.brand + 'の公式サイトがリンクしているアカウント', evidence: x.url, checkedAt: x.checkedAt });
+        if (res.account && !res.dup) n.leads++;
+      }); });
+    });
     // 制作ライン：合格した投稿セットを「社長の確認待ち」に入れる（社長の判断・既存の投稿セットは上書きしない）
     var D = window.DeliveryStore; var RT = window.RoomTextStore;
     if (D && D.saveAuto) (st.production || []).slice().reverse().forEach(function (rec) {

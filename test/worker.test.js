@@ -53,6 +53,7 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   const kv = memoryKv();
   assert.match((await run(kv)).skipped, /アプリの情報がまだ/);
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
+  await kv.set(WORKER_KEYS.researchLast, new Date().toISOString()); // 経営企画AIは別のテストで確かめる
   const steps = [];
   for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}:${r.worked.ok}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle ? 'idle' : r.skipped); if (r.idle) break; }
   assert.deepEqual(steps, ['outreach:draft:true', 'outreach:audit:true:done', 'buyer:buyer:true', 'buyer:check:true', 'buyer:audit:true:done',
@@ -92,7 +93,7 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.match(pr.versions[0].texts.caption, /台所の置き場所/);
   assert.ok(pr.audits[1].check.checks.every((k) => k.ok !== false), JSON.stringify(pr.audits[1].check.checks));
   // 仕事探しの記録：仕事がない社員は理由つきで「仕事なし」
-  assert.ok(st.board && st.board.items.length === 3);
+  assert.equal(st.board.items.map((x) => x.agent).join(','), 'production,outreach,buyer,leads,research');
   assert.ok(st.board.items.every((x) => ['work', 'wait', 'none'].includes(x.status) && x.reason));
   assert.equal(st.backlog, 0, '使った合格候補は二度と使わない');
 });
@@ -101,6 +102,7 @@ test('仕事探し：合格候補がたまっていればバイヤーAIは待ち
   mock = fetchMock();
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 6 }));
+  await kv.set(WORKER_KEYS.researchLast, new Date().toISOString());
   const cand = (code) => ({ id: 'c1', status: 'pass', versions: [{ data: { id: 'c1', code, name: code, price: 1000, url: 'https://item.rakuten.co.jp/s/x/', image: 'x' }, audit: { total: 90 } }] });
   for (const c of ['a', 'b', 'c', 'd']) await kv.pushJson(WORKER_KEYS.buyer, { id: 's' + c, candidates: [cand(c)] }, 30);
   const r = await run(kv);
@@ -322,4 +324,69 @@ test('QStash：生の本文の読み取り。本文の要約値は base64url（�
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc', keys: ['k'] }).ok, true);
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abd', keys: ['k'] }).ok, false);
   assert.equal(verifyQstash({ signature: qsig('k', { body: 'abc' }), body: 'abc ', keys: ['k'] }).ok, false);
+});
+
+// ---- 独立した仕事（2026-11-14）：確認待ちが多くて制作が止まっていても、営業候補調査（0円）と経営企画AI（3日に1回）を進める ----
+const PAGES = {
+  'https://kinto.co.jp/': '<html><body><a href="https://www.instagram.com/kinto_japan/">Instagram</a></body></html>',
+  'https://affiliate.amazon.co.jp/': '<html><body><h1>Amazonアソシエイト・プログラム</h1><p>Amazonアソシエイト・プログラムは、ブログやWebサイトに商品リンクを掲載し、紹介料を得られるアフィリエイトプログラムです。参加は無料です。</p></body></html>',
+  'https://af.moshimo.com/': '<html><body><script>var x=1</script></body></html>',
+  'https://affiliate.rakuten.co.jp/': '<html><body><p>楽天アフィリエイトは、楽天市場の商品を紹介して成果報酬を受け取れるサービスです。登録は無料です。</p></body></html>'
+};
+const fakeFetchHtml = async (url) => { if (PAGES[url]) return { html: PAGES[url], url }; throw new Error('ページを開けませんでした（404）'); };
+
+test('独立した仕事：確認待ちの投稿セットが上限でも、営業候補調査（AIなし・0円）と経営企画AIの提案書（引用はコードが照合）を進める', async () => {
+  mock = installFetchMock({
+    rakuten: () => json(200, { Items: [] }),
+    openai: (body) => {
+      const sys = body.messages[0].content;
+      if (sys.includes('経営企画AIです')) return aiReply({ title: 'アフィリエイトの比較', conclusion: '今の事業を続けつつ、Amazonアソシエイトを小さく試す価値を確かめる', options: [
+        { name: 'Amazonアソシエイト', sources: ['S1'], what: '商品リンクで紹介料', how: '紹介料', demand: '未確認', cost: '参加は無料（S1）', ownerWork: '申し込み', aiWork: '商品選び', outlook: '推定：実績がないため不明', risks: '規約の確認が必要', test: '1か月だけ試す', priority: '2番目', quotes: [{ source: 'S1', text: '商品リンクを掲載し、紹介料を得られるアフィリエイトプログラムです' }, { source: 'S1', text: '月100万円稼げます' }] },
+        { name: '今の事業を続ける', sources: ['S2'], what: '楽天の商品を紹介', how: '成果報酬', demand: '未確認', cost: '登録は無料', ownerWork: '投稿', aiWork: '制作', outlook: '実績で判断する', risks: 'なし', test: '確認待ちを減らす', priority: '1番目', quotes: [{ source: 'S2', text: '楽天市場の商品を紹介して成果報酬を受け取れるサービスです' }] }
+      ], unknowns: ['料率'] });
+      return aiReply({});
+    }
+  });
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, themes: [], outreachPosts: [], pendingSets: 6, brands: ['KINTO'], facts: ['今月の確定報酬：未記録'] }));
+  const env = { ...ENV, __fetchHtml: fakeFetchHtml };
+  const steps = [];
+  for (let i = 0; i < 8; i++) { const r = await withUsage(() => tick({ kv, env, startedAt: Date.now() })); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}${r.worked.final ? ':' + r.worked.final : ''}` : 'idle'); if (r.idle) break; }
+  assert.deepEqual(steps, ['leads:sites:done', 'research:fetch', 'research:write', 'research:check:done', 'idle'], steps.join(' / '));
+  const st = await state(kv, env);
+  // 営業候補調査：公式サイトがリンクしていたアカウントだけ
+  assert.deepEqual(st.leads[0].results[0].handles.join(','), 'kinto_japan');
+  assert.equal(st.leads[0].runs.length, 0, 'AIを使わない');
+  // 経営企画AI：読めたページ・読めなかったページを記録し、引用を照合する
+  const rs = st.research[0];
+  assert.equal(rs.pages.find((p) => p.name === 'もしもアフィリエイト').ok, false);
+  assert.equal(rs.result, 'pass');
+  const amazon = rs.proposal.options[0];
+  assert.equal(amazon.quotes[0].verified, true);
+  assert.equal(amazon.quotes[1].verified, false, '本文に無い「月100万円」は未確認');
+  assert.ok(amazon.issues.some((x) => /見つからない引用/.test(x)));
+  assert.ok(rs.proposal.options[1].issues.some((x) => /推定/.test(x)), '見込みに「推定」が無ければ指摘する');
+  assert.equal(rs.runs[0].role, 'planning');
+  // 3日に1回まで：次の実行では経営企画AIは動かない（理由つきで仕事なし）
+  const by = Object.fromEntries(st.board.items.map((x) => [x.agent, x]));
+  assert.match(by.research.reason, /3日/);
+  assert.match(by.leads.reason, /7日以内/);
+  assert.match(by.production.reason, /合格候補がない/);
+});
+
+test('監視：QStashの最後の起動から40分を超えたら停止の疑い。Vercelの予備の実行のときに記録し、QStashが戻れば消す', async () => {
+  const { monitor } = await import('../lib/worker.js');
+  const t = Date.parse('2026-11-14T10:00:00Z');
+  assert.equal(monitor({ triggers: { qstash: '2026-11-14T09:50:00Z' } }, t).stale, false);
+  const m = monitor({ triggers: { qstash: '2026-11-14T09:00:00Z' } }, t);
+  assert.equal(m.stale, true); assert.equal(m.minutes, 60);
+  assert.equal(monitor({}, t).stale, true);
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(WORKER_KEYS.health, { triggers: { qstash: new Date(Date.now() - 3 * 3600000).toISOString() } });
+  await withUsage(() => tick({ kv, env: ENV, startedAt: Date.now(), trigger: 'vercel-cron' }));
+  assert.match((await kv.getJson(WORKER_KEYS.health)).alert.why, /止まっている/);
+  assert.equal((await kv.getJson(WORKER_KEYS.health)).daily[Object.keys((await kv.getJson(WORKER_KEYS.health)).daily)[0]]['vercel-cron'], 1);
+  await withUsage(() => tick({ kv, env: ENV, startedAt: Date.now(), trigger: 'qstash' }));
+  assert.equal((await kv.getJson(WORKER_KEYS.health)).alert, undefined);
 });
