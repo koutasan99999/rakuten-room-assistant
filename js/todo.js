@@ -128,4 +128,7 @@
   window.TodoView = { render: render, count: count, updateBadge: updateBadge };
   if (window.ServerSync) window.ServerSync.on(function () { updateBadge(); if (target && !target.closest('[hidden]')) paint(); });
   setTimeout(updateBadge, 1500);
+  // 最初から #todo で開いたとき：画面の切り替え（js/app.js）はこのファイルより先に動くので、ここで描く
+  var body0 = document.getElementById('todo-body');
+  if (body0 && String(location.hash).split('/')[0] === '#todo') render(body0);
 })();
