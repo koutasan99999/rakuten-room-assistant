@@ -78,6 +78,9 @@
       var bob = !moving && s.status === 'idle' && Math.floor(t / 900) % 2 ? 1 : 0; // 待機中の呼吸（仕事のふりではない）
       sprite(map, p.x - 6, p.y - 7 + bob, OUTFIT[s.id] || '#555');
       if (atDesk) { px(d[0] - 13, d[1] + 4, 26, 5, '#8a5a33'); px(d[0] - 13, d[1] + 8, 26, 2, '#5b3a20'); monitor(d, s.status === 'work' || s.status === 'turn'); }
+      if (atDesk && s.status === 'error') { px(p.x + 8, p.y - 14, 5, 8, '#c62828'); px(p.x + 10, p.y - 13, 1, 4, '#fff'); px(p.x + 10, p.y - 8, 1, 1, '#fff'); } // エラー（再試行待ち）
+      if (atDesk && s.status === 'budget') { px(p.x + 7, p.y - 13, 7, 7, '#9e9e9e'); px(p.x + 9, p.y - 12, 3, 1, '#fff'); px(p.x + 10, p.y - 11, 1, 4, '#fff'); px(p.x + 9, p.y - 10, 3, 1, '#fff'); } // 予算待ち（¥）
+      if (atDesk && s.status === 'handoff') { px(p.x + 8, p.y - 11, 6, 1, '#2f6f9f'); px(p.x + 12, p.y - 12, 1, 3, '#2f6f9f'); px(p.x + 13, p.y - 11, 1, 1, '#2f6f9f'); } // 引き継ぎ中（→）
       if (atDesk && s.status === 'turn') { px(d[0] + 6, d[1] + 1, 5, 6, '#fffdf5'); px(d[0] + 7, d[1] + 3, 3, 1, '#999'); } // 机の上に引き継がれた書類
       if (atDesk && s.status === 'work') { var k = frame % 3; px(p.x + 7, p.y - 12, 9, 6, '#fff'); px(p.x + 8 + k * 0, p.y - 10, 1, 1, '#333'); px(p.x + 10, p.y - 10, 1, 1, k > 0 ? '#333' : '#fff'); px(p.x + 12, p.y - 10, 1, 1, k > 1 ? '#333' : '#fff'); px(p.x + 7, p.y - 7, 2, 1, '#fff'); }
       if (atDesk && s.status === 'wait') { px(p.x + 7, p.y - 13, 5, 1, '#5b3a20'); px(p.x + 8, p.y - 12, 3, 2, '#f4c430'); px(p.x + 9, p.y - 10, 1, 1, '#f4c430'); px(p.x + 8, p.y - 9, 3, 2, (frame % 4 < 2) ? '#f4c430' : '#e0a800'); px(p.x + 7, p.y - 7, 5, 1, '#5b3a20'); }
@@ -109,9 +112,11 @@
     staff.forEach(function (s) {
       var b = labels.querySelector('.who[data-id="' + s.id + '"]'); if (!b) return;
       var tg = targetOf(s);
-      b.style.left = (tg[0] / W * 100) + '%'; b.style.top = ((tg[1] + (s.status === 'idle' ? -8 : 22)) / H * 100) + '%';
+      // 名札は机の横（中央寄り）に置く（下の段のくまに重ならないように）。待機中は名札を出さず、タップできる場所だけ
+      var side = s.status === 'idle' || s.id === 'pr' ? 0 : (tg[0] < W / 2 ? 27 : -27);
+      b.style.left = ((tg[0] + side) / W * 100) + '%'; b.style.top = ((tg[1] + (s.status === 'idle' ? -8 : s.id === 'pr' ? 22 : -6)) / H * 100) + '%';
       b.querySelector('.nm').textContent = s.name;
-      b.querySelector('.st').textContent = s.status === 'work' ? '仕事中' : s.status === 'turn' ? '担当中' : s.status === 'wait' ? '待ち' : '待機';
+      b.querySelector('.st').textContent = ({ work: '仕事中', turn: '担当中', handoff: '引き継ぎ中', error: 'エラー', budget: '予算待ち', wait: '画像待ち', idle: '待機' })[s.status] || '待機';
       b.className = 'who ' + s.status;
     });
     var lt = document.getElementById('lounge-tag'); var n = staff.filter(function (s) { return s.status === 'idle'; }).length; if (lt) lt.textContent = n ? '休憩スペース（待機 ' + n + '人）' : '休憩スペース';

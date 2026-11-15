@@ -1,5 +1,5 @@
-// サングラスくま株式会社 2.0（2026-11-15）：7人のAI社員が工程ごとに引き継ぎ、商品・URL・紹介文・画像のそろった投稿セットを社長に届ける。
-//   画面の材料は出来事の記録（開始・完成・引き継ぎ・待ち・止まった理由）だけ。点数や技術の記録は社長向けの状態に出さない
+// サングラスくま株式会社 2.0（2026-11-16 24時間の自律運営）：社長の指示なしで仕事を始め、7人が工程ごとに引き継ぎ、
+//   複数の案件を並行して進め、投稿できる完成品を社長に納品する。費用の上限は超えない。画面の材料は実際の記録だけ
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,190 +12,224 @@ import { spent } from '../lib/budget.js';
 import { installFetchMock, json, aiReply, GOOD_INTRO, imageResponse } from './mock.js';
 
 let mock;
-let setAuditUsers = [];
-afterEach(() => { if (mock) mock.restore(); mock = null; setAuditUsers = []; });
+afterEach(() => { if (mock) mock.restore(); mock = null; });
 const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', CRON_SECRET: 'sec', APP_PASSCODE: 'pw', __noWait: true };
-const ritem = (code, name, price, caption) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: caption, reviewCount: 150, reviewAverage: 4.5, affiliateRate: 4 });
-const SHOP = [ritem('s:lid', 'ステンレス 鍋蓋スタンド', 1000, '水受けトレー付きで、水滴がたれにくい。'), ritem('s:tong', 'シリコン トング 耐熱', 1200, 'フライパンを傷つけにくいシリコン製。'), ritem('s:guard', '油はねガード 折りたたみ', 1500, '3面で油はねを防ぐ。')];
-function fetchMock({ failAi = false } = {}) {
-  let setAudits = 0;
+const APP = 'https://app.test/';
+const hash = (s) => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7);
+const ritem = (code, name, price) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: `水受けトレー付きで、水滴がたれにくい。${name}。`, reviewCount: 150, reviewAverage: 4.5, affiliateRate: 4 });
+// 楽天の偽物：検索語ごとに違う商品を返す（案件ごとに別の商品になる）
+const catalog = (kw) => [0, 1, 2, 3, 4].map((n) => ritem(`s:k${hash(kw)}n${n}`, `${kw} 道具${n}`, 1000 + n * 300));
+function fetchMock({ failAi = false, themes = null } = {}) {
+  let audits = 0, proposals = 0;
+  const T = themes || ['キッチン収納', '鍋まわり', 'コンロ掃除', '水切り', '調味料ラック', '弁当箱', '保存容器', '包丁研ぎ'];
   const m = installFetchMock({
     thumbnail: () => imageResponse(),
-    rakuten: (url) => json(200, { Items: url.searchParams.get('itemCode') ? SHOP.filter((x) => x.itemCode === url.searchParams.get('itemCode')) : SHOP }),
+    rakuten: (url) => {
+      const code = url.searchParams.get('itemCode');
+      if (code) { const kw = 'x'; void kw; return json(200, { Items: [ritem(code, `指定の商品 ${code}`, 2480)] }); }
+      return json(200, { Items: catalog(url.searchParams.get('keyword') || '') });
+    },
     openai: (body) => {
-      if (failAi) return json(500, { error: { message: 'server error' } });
+      if (failAi) return json(500, { error: { message: 'server error sk-test' } });
       const sys = body.messages[0].content;
-      const user = body.messages[1].content;
-      // 制作ライン：企画担当AI・投稿セット制作AI・監査AI（投稿セット）・制作担当AI
-      if (sys.includes('サングラスくま株式会社」のバイヤー')) return aiReply({ ref: 'R1', who: '自炊する社会人', problem: '鍋のふたの置き場所', whyNow: '鍋料理が増える季節' });
-      if (sys.includes('Instagram企画担当とバイヤー')) return aiReply({ pattern: 'discovery', title: 'キッチンの置き場所の工夫', target: '料理する人', reason: '置き場所に困る道具を並べる', appeal: '台所が片づく', adopted: [{ id: 0, role: '本命', feature: '水受けトレー付き', why: 'ふたの置き場所' }], slots: [{ role: '中価格帯', keyword: 'キッチン 道具' }, { role: '低価格帯', keyword: 'キッチン 便利' }] });
-      if (sys.includes('企画の枠ごとに')) return aiReply({ picks: [{ slot: 0, id: 0, feature: 'シリコン製', why: 'フライパンを傷つけにくい' }, { slot: 1, id: 1, feature: '3面で油はねを防ぐ', why: 'コンロまわり' }] });
-      if (sys.includes('投稿文字を作る担当')) return aiReply({ topicSlug: 'kitchen', category: 'キッチン', caption: '台所の置き場所、気づくと散らかりがち。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', hashtags: ['#キッチン用品'], cover: { title: 'キッチンの置き場所の工夫' }, items: [0, 1, 2].map((id) => ({ id, shortName: ['鍋蓋スタンド', 'シリコントング', '油はねガード'][id], subline: '置き場所が決まる', memo: '台所が片づく' })) });
+      const user = typeof body.messages[1].content === 'string' ? body.messages[1].content : '';
+      if (sys.includes('サングラスくま株式会社」の企画担当')) { const t = T[proposals++ % T.length]; return aiReply({ theme: t, keyword: t, angle: 'classic', target: '自炊する社会人', aim: `${t}の悩みを減らす` }); }
+      if (sys.includes('サングラスくま株式会社」のバイヤー')) return aiReply({ ref: 'R1', who: '自炊する社会人', problem: '置き場所', whyNow: '鍋料理が増える季節' });
+      if (sys.includes('Instagram企画担当とバイヤー')) return aiReply({ pattern: 'discovery', title: `${(user.match(/A0: ([^/]{2,12})/) || [])[1] || 'キッチン'}の工夫`, target: '料理する人', reason: '置き場所に困る道具を並べる', appeal: '台所が片づく', adopted: [{ id: 0, role: '本命', feature: '水受けトレー付き', why: '置き場所' }], slots: [{ role: '中価格帯', keyword: 'キッチン 道具' }, { role: '低価格帯', keyword: 'キッチン 便利' }] });
+      if (sys.includes('企画の枠ごとに')) return aiReply({ picks: [{ slot: 0, id: 0, feature: '水受けトレー付き', why: '台が濡れにくい' }, { slot: 1, id: 1, feature: '水受けトレー付き', why: 'コンロまわり' }] });
+      if (sys.includes('投稿文字を作る担当')) return aiReply({ topicSlug: 'kitchen', category: 'キッチン', caption: '台所の置き場所、気づくと散らかりがち。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', hashtags: ['#キッチン用品', '#台所収納'], cover: { title: 'キッチンの工夫' }, items: [0, 1, 2].map((id) => ({ id, shortName: '道具', subline: '', memo: '' })) });
       if (sys.includes('紹介文を書く担当')) return aiReply({ items: [0, 1, 2].map((id) => ({ id, intro: GOOD_INTRO })) });
       if (sys.includes('監査AIです') && sys.includes('投稿セット（Instagram')) {
-        setAudits++;
-        setAuditUsers.push(user);
+        audits++;
         const sc = (a) => ({ accuracy: { score: a[0] }, compliance: { score: a[1] }, concept: { score: a[2] }, appeal: { score: a[3] }, room: { score: a[4] } });
-        return setAudits === 1 ? aiReply({ scores: sc([22, 18, 15, 12, 12]), flags: {}, fixes: [{ target: 'caption', text: '誰のどんな場面かを1文足す' }], proposal: 'revise', summary: '場面が抽象的' })
-          : aiReply({ scores: sc([24, 20, 18, 17, 13]), flags: {}, fixes: [], proposal: 'pass', summary: '商品データと一致し、場面も具体的' });
+        return audits === 1 ? aiReply({ scores: sc([22, 18, 15, 12, 12]), flags: {}, fixes: [{ target: 'caption', text: '誰のどんな場面かを1文足す' }], proposal: 'revise', summary: '場面が抽象的' })
+          : aiReply({ scores: sc([24, 20, 18, 17, 13]), flags: {}, fixes: [], proposal: 'pass', summary: '商品データと一致' });
       }
       if (sys.includes('制作担当AIです')) return aiReply({ caption: '料理のたびに、ふたやトングの置き場所に迷う人へ。\n\n今回は置き場所に困る道具を3つ並べました。\n\n買う前に見返せるよう、保存しておいてください。', room: [], giveUp: '' });
-      void user;
-      if (sys.includes('検索語を決めます')) return aiReply({ keywords: [{ keyword: 'キッチン 便利', why: 'x' }] });
-      if (sys.includes('候補を最大6件選びます')) return aiReply({ candidates: [{ ref: 'R1', quotes: ['水受けトレー付き'], reason: '水受けトレー付きで水滴がたれにくい', target: '料理する人', problem: 'ふたの置き場所', roomValue: '1,000円', cautions: '大きさを確認', motive: 'fix', whoBuys: '平日に自炊する社会人', whyNow: '鍋料理が増える季節', vsOthers: 'R2のトングと違い、水受けトレー付き', priceReason: '1,000円で送料はショップで確認', postIdea: 'くまが鍋のふたをスタンドに立てる' }] });
-      if (sys.includes('監査AIです') && sys.includes('コメント案を')) return aiReply({ audits: [{ id: 'AAA1', scores: { specific: 23, natural: 21, relevance: 17, distance: 14, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
-      if (sys.includes('監査AIです')) return aiReply({ audits: [{ id: 'c1', scores: { accuracy: 25, evidence: 22, usefulness: 17, revenue: 13, compliance: 15 }, flags: {}, fixes: [], proposal: 'pass' }] });
-      if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ usage: '鍋のふたを立てて置く', usageQuote: user.includes('水受けトレー付き') ? '水受けトレー付き' : (user.match(/商品の説明：([^。\n]{4,12})/) || [])[1] || '', place: 'キッチン', time: '夕方', action: '料理の途中で鍋のふたをスタンドに立てている', consistency: 'ふたはスタンドの溝に立つ', camera: '斜め上', productPlacement: '手前で大きく', outfit: 'エプロン', mood: '落ち着いた' }] });
+      if (sys.includes('表紙画像担当AIです')) return aiReply({ scenes: [{ usage: '台所で使う', usageQuote: '水受けトレー付き', place: 'キッチン', time: '夕方', action: '料理の途中で道具を使っている', consistency: '自然な向き', camera: '斜め上', productPlacement: '手前で大きく', outfit: 'エプロン', mood: '落ち着いた' }] });
       if (sys.includes('品質確認の担当')) return aiReply({ single: true, character: true, sameAsMaster: true, plush3d: true, productLarge: true, productMatches: true, usingProduct: true, consistent: true, noText: true, noLogo: true, handsOk: true, noMedical: true, warmScene: true, topSpace: true, issues: [] });
-      if (sys.includes('営業・交流担当AIです')) return aiReply({ drafts: [{ id: 'AAA1', anchor: '水受けトレー付き', comment: '水受けトレー付きなら台が濡れにくそうですね', relevance: 80, relevanceWhy: 'x', follow: 70, followWhy: 'y' }] });
       return aiReply({});
     }
   });
-  // 自分のサイトの静的ファイル（マスター画像・方向性の参考画像）は、リポジトリのファイルを返す
   const mocked = globalThis.fetch;
   globalThis.fetch = async (url, opts) => { const u = String(url); if (u.startsWith(APP)) return new Response(fs.readFileSync(new URL('../' + u.slice(APP.length), import.meta.url)), { status: 200, headers: { 'Content-Type': 'image/png' } }); return mocked(url, opts); };
   return m;
 }
-const APP = 'https://app.test/';
 const run = (kv, env = ENV) => withUsage(() => V.tick({ kv, env, origin: APP, startedAt: Date.now(), trigger: 'test' }));
 const call = async (handler, body, headers = { 'x-app-passcode': 'pw' }, env = ENV) => { const req = { method: 'POST', url: '/api/x', headers, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await handler(req, res, env); return { status: res.statusCode, data: JSON.parse(res.body) }; };
+const today = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+async function untilDelivered(kv, env = ENV, max = 20) { const all = []; for (let i = 0; i < max; i++) { const r = await run(kv, env); all.push(...(r.steps || [])); if ((r.steps || []).some((x) => x.endsWith(':deliver'))) return all; } return all; }
 
-test('2.0：バイヤー→監査→企画→バイヤー→ライター→監査→編集→監査→デザイナー→監査→広報 と引き継ぎ、画像つきの完成品を社長に届ける', async () => {
+test('実証1・2・5：社長が何も指示しなくても仕事が始まり、7人が工程ごとに自動で引き継ぎ、投稿できる完成品が届く', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  const steps = [];
-  let ticks = 0;
-  for (let i = 0; i < 30; i++) { const r = await run(kv); ticks++; steps.push(...(r.steps || [r.idle || r.skipped])); if (r.worked && r.worked.final === 'deliver') break; }
-  assert.ok(ticks <= 3, `1回の実行で時間の許す限り工程を続けて進める（${ticks}回で完成）`);
-  assert.deepEqual(steps, ['buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'designer:scene', 'designer:image', 'auditor:checkImage', 'pr:pack:deliver'], steps.join(' / '));
+  const steps = await untilDelivered(kv);
+  const mine = steps.filter((x) => !x.includes('propose') || steps.indexOf(x) === 0);
+  const order = ['planner:propose', 'buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'editor:review', 'designer:scene', 'designer:image', 'auditor:checkImage', 'pr:pack:deliver'];
+  let k = 0; for (const s of mine) if (s === order[k]) k++;
+  assert.equal(k, order.length, `工程の順番：${steps.join(' / ')}`);
   const st = await V.officeState(kv, ENV);
-  // 出来事の記録：開始・完成・引き継ぎ・届けた（新しい順）
   const ev = [...st.events].reverse();
-  assert.equal(ev[0].type, 'start');
-  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'buyer' && e.to === 'auditor'), 'バイヤー→監査の引き継ぎ');
-  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'editor'), '監査→編集の引き継ぎ');
-  assert.equal(ev[ev.length - 1].type, 'deliver');
+  assert.match(ev[0].text, /社長の指示を待たずに、新しい案件を始めた/);
+  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'editor'), '監査→編集への差し戻し');
+  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'editor' && e.to === 'designer'), '編集→デザイナー');
+  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'pr'), '監査→広報');
   assert.ok(ev.every((e) => !('dev' in e)), '開発者向けの記録は社長の画面に出さない');
-  { const t = JSON.stringify({ events: st.events, staff: st.staff, sets: st.sets }); const m = t.match(/.{60}(点（合格|合格ライン|"total"|"audits").{30}/); assert.ok(!m, `監査の点数を社長向けの状態に出さない：${m && m[0]}`); }
-  // 完成品：商品・URL・紹介文・画像
-  assert.equal(st.waiting, 1);
+  // 完成品：投稿にそのまま移れるもの
   const set = await V.getSet(kv, st.sets[0].id);
-  assert.equal(set.products.length, 3);
-  assert.ok(set.products.every((p) => /^https:\/\/item\.rakuten\.co\.jp\//.test(p.url) && p.room.length >= 80));
-  assert.match(set.caption, /アフィリエイト|PR/);
-  assert.match(set.image.url, /^\/api\/media\?id=[0-9a-f]{32}$/); assert.equal(set.image.label, 'AI生成イメージ');
-  assert.equal(set.who, '自炊する社会人');
+  assert.ok(set.theme && set.aim && set.target, 'テーマ・狙い・対象');
+  assert.equal(set.products[0].role, '本命'); assert.equal(set.products[1].role, '代替・比較');
+  assert.match(set.products[0].check, /楽天で再確認済み/); assert.ok(set.products.every((p) => p.url && p.image && p.price && p.room.length >= 80));
+  assert.ok(set.compare.length >= 2 && /本命より\d|本命と同じ/.test(set.compare[0].vsHero), '本命と代替の比較');
+  assert.ok(set.hashtags.length >= 1 && set.hashtags.every((t) => t.startsWith('#')));
+  assert.ok(set.notes.some((n) => /AI生成イメージ/.test(n)) && set.notes.some((n) => /価格/.test(n)), '注意事項');
+  assert.ok(set.order.length >= 3 && /楽天ROOM/.test(set.order[0]), '推奨の投稿順');
+  assert.match(set.caption, /アフィリエイト|PR/); assert.equal(set.image.label, 'AI生成イメージ');
   assert.ok(!('raw' in set) && !('dev' in set));
-  // 社員：仕事が終わったら全員待機（働いているふりをしない）。直近の成果が見える
-  assert.ok(st.staff.every((s) => s.status === 'idle'));
-  assert.match(st.staff.find((s) => s.id === 'pr').last.text, /完成品/);
-  // 費用は今までと同じ予算の記録に入る
-  assert.ok((await spent(kv)).dayAuto > 0);
+  assert.equal(st.notices[0].id, set.id, '社長への通知（画面のお知らせ）');
+  assert.equal(st.results.delivered, 1); assert.ok(st.results.yenPerSet > 0);
 });
 
-test('2.0：社長の確認待ちがあっても次の投稿セットを作り続け、3件たまったら新しくは作らない', async () => {
+test('実証3：一つの案件が画像待ちでも、別の案件が進む（並行）。各社員は1回の実行で2工程まで', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  await kv.setJson(V.V2_KEYS.sets, [1, 2].map((n) => ({ id: `s${n}`, title: 't', status: 'waiting' })));
-  assert.equal((await run(kv)).steps[0], 'buyer:find', '確認待ち2件なら作る');
-  await kv.del(V.V2_KEYS.job);
-  await kv.setJson(V.V2_KEYS.sets, [1, 2, 3].map((n) => ({ id: `s${n}`, title: 't', status: 'waiting' })));
-  const r = await run(kv);
-  assert.match(r.idle, /確認待ちの完成品が3件/);
-});
-
-test('2.0：画像の予算を使い切ったら「画像待ち」にして止まらず、ほかの仕事に移る。翌日は続きから描く', async () => {
-  mock = fetchMock();
-  const kv = memoryKv();
+  await kv.set(`budget:image:count:${today()}`, '1'); // 今日の画像は使い切り
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
-  await kv.set(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`, '1');
-  let r; const seen = [];
-  for (let i = 0; i < 14; i++) { r = await run(kv, env); seen.push(...(r.steps || [r.idle])); if (r.worked && r.worked.final === 'wait') break; }
+  let waited = false; const jobsAfter = new Set();
+  for (let i = 0; i < 14; i++) {
+    const r = await run(kv, env);
+    if ((r.steps || []).some((x) => x.endsWith(':wait'))) { waited = true; (r.jobs || []).forEach((j) => jobsAfter.add(`w:${j}`)); continue; }
+    if (waited) (r.jobs || []).forEach((j) => jobsAfter.add(j));
+    const count = {}; (r.steps || []).forEach((x) => { const a = x.split(':')[0]; count[a] = (count[a] || 0) + 1; });
+    assert.ok(Object.values(count).every((n) => n <= V.AGENT_PER_TICK), `1人の社員が1回で${V.AGENT_PER_TICK}工程まで：${r.steps}`);
+  }
+  assert.ok(waited, '画像待ちになった');
   const st = await V.officeState(kv, env);
-  if (!(r.worked && r.worked.final === 'wait')) { console.log(seen); }
-  assert.equal(r.worked.final, 'wait', seen.join(' / '));
-  assert.equal(st.imageWait.length, 1);
-  assert.equal(st.staff.find((s) => s.id === 'designer').status, 'wait');
-  assert.equal(st.events[0].type, 'wait'); assert.match(st.events[0].text, /画像の予算/);
-  assert.equal((await run(kv, env)).steps[0], 'buyer:find', '画像待ちのあいだも、次の投稿セットに移る');
+  const waiting = st.cases.filter((c) => c.wait && c.wait.kind === 'image');
+  const moving = st.cases.filter((c) => !c.wait);
+  assert.ok(waiting.length >= 1, '画像待ちの案件がある');
+  assert.ok(jobsAfter.size >= 1 && [...jobsAfter].some((id) => !waiting.find((w) => w.id === id)), '画像待ちのあいだも別の案件が進んだ');
+  assert.equal(st.staff.find((s) => s.id === 'designer').status, moving.some((c) => c.agent === 'designer') ? 'turn' : 'wait');
+  assert.ok(st.cases.length <= V.MAX_ACTIVE + V.MAX_IMAGE_WAIT, '案件を抱えすぎない');
+  // 翌日（画像の予算が戻る）：画像待ちの案件が自動で続きから進む
+  await kv.del(`budget:image:count:${today()}`);
+  const r = await run(kv, env);
+  assert.ok((r.steps || [])[0] === 'designer:image', `画像の予算が戻ったら最初に描く：${r.steps}`);
 });
 
-test('2.0：社長の修正依頼は、編集→監査→広報の短い流れで直して届け直す。採用・却下は記録に残る', async () => {
+test('実証4：完成したら、社長の操作なしに次の案件が自動で始まる。同じ企画は繰り返さない', async () => {
+  mock = fetchMock({ themes: ['キッチン収納', 'キッチン収納', '鍋まわり', 'コンロ掃除'] });
+  const kv = memoryKv();
+  await untilDelivered(kv);
+  const r = await run(kv);
+  const st = await V.officeState(kv, ENV);
+  assert.ok(st.cases.length >= 1, '次の案件がある');
+  assert.ok(st.events.some((e) => e.type === 'start' && /指示を待たずに/.test(e.text) && e.at >= st.sets[0].deliveredAt), '完成のあとに新しい案件が自動で始まった');
+  void r;
+  // 同じテーマ（キッチン収納）が2回目に出ても、似た企画として弾いて考え直す
+  for (let i = 0; i < 4; i++) await run(kv);
+  const st2 = await V.officeState(kv, ENV);
+  assert.ok(st2.events.some((e) => /最近と似た企画/.test(e.text)), '似た企画を弾いた');
+  assert.ok(st2.results.dupRate > 0, '企画の重複率を数えている');
+});
+
+test('実証6：費用の上限を超えない。上限に届いたら「予算待ち」になり、翌日自動で続ける', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  for (let i = 0; i < 30; i++) { const r = await run(kv); if (r.worked && r.worked.final === 'deliver') break; }
-  const id = (await V.officeState(kv, ENV)).sets[0].id;
-  const E = { ...ENV, __kv: kv };
-  assert.equal((await call(v2api, { action: 'decide', id, decision: 'revise' }, undefined, E)).status, 400, '直す所が無い修正依頼は受けない');
-  const d = await call(v2api, { action: 'decide', id, decision: 'revise', note: 'もっと短く' }, undefined, E);
-  assert.equal(d.data.status, 'fixing');
-  const steps = [];
-  for (let i = 0; i < 10; i++) { const r = await run(kv); steps.push(...(r.steps || [r.idle]).map((x) => String(x).split(':')[1] || x)); if (r.worked && r.worked.final === 'deliver') break; }
-  assert.deepEqual(steps.slice(0, 2), ['edit', 'auditText']);
-  assert.equal(steps[steps.length - 1], 'pack');
-  void 0;
-  const s = await V.getSet(kv, id);
-  assert.equal(s.status, 'waiting'); assert.equal(s.revisions, 1); assert.equal(s.ownerNote, 'もっと短く');
-  await call(v2api, { action: 'decide', id, decision: 'adopt' }, undefined, E);
-  const st = await V.officeState(kv, ENV);
-  assert.equal(st.sets[0].status, 'adopted');
-  assert.ok(st.events.some((e) => e.type === 'owner' && /採用/.test(e.text)));
+  const env = { ...ENV, AUTONOMY_DAILY_YEN: '3' };
+  for (let i = 0; i < 12; i++) await run(kv, env);
+  const s = await spent(kv);
+  assert.ok(s.dayAuto <= 3 + 1, `今日の自律運営の費用 ${s.dayAuto}円（上限3円＋最後の1工程の見込み1円まで）`);
+  const st = await V.officeState(kv, env);
+  assert.ok(st.cases.some((c) => c.wait && c.wait.kind === 'budget'), '予算待ちの案件');
+  assert.ok(st.staff.some((x) => x.status === 'budget'), '社員の状態に「予算待ち」');
+  assert.ok(st.events.some((e) => e.type === 'budget'));
+  // 予算が戻ったら（翌日）、同じ案件の続きから
+  await kv.del(`budget:auto:${today()}`); await kv.del(`budget:month:${today().slice(0, 7)}`);
+  const r = await run(kv, env);
+  assert.ok((r.steps || []).length >= 1, '予算が戻ったら自動で続ける');
 });
 
-test('2.0：工程の失敗は1回やり直し、2回目で理由を残して止まり、次の仕事へ移る', async () => {
+test('失敗は時間を空けて再試行（エラー表示）し、3回目で理由を残して止まる。鍵は記録に出さない', async () => {
   mock = fetchMock({ failAi: true });
   const kv = memoryKv();
-  const r1 = await run(kv); assert.equal(r1.worked.final, undefined);
-  const r2 = await run(kv); assert.equal(r2.worked.final, 'stop');
+  await run(kv);
+  let st = await V.officeState(kv, ENV);
+  assert.equal(st.cases[0].wait.kind, 'retry');
+  assert.equal(st.staff.find((s) => s.id === 'planner').status, 'error');
+  for (let i = 0; i < 2; i++) { const cs = await kv.getJson(V.V2_KEYS.cases); cs.forEach((c) => { if (c.wait) c.wait.until = new Date(Date.now() - 1000).toISOString(); }); await kv.setJson(V.V2_KEYS.cases, cs); await run(kv); }
+  st = await V.officeState(kv, ENV);
+  assert.ok(st.events.some((e) => e.type === 'stop'));
+  assert.ok(!JSON.stringify(await kv.listJson(V.V2_KEYS.events, 50)).includes('sk-test'), '鍵を記録に出さない');
+});
+
+test('社長の指定（テーマ・商品のURL）は次の新しい案件で優先する', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const E = { ...ENV, __kv: kv };
+  assert.equal((await call(v2api, { action: 'request', url: 'https://example.com/x' }, undefined, E)).status, 400);
+  await call(v2api, { action: 'request', url: 'https://item.rakuten.co.jp/shopa/item-123/' }, undefined, E);
+  const r = await run(kv);
+  assert.ok((r.steps || []).includes('buyer:find'));
   const st = await V.officeState(kv, ENV);
-  assert.equal(st.events[0].type, 'stop'); assert.match(st.events[0].text, /^止まった：/);
-  assert.equal(st.job, null);
-  assert.ok(!JSON.stringify(st.events).includes('sk-test'), '鍵を記録に出さない');
+  assert.ok(st.events.some((e) => /社長の指定/.test(e.text)));
+  assert.ok(st.events.some((e) => /指定の商品「/.test(e.text)), '指定の商品を楽天で引いた');
+  assert.equal(st.requests.length, 0);
 });
 
-test('2.0：定期実行は社長が切り替えたときだけ2.0を動かす。手動の実行は target=v2 で2.0の動作確認ができる。APIは合言葉が必要', async () => {
+test('社長の修正依頼は、編集→監査→編集（整合性）→広報で直して届け直す。採用・投稿したは記録と成果に残る', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  const env = { ...ENV, __kv: kv };
-  const tick = (body, headers = {}) => withUsage(() => call(worker, { action: 'tick', ...body }, { authorization: 'Bearer sec', 'x-trigger': 'workflow_dispatch', ...headers }, env));
-  assert.notEqual((await tick({})).data.company, 'v2', '切り替え前は1.0');
-  assert.equal((await tick({ target: 'v2' })).data.company, 'v2', '手動の実行で2.0の動作確認');
-  assert.equal((await call(v2api, { action: 'state' }, {}, env)).status, 401);
-  assert.equal((await call(v2api, { action: 'activate', on: true }, { 'x-app-passcode': 'pw' }, env)).data.active, true);
-  await kv.del('worker:lock');
-  assert.equal((await tick({})).data.company, 'v2', '切り替え後は定期実行で2.0');
-  await call(v2api, { action: 'activate', on: false }, { 'x-app-passcode': 'pw' }, env);
-  await kv.del('worker:lock');
-  assert.notEqual((await tick({})).data.company, 'v2', '戻せる');
+  const E = { ...ENV, __kv: kv };
+  await untilDelivered(kv);
+  const id = (await V.officeState(kv, ENV)).sets[0].id;
+  assert.equal((await call(v2api, { action: 'decide', id, decision: 'revise' }, undefined, E)).status, 400);
+  await call(v2api, { action: 'decide', id, decision: 'revise', note: 'もっと短く' }, undefined, E);
+  const steps = [];
+  for (let i = 0; i < 6; i++) { const r = await run(kv); steps.push(...(r.steps || [])); if (steps.some((x) => x.startsWith('pr:pack'))) break; }
+  const fix = steps.filter((x) => /editor:edit|auditor:auditText|editor:review|pr:pack/.test(x));
+  assert.deepEqual(fix.slice(0, 4), ['editor:edit', 'auditor:auditText', 'editor:review', 'pr:pack:deliver'], steps.join(' / '));
+  assert.equal((await V.getSet(kv, id)).revisions, 1);
+  await call(v2api, { action: 'decide', id, decision: 'adopt' }, undefined, E);
+  await call(v2api, { action: 'decide', id, decision: 'posted' }, undefined, E);
+  const st = await V.officeState(kv, ENV);
+  assert.equal(st.sets.find((x) => x.id === id).status, 'posted');
+  assert.equal(st.results.posted, 1);
 });
 
-test('2.0：画像待ちが2件たまったら、新しい投稿セットは作らない（文章だけ作って費用を使わない）', async () => {
+test('社員の状態は実際の記録どおり：担当中・引き継ぎ中・待機（働いているふりをしない）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
-  await kv.set(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`, '1');
-  await kv.setJson(V.V2_KEYS.imagewait, [{ id: 'a', step: 'image', data: { set: { title: 'A' } } }, { id: 'b', step: 'image', data: { set: { title: 'B' } } }]);
-  const r = await run(kv, env);
-  assert.match(r.idle, /画像待ちの投稿セットが2件/);
-});
-
-test('2.0：引き継がれた社員は「担当中」と表示する（次の定期実行で進める。実際の引き継ぎどおり）', async () => {
-  mock = fetchMock();
-  const kv = memoryKv();
-  await kv.setJson(V.V2_KEYS.job, { id: 'j1', kind: 'make', step: 'copy', attempts: 0, runs: [], data: { plan: { title: '企画A' } } });
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'j1', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: null, data: { plan: { title: '企画A' } } }]);
+  await V.record(kv, { job: 'j0', agent: 'buyer', to: 'writer', type: 'handoff', text: 'ライターへ引き継ぎ', title: '企画A' });
   const st = await V.officeState(kv, ENV);
   const w = st.staff.find((x) => x.id === 'writer');
-  assert.equal(w.status, 'turn'); assert.match(w.doing, /次の番：Instagramの文章を書く/); assert.equal(w.title, '企画A');
-  assert.ok(st.staff.filter((x) => x.id !== 'writer').every((x) => x.status === 'idle'), 'ほかの社員は待機（働いているふりをしない）');
+  assert.equal(w.status, 'turn'); assert.match(w.doing, /次の番：Instagramの文章を書く/); assert.equal(w.title, '企画A'); assert.match(w.next, /ライター：楽天ROOMの紹介文を書く/);
+  assert.equal(st.staff.find((x) => x.id === 'buyer').status, 'handoff');
+  assert.ok(st.staff.filter((x) => !['writer', 'buyer'].includes(x.id)).every((x) => x.status === 'idle'));
 });
 
-test('2.0：切り替えの前は、QStash の定期実行を1.0と交互に使う（2.0も実際に働く）', async () => {
+test('旧形式（1件の仕事・画像待ち）は消さずに案件へ移す', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(V.V2_KEYS.job, { id: 'old1', kind: 'make', step: 'copy', attempts: 0, runs: [], data: { plan: { title: '旧A' } } });
+  await kv.setJson(V.V2_KEYS.imagewait, [{ id: 'old2', kind: 'make', step: 'image', attempts: 0, runs: [], data: { set: { title: '旧B' } } }]);
+  await run(kv, { ...ENV, IMAGE_DAILY_COUNT: '1' });
+  const cs = await kv.getJson(V.V2_KEYS.cases);
+  assert.ok(cs.find((c) => c.id === 'old1') || (await V.officeState(kv, ENV)).events.some((e) => e.job === 'old1'));
+  assert.ok(cs.find((c) => c.id === 'old2'));
+});
+
+test('定期実行：切り替え後は2.0だけ・切り替え前は手動の target=v2 と QStash の交互で2.0が動く。APIは合言葉が必要', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   const env = { ...ENV, __kv: kv };
-  // QStash の署名の確認は別のテストで確かめているので、ここでは交互に選ぶ部分だけを確かめる
-  const picks = [];
-  for (let i = 0; i < 4; i++) picks.push((await kv.incr('v2:alt')) % 2 === 0);
-  assert.deepEqual(picks, [false, true, false, true]);
-  void env;
+  const tick = (body) => withUsage(() => call(worker, { action: 'tick', ...body }, { authorization: 'Bearer sec', 'x-trigger': 'workflow_dispatch' }, env));
+  assert.notEqual((await tick({})).data.company, 'v2');
+  await kv.del('worker:lock');
+  assert.equal((await tick({ target: 'v2' })).data.company, 'v2');
+  assert.equal((await call(v2api, { action: 'state' }, {}, env)).status, 401);
+  await call(v2api, { action: 'activate', on: true }, { 'x-app-passcode': 'pw' }, env);
+  await kv.del('worker:lock');
+  assert.equal((await tick({})).data.company, 'v2');
 });

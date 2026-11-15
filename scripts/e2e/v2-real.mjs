@@ -48,9 +48,10 @@ for (let i = 0; i < maxSteps; i++) {
   const r = await withUsage(() => V.tick({ kv, env, origin: ORIGIN, startedAt: Date.now(), trigger: 'e2e' }));
   const w = r.worked;
   if (!w) { console.log(i, r.idle || r.skipped); if (r.idle) break; continue; }
-  log.push(w);
-  console.log(`${i} ${w.agent}:${w.step} ${w.final || ''} ${w.yen}円`);
-  if (w.final === 'deliver' || w.final === 'stop') break;
+  log.push(...(r.steps || []));
+  console.log(`${i} ${(r.steps || []).join(' → ')}`);
+  console.log(`   案件：${(r.cases || []).join(' ／ ')}`);
+  if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break;
 }
 const st = await V.officeState(kv, env);
 const flow = [...st.events].reverse().map((e) => `${e.at.slice(11, 19)} ${e.agent}${e.to ? '→' + e.to : ''} [${e.type}] ${e.text}`);
