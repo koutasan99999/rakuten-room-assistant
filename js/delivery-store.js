@@ -26,12 +26,8 @@
     }
   }
 
-  function pruneResolved(s) {
-    var resolved = s.conflicts.filter(function (x) { return x.resolved; });
-    if (resolved.length <= 50) return;
-    var drop = resolved.slice(50).map(function (x) { return x.at; });
-    s.conflicts = s.conflicts.filter(function (x) { return !x.resolved || drop.indexOf(x.at) === -1; });
-  }
+  // 解決済みの控えは自動では切り詰めない（2026-11-15 社長の方針：データは勝手に消さない）。整理は「社長の対応」の手順（バックアップのあと）で行う
+  function pruneResolved() {}
   // 送る予定に入れる（同じ投稿セットの同じ種類の予定は1つにまとめる。判断は順番どおり残す）
   function queue(s, op) {
     op.at = new Date().toISOString();
@@ -141,7 +137,7 @@
         else if (c.local && contentKey(c.local) === contentKey(cur)) how = '中身が同じ（自動）';
         if (how) { c.resolved = { at: new Date().toISOString(), how: how, auto: true }; done.push({ id: c.id, how: how }); }
       });
-      if (done.length) { pruneResolved(s); write(s); }
+      if (done.length) write(s); // 自動の解決では控えを切り詰めない（社長が選んだときだけ、今までどおり古い解決済みを整理）
       return done;
     },
     // 残った同期の問題を、違いの種類ごとにまとめる（1件ずつ選ばせない）

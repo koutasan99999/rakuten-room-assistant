@@ -19,7 +19,8 @@
     var groups = D.conflictGroups ? D.conflictGroups() : [];
     var blocked = D.outbox().filter(function (o) { return o.blocked; }).length;
     var ready = D.pendingCount ? D.pendingCount() : 0;
-    return groups.length + (blocked ? 1 : 0) + (ready ? 1 : 0);
+    var owner = (window.OWNER_TASKS || []).filter(function (x) { return !x.done; }).length;
+    return owner + groups.length + (blocked ? 1 : 0) + (ready ? 1 : 0);
   }
   function updateBadge() { var b = document.getElementById('todo-count'); if (b) { var n = count(); b.textContent = n ? String(n) : ''; } }
 
@@ -54,6 +55,19 @@
       s.appendChild(b);
     }
     if (meta.lastNotes && meta.lastNotes.length) { var d3 = el('details'); d3.appendChild(el('summary', null, '直近の同期のお知らせ')); meta.lastNotes.forEach(function (n) { d3.appendChild(el('p', 'hint', n)); }); s.appendChild(d3); }
+    return s;
+  }
+
+  function ownerSection() {
+    var list = (window.OWNER_TASKS || []).filter(function (x) { return !x.done; });
+    var s = section('社長にやってほしいこと', list.length ? '社長にしかできないこと・社長の判断が必要なことだけです。' : '今はありません。');
+    list.forEach(function (x) {
+      var box = el('div', 'todo-group');
+      box.appendChild(el('p', '', x.title));
+      box.appendChild(el('p', 'hint', x.why));
+      box.appendChild(el('p', 'hint', 'やること：' + x.how));
+      s.appendChild(box);
+    });
     return s;
   }
 
@@ -105,6 +119,7 @@
     target = t;
     t.textContent = '';
     if (!D) { t.appendChild(el('p', 'hint', '準備中です')); return; }
+    t.appendChild(ownerSection());
     t.appendChild(decideSection());
     t.appendChild(syncSection());
     t.appendChild(cleanupSection());
