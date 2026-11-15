@@ -129,7 +129,7 @@
         var x = D.get(op.id);
         if (!x) { D.markOp(op, { blocked: { status: 0, error: 'この端末に投稿セットが見つかりません', at: new Date().toISOString() } }); return false; }
         var body = op.op === 'import' ? { action: 'import', sets: [Object.assign({}, x, { _server: undefined })] }
-          : op.op === 'put' ? { action: 'put', id: op.id, expectedRev: x._server ? x._server.rev : 0, set: Object.assign({}, x, { _server: undefined, status: undefined }) }
+          : op.op === 'put' ? { action: 'put', id: op.id, expectedRev: x._server ? x._server.rev : 0, baseDigest: x._server ? x._server.digest || '' : '', set: Object.assign({}, x, { _server: undefined, status: undefined }) }
           : { action: 'decide', id: op.id, expectedRev: x._server ? x._server.rev : 0, decision: op.decision, reason: op.reason };
         return api(body).then(function (r) {
           var st = r.status;
@@ -168,8 +168,18 @@
     var D = window.DeliveryStore;
     if (!D || !D.applyServer) return Promise.resolve(null);
     var notes = [];
+    // 順番（2026-11-15 見直し）：先にサーバーの最新を読み（送る予定の無いものを写す）→ 送る → もう一度読む。
+    //   以前は「送る→読む」だったため、点検や棚の入れ替えで番号が上がっただけでも、古い番号で送って大量の競合になっていた
+    var pull = function () {
+      return api({ action: 'list' }).then(function (r) {
+        if (r.status !== 200 || !r.data.configured) return r;
+        var pending = {}; D.outbox().forEach(function (op) { pending[op.id] = true; });
+        r.data.sets.forEach(function (rec) { var local = D.get(rec.id); if (pending[rec.id]) return; if (!local || !local._server || local._server.rev !== rec.rev || !local._server.digest) D.applyServer(rec); });
+        return r;
+      }, function () { return null; }); // 読めなくても送る予定は残す（送る側で失敗の回数を記録する）
+    };
     return migrate(D, notes).then(function (mig) {
-      return flush(D, notes).then(function () { return api({ action: 'list' }); }).then(function (r) {
+      return pull().then(function () { return flush(D, notes); }).then(function () { return api({ action: 'list' }); }).then(function (r) {
         if (r.status !== 200 || !r.data.configured) return { error: (r.data && (r.data.error || r.data.notice)) || '一覧を読めませんでした', migration: mig, notes: notes };
         var pending = {}; D.outbox().forEach(function (op) { pending[op.id] = true; });
         var failed = 0;
@@ -178,8 +188,11 @@
           if (!local || !local._server || local._server.rev !== rec.rev) { if (!D.applyServer(rec)) failed += 1; }
         });
         if (failed) notes.push('サーバーの内容 ' + failed + '件を端末に保存できませんでした（端末の保存容量）。サーバーの正本には残っています');
-        var m = syncMeta(); m.lastPullAt = new Date().toISOString(); saveMeta(m);
-        return { ok: true, migration: mig, notes: notes, capacity: r.data.capacity, limits: r.data.limits, count: r.data.sets.length };
+        // 安全に解決できる同期の問題は自動で解決する（控えは消さない）。残りは「社長の対応」タブでまとめて選ぶ
+        var auto = D.autoResolve ? D.autoResolve() : [];
+        if (auto.length) notes.push('同期の問題 ' + auto.length + '件を自動で解決しました（中身が同じ・判断が反映済み・整理済み）');
+        var m = syncMeta(); m.lastPullAt = new Date().toISOString(); m.lastNotes = notes.slice(0, 10); m.autoResolved = (m.autoResolved || 0) + auto.length; saveMeta(m);
+        return { ok: true, autoResolved: auto.length, migration: mig, notes: notes, capacity: r.data.capacity, limits: r.data.limits, count: r.data.sets.length };
       });
     }).catch(function (e) { return { error: String(e && e.message || e), notes: notes }; });
   }
@@ -192,7 +205,8 @@
       st.receivedAt = new Date().toISOString();
       if (st.configured && !st.error) {
         st.merged = merge(st);
-        return syncData().then(function (ds) { st.data = ds; if (ds && ds.notes && ds.notes.length && K.showToast) K.showToast(ds.notes[0]); }).then(function () {
+        // 同期のお知らせは画面を覆う通知に出さない（「社長の対応」タブにまとめる）
+        return syncData().then(function (ds) { st.data = ds; }).then(function () {
           return K.postJson('api/worker', { action: 'sync', snapshot: snapshot() }).then(function (s) { st.syncedAt = s.status === 200 && s.data && s.data.ok ? s.data.at : ''; if (st.syncedAt) st.snapshotAt = st.syncedAt; return st; });
         });
       }

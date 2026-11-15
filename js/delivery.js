@@ -825,34 +825,15 @@
   }
 
   // 同期の問題（2026-11-14）：競合・移行の差異で採用されなかった、この端末の中身と、送れなかった変更。消さずに残し、社長が選んで戻せる
+  // 同期の問題（2026-11-15）：ここでは件数だけ。選ぶのは「社長の対応」タブでまとめて（1件ずつのボタンは出さない）
   function syncProblems() {
     var cs = D.conflicts ? D.conflicts() : [];
     var blocked = (D.outbox ? D.outbox() : []).filter(function (o) { return o.blocked; });
-    var waiting = (D.outbox ? D.outbox() : []).filter(function (o) { return !o.blocked; });
-    if (!cs.length && !blocked.length && !(D.lastError) && !waiting.some(function (o) { return o.retry; })) return null;
+    if (!cs.length && !blocked.length && !D.lastError) return null;
     var box = el('div', 'card sync-problems');
-    box.appendChild(el('p', 'field-label', '同期の問題（データは消していません）'));
-    if (D.lastError) box.appendChild(el('p', 'hint pitch-warn', D.lastError));
-    var retrying = waiting.filter(function (o) { return o.retry; });
-    if (retrying.length) box.appendChild(el('p', 'hint', 'サーバーに送れていない変更：' + retrying.length + '件（通信などの一時的な失敗。次に自動で送ります）'));
-    blocked.forEach(function (o) {
-      var x = D.get(o.id) || {};
-      var row = el('div', 'pitch-row');
-      row.appendChild(el('p', 'hint pitch-warn', '送れなかった変更：「' + String(x.title || o.id).slice(0, 24) + '」の' + ({ put: '中身の修正', import: '取り込み', decide: '判断' }[o.op] || o.op) + '（' + (o.blocked.error || o.blocked.status) + '）'));
-      row.appendChild(btn('もう一度送る', 'status-btn', function () { window.ServerSync.retryOp(o).then(function () { paint(); }); }));
-      row.appendChild(btn('送らない（端末の中身は残る）', 'status-btn', function () { window.ServerSync.dropOp(o); paint(); }));
-      box.appendChild(row);
-    });
-    cs.forEach(function (c) {
-      var row = el('div', 'pitch-row');
-      var what = c.kind === 'decide' ? 'この端末の判断（' + (c.decision === 'approve' ? '採用' : '却下') + '）' : c.kind === 'migration' || c.kind === 'import' ? 'この端末の中身（移行のときの差異：' + (c.why || '') + '）' : 'この端末の修正';
-      row.appendChild(el('p', 'hint', '「' + String((c.local && (c.local.titleEdit || c.local.title)) || c.id).slice(0, 24) + '」：' + what + 'は、ほかの端末・サーバーの内容と競合したため採用されていません（' + stamp(c.at) + '）'));
-      if (c.restoring) { row.appendChild(el('p', 'hint', 'この端末の中身をサーバーへ送っています（書き込みの成功を確かめるまで、この控えは残します）')); box.appendChild(row); return; }
-      if (c.again) row.appendChild(el('p', 'hint pitch-warn', '前回の上書きは、ほかの端末がさらに変更していたため完了していません（' + c.again + '回目）'));
-      if (c.kind !== 'decide') row.appendChild(btn('この端末の中身でサーバーを上書き', 'status-btn', function () { if (!window.confirm('この端末の中身で、サーバーの今の内容を上書きしますか？（サーバーの今の内容は、サーバーの控えに残ります）')) return; D.restoreConflict(c.at); window.ServerSync.syncData().then(function () { paint(); }); }));
-      row.appendChild(btn('サーバーの内容のままにする', 'status-btn', function () { D.removeConflict(c.at); paint(); }));
-      box.appendChild(row);
-    });
+    var n = cs.length + blocked.length;
+    box.appendChild(el('p', 'hint', (n ? '同期で確認が必要なものが' + n + '件あります（データは消していません）。' : '') + (D.lastError ? D.lastError : '')));
+    if (n) { var a = el('a', 'status-btn', '社長の対応で、まとめて選ぶ'); a.href = '#todo'; box.appendChild(a); }
     return box;
   }
 

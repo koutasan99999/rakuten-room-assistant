@@ -126,18 +126,24 @@ body {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  background: rgba(34, 34, 34, 0.92);
+  background: rgba(60, 60, 60, 0.82);
   color: #fff;
-  padding: 10px 18px;
-  border-radius: 999px;
-  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
   z-index: 10;
   width: max-content;
-  max-width: calc(100vw - 32px);
+  max-width: min(320px, calc(100vw - 32px));
   text-align: center;
+  pointer-events: none;
 }
+.tab-count:not(:empty) { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: #c0392b; color: #fff; font-size: 11px; line-height: 16px; text-align: center; }
+.todo-sec { margin-bottom: 12px; }
+.todo-h { font-size: 15px; margin: 0 0 6px; }
+.todo-group { border-top: 1px solid var(--line, #e5e5e5); padding: 8px 0; display: grid; gap: 6px; }
 
 .footer { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; font-size: 12px; color: var(--muted); text-align: center; }
 .link-btn { background: none; border: none; color: var(--muted); text-decoration: underline; font-size: 12px; padding: 8px; font-family: inherit; }
