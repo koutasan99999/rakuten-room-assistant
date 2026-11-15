@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ROOM発掘">
   <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
-  <meta name="app-version" content="2026-11-17.8">
+  <meta name="app-version" content="2026-11-17.10">
   <title>ROOM商品発掘</title>
-  <link rel="stylesheet" href="css/style.css?v=2026-11-17.8">
+  <link rel="stylesheet" href="css/style.css?v=2026-11-17.10">
 </head>
 <body>
   <header class="header">
@@ -20,6 +20,7 @@
            商品ドロボー（#thief）・バイヤー発掘便（#buyer）・ふるさと納税（#furusato）は、画面とデータを残してタブだけ隠す（検索の画面の下から開ける） -->
       <a href="#pitch" class="view-tab" data-view="pitch">社長、これどうすか？</a>
       <a href="#company" class="view-tab" data-view="company">経営報告 <span id="company-count" class="tab-count"></span></a>
+      <a href="#todo" class="view-tab" data-view="todo">社長の対応 <span id="todo-count" class="tab-count"></span></a>
       <a href="#pr" class="view-tab" data-view="pr">広報</a>
       <a href="#discover" class="view-tab" data-view="discover">検索（補助）</a>
       <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
@@ -299,6 +300,12 @@
     <div id="pitch-body"></div>
   </main>
 
+  <!-- 社長の対応（js/todo.js）：判断が要ること・同期の問題（まとめて選ぶ）・データの整理 -->
+  <main class="container" id="view-todo" hidden>
+    <h2 class="curation-title">社長の対応</h2>
+    <div id="todo-body"></div>
+  </main>
+
   <!-- Instagram広報部：フォロー候補・コメント候補・実施状況（js/pr.js）。フォローとコメントは社長がInstagramで行い、ここに記録する -->
   <main class="container" id="view-pr" hidden>
     <h2 class="curation-title">Instagram広報部</h2>
@@ -493,46 +500,48 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/store.js?v=2026-11-17.8"></script>
-  <script src="js/history.js?v=2026-11-17.8"></script>
-  <script src="js/search-jobs.js?v=2026-11-17.8"></script>
-  <script src="js/buyer-store.js?v=2026-11-17.8"></script>
-  <script src="js/pitch-store.js?v=2026-11-17.8"></script>
-  <script src="js/thief-store.js?v=2026-11-17.8"></script>
-  <script src="js/hidden-products.js?v=2026-11-17.8"></script>
-  <script src="js/radar-store.js?v=2026-11-17.8"></script>
-  <script src="js/brand-follow.js?v=2026-11-17.8"></script>
-  <script src="js/zip.js?v=2026-11-17.8"></script>
-  <script src="js/carousel-layout.js?v=2026-11-17.8"></script>
-  <script src="js/ig-render.js?v=2026-11-17.8"></script>
-  <script src="js/ig-covers.js?v=2026-11-17.8"></script>
-  <script src="js/ig-coord.js?v=2026-11-17.8"></script>
-  <script src="js/ig-multi.js?v=2026-11-17.8"></script>
-  <script src="js/reel-story.js?v=2026-11-17.8"></script>
-  <script src="js/coord-store.js?v=2026-11-17.8"></script>
-  <script src="js/coord-collage.js?v=2026-11-17.8"></script>
-  <script src="js/image-store.js?v=2026-11-17.8"></script>
-  <script src="js/fold.js?v=2026-11-17.8"></script>
-  <script src="js/backup.js?v=2026-11-17.8"></script>
-  <script src="js/creative-check.js?v=2026-11-17.8"></script>
-  <script src="js/app.js?v=2026-11-17.8"></script>
-  <script src="js/delivery-store.js?v=2026-11-17.8"></script>
-  <script src="js/room-text-store.js?v=2026-11-17.8"></script>
-  <script src="js/delivery.js?v=2026-11-17.8"></script>
-  <script src="js/explore-store.js?v=2026-11-17.8"></script>
-  <script src="js/explore.js?v=2026-11-17.8"></script>
-  <script src="js/agents-store.js?v=2026-11-17.8"></script>
-  <script src="js/agents.js?v=2026-11-17.8"></script>
-  <script src="js/server-sync.js?v=2026-11-17.8"></script>
-  <script src="js/work.js?v=2026-11-17.8"></script>
-  <script src="js/company-store.js?v=2026-11-17.8"></script>
-  <script src="js/company.js?v=2026-11-17.8"></script>
-  <script src="js/perf-store.js?v=2026-11-17.8"></script>
-  <script src="js/perf.js?v=2026-11-17.8"></script>
-  <script src="js/pr-store.js?v=2026-11-17.8"></script>
-  <script src="js/kuma-master.js?v=2026-11-17.8"></script>
-  <script src="js/pr.js?v=2026-11-17.8"></script>
-  <script src="js/pitch.js?v=2026-11-17.8"></script>
-  <script src="js/thief.js?v=2026-11-17.8"></script>
+  <script src="js/store.js?v=2026-11-17.10"></script>
+  <script src="js/history.js?v=2026-11-17.10"></script>
+  <script src="js/search-jobs.js?v=2026-11-17.10"></script>
+  <script src="js/buyer-store.js?v=2026-11-17.10"></script>
+  <script src="js/pitch-store.js?v=2026-11-17.10"></script>
+  <script src="js/thief-store.js?v=2026-11-17.10"></script>
+  <script src="js/hidden-products.js?v=2026-11-17.10"></script>
+  <script src="js/radar-store.js?v=2026-11-17.10"></script>
+  <script src="js/brand-follow.js?v=2026-11-17.10"></script>
+  <script src="js/zip.js?v=2026-11-17.10"></script>
+  <script src="js/carousel-layout.js?v=2026-11-17.10"></script>
+  <script src="js/ig-render.js?v=2026-11-17.10"></script>
+  <script src="js/ig-covers.js?v=2026-11-17.10"></script>
+  <script src="js/ig-coord.js?v=2026-11-17.10"></script>
+  <script src="js/ig-multi.js?v=2026-11-17.10"></script>
+  <script src="js/reel-story.js?v=2026-11-17.10"></script>
+  <script src="js/coord-store.js?v=2026-11-17.10"></script>
+  <script src="js/coord-collage.js?v=2026-11-17.10"></script>
+  <script src="js/image-store.js?v=2026-11-17.10"></script>
+  <script src="js/fold.js?v=2026-11-17.10"></script>
+  <script src="js/backup.js?v=2026-11-17.10"></script>
+  <script src="js/creative-check.js?v=2026-11-17.10"></script>
+  <script src="js/app.js?v=2026-11-17.10"></script>
+  <script src="js/delivery-store.js?v=2026-11-17.10"></script>
+  <script src="js/room-text-store.js?v=2026-11-17.10"></script>
+  <script src="js/delivery.js?v=2026-11-17.10"></script>
+  <script src="js/explore-store.js?v=2026-11-17.10"></script>
+  <script src="js/explore.js?v=2026-11-17.10"></script>
+  <script src="js/agents-store.js?v=2026-11-17.10"></script>
+  <script src="js/agents.js?v=2026-11-17.10"></script>
+  <script src="js/server-sync.js?v=2026-11-17.10"></script>
+  <script src="js/work.js?v=2026-11-17.10"></script>
+  <script src="js/company-store.js?v=2026-11-17.10"></script>
+  <script src="js/company.js?v=2026-11-17.10"></script>
+  <script src="js/perf-store.js?v=2026-11-17.10"></script>
+  <script src="js/perf.js?v=2026-11-17.10"></script>
+  <script src="js/pr-store.js?v=2026-11-17.10"></script>
+  <script src="js/kuma-master.js?v=2026-11-17.10"></script>
+  <script src="js/pr.js?v=2026-11-17.10"></script>
+  <script src="js/owner-tasks.js?v=2026-11-17.10"></script>
+  <script src="js/todo.js?v=2026-11-17.10"></script>
+  <script src="js/pitch.js?v=2026-11-17.10"></script>
+  <script src="js/thief.js?v=2026-11-17.10"></script>
 </body>
 </html>

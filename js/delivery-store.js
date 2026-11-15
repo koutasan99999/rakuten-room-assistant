@@ -26,12 +26,8 @@
     }
   }
 
-  function pruneResolved(s) {
-    var resolved = s.conflicts.filter(function (x) { return x.resolved; });
-    if (resolved.length <= 50) return;
-    var drop = resolved.slice(50).map(function (x) { return x.at; });
-    s.conflicts = s.conflicts.filter(function (x) { return !x.resolved || drop.indexOf(x.at) === -1; });
-  }
+  // 解決済みの控えは自動では切り詰めない（2026-11-15 社長の方針：データは勝手に消さない）。整理は「社長の対応」の手順（バックアップのあと）で行う
+  function pruneResolved() {}
   // 送る予定に入れる（同じ投稿セットの同じ種類の予定は1つにまとめる。判断は順番どおり残す）
   function queue(s, op) {
     op.at = new Date().toISOString();
@@ -43,11 +39,23 @@
     s.outbox.push(op); // 件数の上限で消さない（送信の成功か、社長の明示的な「送らない」まで残す。容量が足りなければ保存の失敗として返す）
   }
 
+  // 中身の比べ方：画面の一時的な項目・サーバーだけの項目・状態は除く（同じなら、どちらを選んでも結果は同じ）
+  var VOLATILE = { status: 1, _server: 1, inspection: 1, alt: 1, issues: 1, copyError: 1, decidedAt: 1, reason: 1, archivedAt: 1 };
+  function stableStr(v) {
+    if (Array.isArray(v)) return '[' + v.map(stableStr).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).filter(function (k) { return v[k] !== undefined && v[k] !== null && v[k] !== '' && !VOLATILE[k]; }).sort().map(function (k) { return JSON.stringify(k) + ':' + stableStr(v[k]); }).join(',') + '}';
+    return JSON.stringify(v);
+  }
+  function contentKey(x) { return stableStr(x || {}); }
+  function diffKeys(a, b) { var ks = {}; Object.keys(a).concat(Object.keys(b)).forEach(function (k) { if (!VOLATILE[k] && stableStr(a[k]) !== stableStr(b[k])) ks[k] = 1; }); return Object.keys(ks).sort(); }
+  var KEY_LABEL = { titleEdit: '表紙のタイトル', captionEdit: 'キャプションの修正', copy: '文章（表紙・カード・キャプション）', copyAt: '文章の作成日時', items: '商品', coverStyle: '表紙の型', igPost: 'InstagramのURL', roomTexts: 'ROOM紹介文', coverImage: '表紙画像', title: '企画名', supersededBy: '改善版の印' };
+  function labelKeys(key) { return key.split('・').map(function (k) { return KEY_LABEL[k] || k; }).join('・') + 'の違い'; }
   var api = window.DeliveryStore = {
     STATUS: STATUS,
-    all: function () {
+    // 整理済み（archived）は画面に出さない（記録は残す）。opt.archived で含める
+    all: function (opt) {
       var st = read().sets;
-      return Object.keys(st).map(function (k) { return st[k]; }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+      return Object.keys(st).map(function (k) { return st[k]; }).filter(function (x) { return (opt && opt.archived) || x.status !== 'archived'; }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
     },
     get: function (id) { return read().sets[id] || null; },
     save: function (set) {
@@ -61,8 +69,9 @@
     applyServer: function (rec) {
       var s = read();
       var local = s.sets[rec.id] || {};
-      var status = rec.state === 'approved' || rec.state === 'published' ? 'adopted' : rec.state === 'rejected' ? 'rejected' : 'new';
-      s.sets[rec.id] = Object.assign({}, local, rec.set || {}, { id: rec.id, status: status, _server: { rev: rec.rev, state: rec.state, updatedAt: rec.updatedAt, score: rec.score, decision: rec.decision || null } });
+      var status = rec.state === 'approved' || rec.state === 'published' ? 'adopted' : rec.state === 'rejected' ? 'rejected' : rec.state === 'archived' ? 'archived' : 'new';
+      // digest：サーバーの中身の指紋。送るときに添えると、番号が上がっただけ（点検・棚の入れ替え）なら競合にならない（2026-11-15）
+      s.sets[rec.id] = Object.assign({}, local, rec.set || {}, { id: rec.id, status: status, _server: { rev: rec.rev, state: rec.state, updatedAt: rec.updatedAt, score: rec.score, decision: rec.decision || null, digest: rec.digest || (local._server && local._server.digest) || '' } });
       return write(s) ? s.sets[rec.id] : null;
     },
     outbox: function () { return read().outbox.slice(); },
@@ -110,6 +119,46 @@
       return write(s) ? x : null;
     },
     history: function () { return read().history.slice(0, 30); },
+    // ---- 同期の問題を、安全なものは自動で解決する（2026-11-15）。消さない：解決済みの印を付けるだけ（端末の控えは残る）
+    //   (1) 投稿セットが整理済み → 解決（整理の対象）
+    //   (2) 端末の控えと今の中身が同じ（画面の一時的な項目を除く）→ 解決
+    //   (3) 判断（採用・却下）が、すでにサーバーに同じ形で入っている → 解決
+    //   (4) 判断がまだサーバーに無く、投稿セットがまだ判断されていない → 端末の判断をもう一度送る（社長がした判断なので）→ 解決
+    autoResolve: function () {
+      var s = read(); var done = [];
+      s.conflicts.forEach(function (c) {
+        if (c.resolved || c.restoring) return;
+        var cur = s.sets[c.id];
+        var how = '';
+        if (!cur) return;
+        if (cur.status === 'archived') how = '整理済みの投稿セット（自動）';
+        else if (c.kind === 'decide' && ((c.decision === 'approve' && cur.status === 'adopted') || (c.decision === 'reject' && cur.status === 'rejected'))) how = '同じ判断がサーバーに入っている（自動）';
+        else if (c.kind === 'decide' && cur.status === 'new' && cur._server && !cur._server.decision) { queue(s, { op: 'decide', id: c.id, decision: c.decision, reason: c.reason || '' }); how = 'まだ判断されていなかったので、あなたの判断をもう一度送る（自動）'; }
+        else if (c.local && contentKey(c.local) === contentKey(cur)) how = '中身が同じ（自動）';
+        if (how) { c.resolved = { at: new Date().toISOString(), how: how, auto: true }; done.push({ id: c.id, how: how }); }
+      });
+      if (done.length) write(s); // 自動の解決では控えを切り詰めない（社長が選んだときだけ、今までどおり古い解決済みを整理）
+      return done;
+    },
+    // 残った同期の問題を、違いの種類ごとにまとめる（1件ずつ選ばせない）
+    conflictGroups: function () {
+      var s = read(); var groups = {};
+      s.conflicts.filter(function (c) { return !c.resolved; }).forEach(function (c) {
+        var cur = s.sets[c.id] || {};
+        var key = c.kind === 'decide' ? 'decide' : diffKeys(c.local || {}, cur).join('・') || 'other';
+        (groups[key] = groups[key] || { key: key, label: c.kind === 'decide' ? '採用・却下の判断' : labelKeys(key), items: [] }).items.push({ at: c.at, id: c.id, title: String((c.local && (c.local.titleEdit || c.local.title)) || cur.title || c.id).slice(0, 30), status: cur.status || '' });
+      });
+      return Object.keys(groups).map(function (k) { return groups[k]; });
+    },
+    // 整理（2026-11-15）：この端末にしか無い未投稿・未判断の投稿セットを「整理済み」にし、送る予定から外す（消さない）
+    archiveLocal: function () {
+      var s = read(); var n = 0;
+      Object.keys(s.sets).forEach(function (id) { var x = s.sets[id]; if (!x._server && x.status === 'new') { x.status = 'archived'; x.archivedAt = new Date().toISOString(); n++; } });
+      s.outbox = s.outbox.filter(function (o) { var x = s.sets[o.id]; return !(x && x.status === 'archived'); });
+      write(s);
+      return n;
+    },
+    localOnlyCount: function () { var st = read().sets; return Object.keys(st).filter(function (id) { return !st[id]._server && st[id].status === 'new'; }).length; },
     // 直近の企画パターン（同じ企画ばかりにしないため）
     recentPatterns: function () { return window.DeliveryStore.all().slice(0, 4).map(function (x) { return x.pattern; }); },
     // 前に出した商品（同じ商品を何度も出さないため）
