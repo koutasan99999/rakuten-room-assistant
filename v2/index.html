@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2620">
+  <title>サングラスくま株式会社</title>
+  <link rel="stylesheet" href="style.css?v=2.0.0">
+</head>
+<body>
+  <header class="top">
+    <h1>サングラスくま株式会社</h1>
+    <p id="top-status" class="top-status">読み込み中…</p>
+  </header>
+
+  <main>
+    <section id="tab-office" class="tab">
+      <div class="office-wrap">
+        <canvas id="office" width="192" height="240" aria-label="オフィス"></canvas>
+        <div id="office-labels" class="office-labels"></div>
+      </div>
+      <div id="crew" class="crew" aria-label="社員の一覧"></div>
+      <div id="now-card" class="card now"></div>
+      <h2 class="h2">今日の仕事の流れ</h2>
+      <ol id="flow" class="flow"></ol>
+    </section>
+
+    <section id="tab-sets" class="tab" hidden>
+      <div id="sets"></div>
+    </section>
+
+    <section id="tab-todo" class="tab" hidden>
+      <div id="todo"></div>
+    </section>
+
+    <section id="tab-money" class="tab" hidden>
+      <div id="money"></div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button type="button" data-tab="office" class="on">オフィス</button>
+    <button type="button" data-tab="sets">完成品<span id="badge-sets" class="badge"></span></button>
+    <button type="button" data-tab="todo">対応<span id="badge-todo" class="badge"></span></button>
+    <button type="button" data-tab="money">お金</button>
+  </nav>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+
+  <div id="pass" class="pass" hidden>
+    <form id="pass-form" class="card">
+      <p>合言葉を入れてください（1.0と同じ合言葉）</p>
+      <input id="pass-input" type="password" autocomplete="current-password" required>
+      <button type="submit" class="btn">開く</button>
+    </form>
+  </div>
+
+  <script src="office.js?v=2.0.0"></script>
+  <script src="app.js?v=2.0.0"></script>
+</body>
+</html>

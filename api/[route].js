@@ -37,6 +37,7 @@ import worker from '../server/worker.js';
 import data from '../server/data.js';
 import kumaMaster from '../server/kuma-master.js';
 import media from '../server/media.js';
+import v2 from '../server/v2.js';
 
 export const ROUTES = {
   'agents': agents,
@@ -70,7 +71,8 @@ export const ROUTES = {
   'worker': worker,
   'data': data,
   'kuma-master': kumaMaster,
-  'media': media
+  'media': media,
+  'v2': v2
 };
 
 export default async function handler(req, res) {

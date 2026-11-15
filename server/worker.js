@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
+import * as V2 from '../lib/v2/company.js';
 import { maskSecrets } from '../lib/ai.js';
 import { verifyQstash, keyInfo, readRawBody } from '../lib/qstash.js';
 
@@ -52,6 +53,9 @@ export default async function handler(req, res, env = process.env) {
       // QStash のやり直し（同じ呼び出しの再送）は、2回目以降は何もしない（同じ仕事を二重に進めない）
       const mid = String(req.headers['upstash-message-id'] || '').replace(/[^\w-]/g, '').slice(0, 80);
       if (trigger === 'qstash' && mid && !(await kv.set(`worker:qstash:${mid}`, '1', { nx: true, ex: 3600 }))) return send(res, 200, { ok: true, skipped: '同じ呼び出しの再送のため、何もしません（二重実行の防止）' });
+      // サングラスくま株式会社 2.0（2026-11-15）：社長が切り替えた（v2:active）とき、または手動の実行で target=v2 と指定したときだけ2.0を動かす。それ以外は今までどおり1.0
+      const runV2 = (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
+      if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger })) });
       return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger }));
     } catch (e) {
       return send(res, 200, { ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });
