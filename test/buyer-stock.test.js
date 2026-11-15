@@ -217,6 +217,7 @@ test('自律運営の1日25円：手動の定期実行（workflow_dispatch）と
       const why = (r.board.items.find((x) => x.agent === 'buyer') || {}).reason || '';
       if (/費用の残り/.test(why)) { stoppedAt = s.dayAuto; break; } // 残りが仕事の見込みより少ないので始めない
       await kv.del(`worker:quota:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}:buyer`); // 回数の上限ではなく費用の上限で止まることを確かめる
+      if (/3回続けて合格0件/.test(why)) { for (const ss of (await kv.listJson(WK.buyer, 10)) || []) ss.date = 'x'; await kv.del(WK.buyer); } // 空振りの停止ではなく費用の上限で止まることを確かめる
     }
   }
   assert.ok(stoppedAt != null && stoppedAt > 18 && stoppedAt <= 25, `費用の上限で止まった（${stoppedAt}円）`);

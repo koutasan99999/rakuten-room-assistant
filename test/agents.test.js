@@ -136,7 +136,11 @@ test('判定の決まり：コードの確認でNG・未確認は合格にしな
   assert.equal(decide({ check: { ...ok, unknown: true }, audit: audit(95, { proposal: 'pass' }), revisions: 0 }).status, 'hold');
   assert.equal(decide({ check: ok, audit: audit(70), revisions: 0 }).status, 'revise');
   assert.equal(decide({ check: ok, audit: audit(70), revisions: 2 }).status, 'hold');
-  assert.equal(decide({ check: ok, audit: audit(85), revisions: 0 }).status, 'revise', '80点以上でも、監査AIの修正指示が残っていれば合格にしない');
+  assert.equal(decide({ check: ok, audit: audit(84), revisions: 0 }).status, 'revise', '80〜84点で監査AIの修正指示が残っていれば合格にしない');
+  assert.equal(decide({ check: ok, audit: audit(85), revisions: 0 }).status, 'pass', '2026-11-15：85点以上で事実・規約・コードの問題がなければ合格（改善案は記録）');
+  assert.equal(decide({ check: ok, audit: audit(90, { flags: { unverified: true } }), revisions: 0 }).status, 'revise', '疑い（flag）があれば点数によらず合格にしない');
+  assert.match(decide({ check: ok, audit: audit(90, { needResearch: 'ROOMの料率' }), revisions: 0 }).why, /未確認の点：ROOMの料率/, '文章が断定していない未確認の点は、理由に残して合格');
+  assert.equal(decide({ check: ng, audit: audit(95), revisions: 0 }).status, 'revise', 'コードの確認のNGがあれば合格にしない');
   assert.equal(decide({ check: ok, audit: audit(85, { proposal: 'pass' }), revisions: 0 }).status, 'pass');
   assert.equal(decide({ check: ok, audit: audit(60, { needResearch: '対応サイズ' }), revisions: 0 }).status, 'hold');
   assert.equal(decide({ check: ok, audit: audit(90, { proposal: 'reject', summary: '向かない' }), revisions: 0 }).status, 'reject', '監査AIは却下を提案できる');
