@@ -54,7 +54,9 @@ export default async function handler(req, res, env = process.env) {
       const mid = String(req.headers['upstash-message-id'] || '').replace(/[^\w-]/g, '').slice(0, 80);
       if (trigger === 'qstash' && mid && !(await kv.set(`worker:qstash:${mid}`, '1', { nx: true, ex: 3600 }))) return send(res, 200, { ok: true, skipped: '同じ呼び出しの再送のため、何もしません（二重実行の防止）' });
       // サングラスくま株式会社 2.0（2026-11-15）：社長が切り替えた（v2:active）とき、または手動の実行で target=v2 と指定したときだけ2.0を動かす。それ以外は今までどおり1.0
-      const runV2 = (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
+      // 切り替えの前（動作確認中）は、QStash の定期実行を1.0と2.0で交互に使う（2026-11-16：2.0が手動の実行のときしか動かず、オフィスで誰も働いて見えなかったため）
+      let runV2 = (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
+      if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
       if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger })) });
       return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger }));
     } catch (e) {

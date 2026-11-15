@@ -38,7 +38,8 @@
   function render() {
     var s = state;
     var working = s.staff.filter(function (x) { return x.status === 'work'; })[0];
-    $('top-status').textContent = working ? working.name + 'が仕事中' : s.blocked ? '今日のAIの費用の上限に達したので、明日再開します' : s.idle ? '新しい仕事を待っています' : 'みんな待機中';
+    var turn = s.staff.filter(function (x) { return x.status === 'turn'; })[0];
+    $('top-status').textContent = working ? working.name + 'が仕事中' : turn ? turn.name + 'が担当中（次の定期実行で進めます）' : s.blocked ? '今日のAIの費用の上限に達したので、明日再開します' : s.idle ? '新しい仕事を待っています' : 'みんな待機中';
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
     Office.update(s.staff);
@@ -55,7 +56,7 @@
     state.staff.forEach(function (x) {
       var b = el('button', x.status); b.type = 'button';
       var top = el('span'); var dot = el('span', 'dot'); dot.style.background = COLOR[x.id]; top.appendChild(dot); top.appendChild(document.createTextNode(' ' + x.name)); b.appendChild(top);
-      b.appendChild(el('span', 's', x.status === 'work' ? '仕事中' : x.status === 'wait' ? '待ち' : '待機'));
+      b.appendChild(el('span', 's', x.status === 'work' ? '仕事中' : x.status === 'turn' ? '担当中' : x.status === 'wait' ? '待ち' : '待機'));
       b.addEventListener('click', function () { showStaff(x.id); });
       box.appendChild(b);
     });
@@ -77,7 +78,7 @@
       box.appendChild(el('p', 'now-who', 'いまは仕事の合間です'));
       box.appendChild(el('p', 'hint', s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます'));
     }
-    if (!s.active) box.appendChild(el('p', 'hint note', 'まだ動作確認中です（定期実行は1.0が担当。切り替えは「対応」タブ）'));
+    if (!s.active) box.appendChild(el('p', 'hint note', '動作確認中です（15分ごとの定期実行を1.0と交互に使い、2.0は30分に1回進みます。切り替えは「対応」タブ）'));
   }
   var LABEL = { start: '開始', done: '完成', handoff: '引き継ぎ', wait: '待ち', stop: '停止', deliver: '納品', owner: '社長', retry: 'やり直し' };
   function renderFlow() {
@@ -101,7 +102,7 @@
     var s = state.staff.filter(function (x) { return x.id === id; })[0]; if (!s) return;
     var b = $('sheet-body'); b.textContent = '';
     var h = el('p', 'sheet-name', s.name + '（' + s.job + '）'); h.style.borderColor = COLOR[id]; b.appendChild(h);
-    b.appendChild(el('p', 'sheet-st', s.status === 'work' ? '仕事中：' + s.doing : s.status === 'wait' ? '待ち：' + s.doing : '待機中（今は担当の仕事がありません）'));
+    b.appendChild(el('p', 'sheet-st', s.status === 'work' ? '仕事中：' + s.doing : s.status === 'turn' ? '担当中：' + s.doing : s.status === 'wait' ? '待ち：' + s.doing : '待機中（今は担当の仕事がありません）'));
     if (s.title) b.appendChild(el('p', 'hint', '「' + s.title + '」'));
     b.appendChild(el('p', 'field', '直近の成果'));
     b.appendChild(el('p', '', s.last ? day(s.last.at) + ' ' + hm(s.last.at) + '　' + s.last.text : 'まだありません'));

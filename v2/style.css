@@ -33,6 +33,7 @@ p { margin: 4px 0; }
 .who.idle { background: transparent; box-shadow: none; color: transparent; min-width: 30px; min-height: 34px; }
 .who.idle .st { color: transparent; }
 .who.work .st { color: var(--ok); font-weight: 700; }
+.who.turn .st { color: #2f6f9f; font-weight: 700; }
 .who.wait .st { color: var(--warn); font-weight: 700; }
 .now-who { font-weight: 700; font-size: 16px; }
 .now-doing { font-size: 15px; }
@@ -101,5 +102,7 @@ input[type=number], input[type=password] { width: 100%; font: inherit; border: 1
 .crew .s { font-size: 11px; color: var(--muted); }
 .crew .work { border-color: var(--ok); }
 .crew .work .s { color: var(--ok); font-weight: 700; }
+.crew .turn { border-color: #2f6f9f; }
+.crew .turn .s { color: #2f6f9f; font-weight: 700; }
 .crew .wait { border-color: var(--warn); }
 .crew .wait .s { color: var(--warn); font-weight: 700; }
