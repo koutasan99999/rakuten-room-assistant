@@ -58,9 +58,9 @@ const SNAP = { themes: ['キッチンの便利グッズ'], avoid: [], past: [], 
 const run = (kv, env = ENV) => withUsage(() => tick({ kv, env, origin: APP, startedAt: Date.now() }));
 
 // 2026-11-15 社長の依頼：日次予算25円は維持したまま、0時まで止まらないように優先順位と配分を直す
-test('費用の見込み：実測の記録（直近5件の最大の1.2倍）を使い、記録が無ければ初期値', () => {
-  assert.equal(estimateFrom([2.11, 3.24, 2.22, 2.9], 4), 4); // 3.24×1.2=3.89 → 0.5円単位で4
-  assert.equal(estimateFrom([1.0, 0.8], 4), 1.5);
+test('費用の見込み：実測の記録（直近5件の最大の1.1倍・0.1円単位）を使い、記録が無ければ初期値', () => {
+  assert.equal(estimateFrom([2.11, 3.24, 2.22, 2.9], 4), 3.6); // 3.24×1.1=3.564 → 3.6（本番の今日の残り3.97円で始められる）
+  assert.equal(estimateFrom([1.0, 0.8], 4), 1.1);
   assert.equal(estimateFrom([], 4), 4);
   assert.equal(stepEstimate({ type: 'production', step: 'gather' }), 0, 'AIを使わない段階は0円');
   assert.ok(stepEstimate({ type: 'production', step: 'audit' }) > 0);
@@ -74,9 +74,9 @@ test('合格商品があれば、再審査・新規探索より投稿セット�
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [] }));
   await kv.pushJson(WORKER_KEYS.buyer, { id: 's1', at: new Date().toISOString(), candidates: [cand('a')] }, 30);
-  // 実測の制作の費用（3.24円）→ 見込み4円。今日の残り4.5円 → 制作を始める
+  // 実測の制作の費用（3.24円）→ 見込み3.6円。今日の残り3.97円（本番の11/15の状況）→ 制作を始める
   await kv.pushJson(WORKER_KEYS.prod, { id: 'p0', status: 'done', result: 'reject', runs: [{ yen: 3.24 }], endedAt: '2000-01-01' }, 20);
-  await record(kv, 20.5, { auto: true });
+  await record(kv, 21.034, { auto: true });
   const r = await run(kv);
   assert.equal(r.worked && r.worked.agent, 'production', JSON.stringify(r).slice(0, 400));
 });
@@ -93,11 +93,11 @@ test('制作できる状態なら、再審査・発掘・交流は制作の見�
   const r = await run(kv);
   assert.ok(r.idle, JSON.stringify(r).slice(0, 300));
   const by = Object.fromEntries(r.board.items.map((x) => [x.agent, x]));
-  assert.match(by.production.reason, /費用の残り（3.5円）.*見込み（4円）/);
+  assert.match(by.production.reason, /費用の残り（3.5円）.*見込み（3.6円）/);
   assert.equal(by.outreach.status, 'wait');
   assert.match(by.outreach.reason, /取り置いている|費用の残り/);
   assert.equal(r.board.next.kind, 'budget');
-  assert.match(r.board.next.reason, /投稿セット1件の見込み4円/);
+  assert.match(r.board.next.reason, /投稿セット1件の見込み3.6円/);
   const st = await state(kv, ENV);
   assert.equal(st.health.blocked.kind, 'budget', '画面に出す理由と再開予定を保存');
   assert.ok(st.health.blocked.resumeAt);
