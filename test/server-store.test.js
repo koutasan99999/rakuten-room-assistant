@@ -80,7 +80,7 @@ test('棚：公開待ちは最大3件（点数の高い順に繰り上げ）。�
   // 14日以上前の n11 を先に作り、そのあと n1〜n10。控えは6件まで（n11・n1〜n5）、残り（n6〜n10）は作るときに期限切れへ
   await S.create(kv, { id: 'n11', set: set('n11', { createdAt: old }), score: 99, state: 'shelf' });
   for (let i = 1; i <= 10; i++) await S.create(kv, { id: `n${i}`, set: set(`n${i}`, { createdAt: new Date(Date.now() - i * 60000).toISOString() }), score: 70 + i, state: 'shelf' });
-  assert.deepEqual(await S.counts(kv), { ready: 0, shelf: 6, approved: 0, published: 0, rejected: 0, expired: 5 });
+  assert.deepEqual(await S.counts(kv), { ready: 0, shelf: 6, approved: 0, published: 0, rejected: 0, expired: 5, archived: 0 });
   const changes = await S.rebalance(kv);
   const c = await S.counts(kv);
   assert.equal(c.ready, 3); assert.equal(c.shelf, 2); assert.equal(c.expired, 6);
