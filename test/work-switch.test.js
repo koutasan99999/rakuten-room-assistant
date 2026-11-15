@@ -59,3 +59,11 @@ test('引用の前後のかっこ（「」『』）は外して照合する（�
   assert.equal(unquote('『角度調節可能』'), '角度調節可能');
   assert.equal(unquote('そのまま'), 'そのまま');
 });
+
+test('事実だけのROOM紹介文は、商品説明の文を途中で切らない（「幅1.5cm」が「幅1。」にならない・注意書きの一部だけを拾わない）', () => {
+  const it = { name: 'ケーブルバンド 結束バンド 50本', price: 980, caption: 'サイズ：幅1.5cm×長さ15cm。繰り返し200回以上使用可能。使い続けると粘着力が徐々に弱くなっていくため、定期的に交換してください。' };
+  const t = P.factRoomIntro(it, {});
+  assert.doesNotMatch(t, /幅1。/);
+  assert.doesNotMatch(t, /。徐々に弱く/);
+  assert.match(t, /幅1\.5cm×長さ15cm/);
+});
