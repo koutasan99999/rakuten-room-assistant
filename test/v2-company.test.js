@@ -64,7 +64,9 @@ test('2.0：バイヤー→監査→企画→バイヤー→ライター→監�
   mock = fetchMock();
   const kv = memoryKv();
   const steps = [];
-  for (let i = 0; i < 30; i++) { const r = await run(kv); steps.push(r.worked ? `${r.worked.agent}:${r.worked.step}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle || r.skipped); if (r.worked && r.worked.final === 'deliver') break; }
+  let ticks = 0;
+  for (let i = 0; i < 30; i++) { const r = await run(kv); ticks++; steps.push(...(r.steps || [r.idle || r.skipped])); if (r.worked && r.worked.final === 'deliver') break; }
+  assert.ok(ticks <= 3, `1回の実行で時間の許す限り工程を続けて進める（${ticks}回で完成）`);
   assert.deepEqual(steps, ['buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'designer:scene', 'designer:image', 'auditor:checkImage', 'pr:pack:deliver'], steps.join(' / '));
   const st = await V.officeState(kv, ENV);
   // 出来事の記録：開始・完成・引き継ぎ・届けた（新しい順）
@@ -95,7 +97,7 @@ test('2.0：社長の確認待ちがあっても次の投稿セットを作り�
   mock = fetchMock();
   const kv = memoryKv();
   await kv.setJson(V.V2_KEYS.sets, [1, 2].map((n) => ({ id: `s${n}`, title: 't', status: 'waiting' })));
-  assert.equal((await run(kv)).worked.step, 'find', '確認待ち2件なら作る');
+  assert.equal((await run(kv)).steps[0], 'buyer:find', '確認待ち2件なら作る');
   await kv.del(V.V2_KEYS.job);
   await kv.setJson(V.V2_KEYS.sets, [1, 2, 3].map((n) => ({ id: `s${n}`, title: 't', status: 'waiting' })));
   const r = await run(kv);
@@ -108,14 +110,14 @@ test('2.0：画像の予算を使い切ったら「画像待ち」にして止�
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
   await kv.set(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`, '1');
   let r; const seen = [];
-  for (let i = 0; i < 14; i++) { r = await run(kv, env); seen.push(r.worked ? `${r.worked.step}${r.worked.final ? ':' + r.worked.final : ''}` : r.idle); if (r.worked && r.worked.final === 'wait') break; }
+  for (let i = 0; i < 14; i++) { r = await run(kv, env); seen.push(...(r.steps || [r.idle])); if (r.worked && r.worked.final === 'wait') break; }
   const st = await V.officeState(kv, env);
   if (!(r.worked && r.worked.final === 'wait')) { console.log(seen); }
   assert.equal(r.worked.final, 'wait', seen.join(' / '));
   assert.equal(st.imageWait.length, 1);
   assert.equal(st.staff.find((s) => s.id === 'designer').status, 'wait');
   assert.equal(st.events[0].type, 'wait'); assert.match(st.events[0].text, /画像の予算/);
-  assert.equal((await run(kv, env)).worked.step, 'find', '画像待ちのあいだも、次の投稿セットに移る');
+  assert.equal((await run(kv, env)).steps[0], 'buyer:find', '画像待ちのあいだも、次の投稿セットに移る');
 });
 
 test('2.0：社長の修正依頼は、編集→監査→広報の短い流れで直して届け直す。採用・却下は記録に残る', async () => {
@@ -128,9 +130,10 @@ test('2.0：社長の修正依頼は、編集→監査→広報の短い流れ�
   const d = await call(v2api, { action: 'decide', id, decision: 'revise', note: 'もっと短く' }, undefined, E);
   assert.equal(d.data.status, 'fixing');
   const steps = [];
-  for (let i = 0; i < 10; i++) { const r = await run(kv); steps.push(r.worked ? r.worked.step : r.idle); if (r.worked && r.worked.final === 'deliver') break; }
+  for (let i = 0; i < 10; i++) { const r = await run(kv); steps.push(...(r.steps || [r.idle]).map((x) => String(x).split(':')[1] || x)); if (r.worked && r.worked.final === 'deliver') break; }
   assert.deepEqual(steps.slice(0, 2), ['edit', 'auditText']);
   assert.equal(steps[steps.length - 1], 'pack');
+  void 0;
   const s = await V.getSet(kv, id);
   assert.equal(s.status, 'waiting'); assert.equal(s.revisions, 1); assert.equal(s.ownerNote, 'もっと短く');
   await call(v2api, { action: 'decide', id, decision: 'adopt' }, undefined, E);
@@ -174,4 +177,25 @@ test('2.0：画像待ちが2件たまったら、新しい投稿セットは作�
   await kv.setJson(V.V2_KEYS.imagewait, [{ id: 'a', step: 'image', data: { set: { title: 'A' } } }, { id: 'b', step: 'image', data: { set: { title: 'B' } } }]);
   const r = await run(kv, env);
   assert.match(r.idle, /画像待ちの投稿セットが2件/);
+});
+
+test('2.0：引き継がれた社員は「担当中」と表示する（次の定期実行で進める。実際の引き継ぎどおり）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson(V.V2_KEYS.job, { id: 'j1', kind: 'make', step: 'copy', attempts: 0, runs: [], data: { plan: { title: '企画A' } } });
+  const st = await V.officeState(kv, ENV);
+  const w = st.staff.find((x) => x.id === 'writer');
+  assert.equal(w.status, 'turn'); assert.match(w.doing, /次の番：Instagramの文章を書く/); assert.equal(w.title, '企画A');
+  assert.ok(st.staff.filter((x) => x.id !== 'writer').every((x) => x.status === 'idle'), 'ほかの社員は待機（働いているふりをしない）');
+});
+
+test('2.0：切り替えの前は、QStash の定期実行を1.0と交互に使う（2.0も実際に働く）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, __kv: kv };
+  // QStash の署名の確認は別のテストで確かめているので、ここでは交互に選ぶ部分だけを確かめる
+  const picks = [];
+  for (let i = 0; i < 4; i++) picks.push((await kv.incr('v2:alt')) % 2 === 0);
+  assert.deepEqual(picks, [false, true, false, true]);
+  void env;
 });

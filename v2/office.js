@@ -73,11 +73,12 @@
       if (moving) { p.x += (tg[0] - p.x) * 0.12; p.y += (tg[1] - p.y) * 0.12; }
       var atDesk = !moving && s.status !== 'idle';
       var d = DESK[s.id];
-      monitor(d, atDesk && s.status === 'work');
+      monitor(d, atDesk && (s.status === 'work' || s.status === 'turn'));
       var map = moving ? (frame % 2 ? STEP : BEAR) : s.status === 'work' ? (frame % 2 ? TYPE : BEAR) : BEAR;
       var bob = !moving && s.status === 'idle' && Math.floor(t / 900) % 2 ? 1 : 0; // 待機中の呼吸（仕事のふりではない）
       sprite(map, p.x - 6, p.y - 7 + bob, OUTFIT[s.id] || '#555');
-      if (atDesk) { px(d[0] - 13, d[1] + 4, 26, 5, '#8a5a33'); px(d[0] - 13, d[1] + 8, 26, 2, '#5b3a20'); monitor(d, s.status === 'work'); }
+      if (atDesk) { px(d[0] - 13, d[1] + 4, 26, 5, '#8a5a33'); px(d[0] - 13, d[1] + 8, 26, 2, '#5b3a20'); monitor(d, s.status === 'work' || s.status === 'turn'); }
+      if (atDesk && s.status === 'turn') { px(d[0] + 6, d[1] + 1, 5, 6, '#fffdf5'); px(d[0] + 7, d[1] + 3, 3, 1, '#999'); } // 机の上に引き継がれた書類
       if (atDesk && s.status === 'work') { var k = frame % 3; px(p.x + 7, p.y - 12, 9, 6, '#fff'); px(p.x + 8 + k * 0, p.y - 10, 1, 1, '#333'); px(p.x + 10, p.y - 10, 1, 1, k > 0 ? '#333' : '#fff'); px(p.x + 12, p.y - 10, 1, 1, k > 1 ? '#333' : '#fff'); px(p.x + 7, p.y - 7, 2, 1, '#fff'); }
       if (atDesk && s.status === 'wait') { px(p.x + 7, p.y - 13, 5, 1, '#5b3a20'); px(p.x + 8, p.y - 12, 3, 2, '#f4c430'); px(p.x + 9, p.y - 10, 1, 1, '#f4c430'); px(p.x + 8, p.y - 9, 3, 2, (frame % 4 < 2) ? '#f4c430' : '#e0a800'); px(p.x + 7, p.y - 7, 5, 1, '#5b3a20'); }
     });
@@ -110,7 +111,7 @@
       var tg = targetOf(s);
       b.style.left = (tg[0] / W * 100) + '%'; b.style.top = ((tg[1] + (s.status === 'idle' ? -8 : 22)) / H * 100) + '%';
       b.querySelector('.nm').textContent = s.name;
-      b.querySelector('.st').textContent = s.status === 'work' ? '仕事中' : s.status === 'wait' ? '待ち' : '待機';
+      b.querySelector('.st').textContent = s.status === 'work' ? '仕事中' : s.status === 'turn' ? '担当中' : s.status === 'wait' ? '待ち' : '待機';
       b.className = 'who ' + s.status;
     });
     var lt = document.getElementById('lounge-tag'); var n = staff.filter(function (s) { return s.status === 'idle'; }).length; if (lt) lt.textContent = n ? '休憩スペース（待機 ' + n + '人）' : '休憩スペース';
