@@ -1,10 +1,12 @@
 // Instagram広報部の自動発掘のAPI。
-// action: outreach_draft（営業・交流担当AI：コメント案＋コードの確認）／outreach_audit（監査AI：採点・判定）／status（使える方法）／sites（公式サイトからアカウントを探す）／recent（候補アカウントの最近の投稿：Facebookログイン方式の設定が必要）／hashtag（ハッシュタグの直近の投稿：Metaの審査が必要）
+// action: comment_log（コメントの送信記録とコメント案の一覧）／comment_log_add（送信記録を足す：Instagramで確認したもの・社長の記録）／outreach_draft（営業・交流担当AI：コメント案＋コードの確認）／outreach_audit（監査AI：採点・判定）／status（使える方法）／sites（公式サイトからアカウントを探す）／recent（候補アカウントの最近の投稿：Facebookログイン方式の設定が必要）／hashtag（ハッシュタグの直近の投稿：Metaの審査が必要）
 // フォロー・コメントは送らない（公式APIに第三者への操作は無い）。
 import { send, readBody } from '../lib/http.js';
 import crypto from 'node:crypto';
 import { draftStep, auditStep as outreachAudit, checkComment, decide as outreachDecide, readPosts } from '../lib/outreach.js';
 import { MAX_REVISIONS } from '../lib/agents.js';
+import { kvFrom } from '../lib/kv.js';
+import { list as commentLog, add as commentLogAdd, SOURCES as COMMENT_SOURCES } from '../lib/comment-log.js';
 import { siteTargets, discoverFromSites, fbConfig, businessDiscovery, freshPosts, hashtagRecent, OFFICIAL_SITES } from '../lib/ig-discovery.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
@@ -40,6 +42,19 @@ export default async function handler(req, res, env = process.env) {
         r.decisions = drafts.map((d) => ({ id: d.id, ...outreachDecide({ check: checks.find((k) => k.id === d.id), audit: r.audits.find((a) => a.id === d.id) || null, revisions: Math.max(0, Math.min(MAX_REVISIONS, Number(rev[d.id]) || 0)) }) }));
       }
       return send(res, 200, r);
+    }
+    // コメントの送信記録（2026-11-15）：送信済み（Instagramで確認／社長の記録）と、サーバーの営業・交流担当AIのコメント案（未送信）
+    if (action === 'comment_log') {
+      const kv = kvFrom(env);
+      if (!kv) return send(res, 200, { configured: false, entries: [], drafts: [], notice: 'サーバーの保存場所が未接続のため、送信記録を読めません' });
+      const outreach = (await kv.listJson('worker:results:outreach', 100)) || [];
+      const drafts = outreach.map((r) => ({ postId: r.postId, at: r.at, status: (r.outreach || {}).status || '', text: (r.outreach || {}).final || '', why: String((r.outreach || {}).why || '').slice(0, 120), sent: false }));
+      return send(res, 200, { configured: true, entries: await commentLog(kv), drafts, sources: COMMENT_SOURCES, sendsFromApp: false, at: new Date().toISOString() });
+    }
+    if (action === 'comment_log_add') {
+      const kv = kvFrom(env);
+      if (!kv) return send(res, 200, { ok: false, error: 'サーバーの保存場所が未接続です' });
+      return send(res, 200, { ok: true, ...(await commentLogAdd(kv, body.entries)) });
     }
     if (action === 'status') {
       return send(res, 200, { sites: true, knownSites: Object.keys(OFFICIAL_SITES).length, recent: fb.ready, hashtag: fb.ready && fb.hashtagEnabled });

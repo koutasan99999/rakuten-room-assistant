@@ -484,12 +484,82 @@
     return c;
   }
 
+
+  // ---- 広報の仕事の記録：コメントの送信履歴（2026-11-15）----
+  // 送信済み＝Instagram自身のアクティビティで確認できたもの／社長の記録。コメント案だけのものは「未送信」。
+  // 履歴が取れないものは推測で埋めず「確認できない」と出す。アプリとサーバーはコメントを送らない（記録だけ）。
+  var clog = { state: 'idle', data: null, error: '' };
+  function loadCommentLog(force) {
+    if (clog.state === 'loading' || (clog.state === 'done' && !force)) return;
+    clog.state = 'loading';
+    // この端末で社長が「コメントした」と記録したものは、ほかの端末からも見えるようサーバーにも残す（社長の記録として。Instagramとの照合済みとは区別）
+    var mine = R.posts().filter(function (p) { return p.status === 'commented' && p.commentedText; }).map(function (p) { return { postUrl: p.url, handle: p.handle, text: p.commentedText, sentAt: p.commentedAt, result: 'sent', source: 'owner_report', by: '社長の記録' }; });
+    var first = mine.length ? K.postJson('api/pr', { action: 'comment_log_add', entries: mine }).catch(function () {}) : Promise.resolve();
+    first.then(function () { return K.postJson('api/pr', { action: 'comment_log' }); }).then(function (r) {
+      if (r.status === 200) { clog.data = r.data; clog.state = 'done'; } else { clog.state = 'error'; clog.error = (r.data && r.data.error) || String(r.status); }
+      paint();
+    }, function () { clog.state = 'error'; clog.error = '通信できませんでした'; paint(); });
+  }
+  function commentLogCard() {
+    var c = el('section', 'card pr-clog');
+    c.appendChild(el('h3', 'pitch-sub', '広報の仕事の記録（Instagramのコメント）'));
+    c.appendChild(el('p', 'hint', 'このアプリとサーバー（広報AI＝営業・交流担当AI）は、コメントを送りません。広報AIが作るのはコメント案までです。送信は社長の承認のうえで、社長かClaude in Chromeが行います（公式APIには他の人の投稿へのコメント機能がありません）。'));
+    if (clog.state === 'idle') loadCommentLog(false);
+    if (clog.state === 'loading') { c.appendChild(el('p', 'hint', '送信記録を読み込んでいます…')); return c; }
+    if (clog.state === 'error') { c.appendChild(el('p', 'hint pitch-warn', '送信記録を読めませんでした（' + clog.error + '）。送信したかどうかは、ここでは確認できません。')); c.appendChild(btn('もう一度読み込む', 'btn btn-secondary', function () { loadCommentLog(true); })); return c; }
+    var d = clog.data || {};
+    if (d.configured === false) { c.appendChild(el('p', 'hint', d.notice || 'サーバーの保存場所が未接続です。送信記録は確認できません。')); return c; }
+    var sent = (d.entries || []).filter(function (e) { return e.result === 'sent'; });
+    var failed = (d.entries || []).filter(function (e) { return e.result === 'failed'; });
+    var summary = el('p', 'pr-clog-sum');
+    summary.appendChild(el('b', null, '送信済み ' + sent.length + '件'));
+    summary.appendChild(document.createTextNode('（Instagramで確認 ' + sent.filter(function (e) { return e.source === 'instagram_activity'; }).length + '件・社長の記録 ' + sent.filter(function (e) { return e.source === 'owner_report'; }).length + '件）／送信失敗の記録 ' + failed.length + '件'));
+    c.appendChild(summary);
+    function row(e) {
+      var r = el('div', 'pr-clog-row' + (e.result === 'failed' ? ' failed' : ''));
+      var head = el('p', 'pr-clog-head');
+      head.appendChild(el('b', null, e.handle ? '@' + e.handle : 'アカウント未記録'));
+      head.appendChild(document.createTextNode('　' + (e.sentAt ? stamp(e.sentAt) : '送信日時は記録なし') + '　'));
+      head.appendChild(el('span', e.result === 'sent' ? 'pr-ok' : 'pr-ng', e.result === 'sent' ? '送信成功' : '送信失敗'));
+      r.appendChild(head);
+      r.appendChild(el('p', 'pr-clog-text', '「' + e.text + '」'));
+      var meta = el('p', 'hint');
+      meta.appendChild(linkBtn('対象の投稿を開く', e.postUrl));
+      meta.appendChild(document.createTextNode('　確認方法：' + ((d.sources || {})[e.source] || e.source) + (e.source === 'instagram_activity' ? '（' + stamp(e.checkedAt) + ' 確認）' : '') + '　実行：' + (e.by || '記録なし') + (e.note ? '　' + e.note : '')));
+      r.appendChild(meta);
+      return r;
+    }
+    if (!sent.length && !failed.length) c.appendChild(el('p', 'hint', '送信の記録はありません。記録の無い送信があったかどうかは、ここでは確認できません（推測で埋めません）。'));
+    var list = el('details', 'pr-clog-list'); list.open = sent.length <= 5;
+    list.appendChild(el('summary', null, '送信した記録を見る（' + (sent.length + failed.length) + '件）'));
+    sent.concat(failed).forEach(function (e) { list.appendChild(row(e)); });
+    if (sent.length || failed.length) c.appendChild(list);
+    c.appendChild(el('p', 'hint', '送信に失敗したコメントはInstagramに残らないため、ここに記録が無い失敗は確認できません。'));
+    // 未送信：コメント案だけのもの（この端末の候補と、サーバーの営業・交流担当AIの案）
+    var sentUrls = {}; (d.entries || []).forEach(function (e) { sentUrls[e.postUrl] = true; });
+    var drafts = R.posts().filter(function (p) { return p.status !== 'commented' && !sentUrls[p.url] && ((p.outreach && p.outreach.final) || (p.drafts && p.drafts.length)); }).map(function (p) { return { handle: p.handle, url: p.url, text: (p.outreach && p.outreach.final) || (typeof p.drafts[0] === 'string' ? p.drafts[0] : (p.drafts[0] && p.drafts[0].text) || '') }; });
+    (d.drafts || []).forEach(function (x) { if (x.text && !drafts.some(function (y) { return y.url && y.url.indexOf(x.postId) !== -1; })) drafts.push({ handle: '', url: 'https://www.instagram.com/p/' + x.postId + '/', text: x.text, server: true }); });
+    var dd = el('details', 'pr-clog-list');
+    dd.appendChild(el('summary', null, '未送信（コメント案だけ）' + drafts.length + '件'));
+    if (!drafts.length) dd.appendChild(el('p', 'hint', '未送信のコメント案はありません。'));
+    drafts.forEach(function (x) {
+      var r = el('div', 'pr-clog-row draft');
+      var h = el('p', 'pr-clog-head'); h.appendChild(el('b', null, x.handle ? '@' + x.handle : '投稿')); h.appendChild(document.createTextNode('　')); h.appendChild(el('span', 'pr-draft', '未送信')); r.appendChild(h);
+      r.appendChild(el('p', 'pr-clog-text', '「' + String(x.text).slice(0, 120) + '」'));
+      var m = el('p', 'hint'); m.appendChild(linkBtn('対象の投稿を開く', x.url)); m.appendChild(document.createTextNode(x.server ? '　サーバーの営業・交流担当AIの案' : '　この端末のコメント候補')); r.appendChild(m);
+      dd.appendChild(r);
+    });
+    c.appendChild(dd);
+    c.appendChild(btn('最新の記録を読み込む', 'btn btn-secondary', function () { loadCommentLog(true); }));
+    return c;
+  }
   function paint() {
     if (!container || !container.isConnected) return;
     var y = window.scrollY;
     container.innerHTML = '';
     // 営業・交流活動（第2段階）を先に：他の人の投稿へのコメント候補 → 候補の入れ方 → 探す場所 → 自動で探す → フォロー候補。実績（P0）はそのあと
     container.appendChild(dashboard());
+    container.appendChild(commentLogCard());
     container.appendChild(postsCard());
     container.appendChild(addCard());
     container.appendChild(placesCard());
