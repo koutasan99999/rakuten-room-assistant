@@ -310,7 +310,9 @@
     var b = sv && sv.board;
     if (!b || !key) return null;
     var items = b.items || [];
-    var hit = key === 'auditor' ? (items.filter(function (x) { return x.status === 'work'; })[0] || items[0]) : items.filter(function (x) { return x.agent === key; })[0];
+    // バイヤーAIは「新しい発掘」と「候補の再審査」の2つの仕事を持つ（2026-11-15）。仕事のある方を出す
+    var mine = items.filter(function (x) { return x.agent === key || (key === 'buyer' && x.agent === 'rescue'); });
+    var hit = key === 'auditor' ? (items.filter(function (x) { return x.status === 'work'; })[0] || items[0]) : (mine.filter(function (x) { return x.status === 'work'; })[0] || mine[0]);
     return hit ? { at: b.at, status: hit.status, kind: hit.kind, reason: key === 'auditor' ? (hit.status === 'work' ? (AGENT[hit.agent] || hit.agent) + 'の成果物を採点する予定' : '採点する成果物がまだない') : hit.reason } : null;
   }
   function autonomyBox() {

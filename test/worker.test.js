@@ -72,12 +72,18 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   // そのあと：在庫（合格候補）が目標の10件に届くまで、バイヤーAIが補充しにいく（1日の安全上限まで）。使用済みの商品はAIに見せない
   const rest = steps.slice(head.length);
   assert.deepEqual(rest.slice(-2), ['inspect:inspect:true:done', 'idle'], steps.join(' / '));
-  assert.ok(rest.slice(0, -2).every((x) => x.startsWith('buyer:')), steps.join(' / '));
+  assert.ok(rest.slice(0, -2).every((x) => x.startsWith('buyer:')), steps.join(' / ')); // 再審査もバイヤーAIの仕事（buyer）として記録する
   const st = await state(kv, ENV);
   assert.equal(st.outreach[0].postId, 'AAA1');
   assert.equal(st.outreach[0].outreach.status, 'pass');
   assert.equal(st.outreach[0].outreach.final, '水受けトレー付きなら台が濡れにくそうですね');
-  assert.equal(st.buyer.length, QUOTA.buyer, '1日の上限まで');
+  // 2026-11-15：合格0件の発掘が3回続いたら、その日の新しい発掘は止める（同じやり方で費用を使い続けない）。1日の上限より前に止まる
+  const disc = st.buyer.filter((b) => !b.rescueOf); const resc = st.buyer.filter((b) => b.rescueOf);
+  assert.equal(disc.length, 1 + 3, '最初の合格のあと、合格0件が3回続いたところで新しい発掘を止める');
+  assert.equal(resc.length, 1, '止めたあと、保留になった候補を再審査に回す（ほかの価値ある仕事へ切り替える）');
+  assert.equal(resc[0].rescueOf, disc[0].id);
+  assert.match(st.board.items.find((x) => x.agent === 'buyer').reason, /3回続けて合格0件/);
+  assert.ok(QUOTA.buyer > 4);
   const firstBuyer = st.buyer[st.buyer.length - 1]; // 新しい順なので、最初の仕事はいちばん後ろ
   assert.equal(firstBuyer.candidates[0].status, 'pass');
   // 投稿セットに使用済みの商品は、2回目以降はAIに見せる前に外す（コードで判断。選ぶ費用を無駄にしない）
@@ -113,7 +119,7 @@ test('自律運営：1回1段階ずつ進め、営業・交流 → バイヤー 
   assert.match(pr.versions[0].texts.caption, /台所の置き場所/);
   assert.ok(pr.audits[1].check.checks.every((k) => k.ok !== false), JSON.stringify(pr.audits[1].check.checks));
   // 仕事探しの記録：仕事がない社員は理由つきで「仕事なし」
-  assert.equal(st.board.items.map((x) => x.agent).join(','), 'production,outreach,buyer,inspect,measure,publish');
+  assert.equal(st.board.items.map((x) => x.agent).join(','), 'production,outreach,rescue,buyer,inspect,measure,publish');
   // サーバーの正本：合格した投稿セットが入り、公開待ちへ繰り上がっている。点検の記録もある
   const S = await import('../lib/store.js');
   const recs = await S.list(kv);
