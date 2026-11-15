@@ -165,3 +165,13 @@ test('2.0：定期実行は社長が切り替えたときだけ2.0を動かす�
   await kv.del('worker:lock');
   assert.notEqual((await tick({})).data.company, 'v2', '戻せる');
 });
+
+test('2.0：画像待ちが2件たまったら、新しい投稿セットは作らない（文章だけ作って費用を使わない）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
+  await kv.set(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`, '1');
+  await kv.setJson(V.V2_KEYS.imagewait, [{ id: 'a', step: 'image', data: { set: { title: 'A' } } }, { id: 'b', step: 'image', data: { set: { title: 'B' } } }]);
+  const r = await run(kv, env);
+  assert.match(r.idle, /画像待ちの投稿セットが2件/);
+});
