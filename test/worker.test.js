@@ -152,8 +152,13 @@ test('仕事探し：合格候補がたまっていればバイヤーAIは待ち
   assert.equal(r.board.buyer.stock, 10); assert.equal(r.board.buyer.pass, 10, 'バイヤーAIの成績（合格候補の数）を記録に出す');
   assert.equal(by.outreach.status, 'none');
   await kv.setJson(WORKER_KEYS.snap, readSnapshot({ ...SNAP, outreachPosts: [], pendingSets: 0 }));
+  // 残り5円：制作の見込み（実測の記録が無いので初期値4円）に足りるので、制作を始める（以前は一律6円で0時まで待っていた）
+  await record(kv, 2, { auto: true }); // 残り3円にする
   const r2 = await run(kv);
-  assert.match(Object.fromEntries(r2.board.items.map((x) => [x.agent, x])).production.reason, /費用の残り/);
+  const p2 = Object.fromEntries(r2.board.items.map((x) => [x.agent, x])).production;
+  assert.match(p2.reason, /費用の残り（3円）.*見込み（4円）/);
+  assert.equal(r2.board.next.kind, 'budget', '止まっている理由と再開予定を返す');
+  assert.match(r2.board.next.resume, /明日0:00/);
   assert.equal(mock.calls.openai.length, 0);
 });
 
@@ -184,6 +189,11 @@ test('費用の上限：月の上限（全体）と、自律運営の1日の上�
   const kv = memoryKv();
   await kv.setJson(WORKER_KEYS.snap, readSnapshot(SNAP));
   await record(kv, 24, { auto: true });
+  // 残り1円：始められる仕事が無いので待つ（理由と再開予定を記録）。上限に達したら何もしない
+  const r1 = await run(kv);
+  assert.ok(r1.idle, JSON.stringify(r1).slice(0, 300));
+  assert.equal(r1.board.next.kind, 'budget');
+  await record(kv, 1, { auto: true });
   assert.match((await run(kv)).skipped, /自律運営の費用が上限/);
   await record(kv, 980, { auto: false });
   assert.equal((await check(kv, ENV, { estimate: 0 })).ok, false);

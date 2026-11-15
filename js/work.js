@@ -330,6 +330,18 @@
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
     ];
+    // 仕事が始められないとき：短い理由と次の再開予定（2026-11-15）
+    var nx = (h.blocked && h.blocked.reason) ? h.blocked : (sv.board && sv.board.next) || null;
+    if (nx && !sv.job && !sv.paused) {
+      var stop = el('p', 'wk-blocked');
+      stop.appendChild(el('b', null, '今は待機中：'));
+      stop.appendChild(document.createTextNode(nx.reason + '。次の再開予定：' + (nx.resumeAt ? stamp(nx.resumeAt) : '未定') + (nx.resume ? '（' + nx.resume + '）' : '')));
+      box.appendChild(stop);
+    }
+    if (sv.board && sv.board.estimates) {
+      var es = sv.board.estimates;
+      lines.push('仕事ごとの費用の見込み（実測から）：制作 ' + es.production + '円・再審査 ' + es.rescue + '円・発掘 ' + es.buyer + '円・交流 ' + es.outreach + '円' + (sv.board.reserve ? '｜制作のために ' + sv.board.reserve + '円を取り置き（合格商品があれば制作を最優先）' : ''));
+    }
     if (sv.paused) lines.unshift('停止中：' + stamp(sv.paused.at) + ' に止めました（' + sv.paused.reason + '）。定期実行はAIを呼びません。途中の仕事と成果物は残っています');
     if (h.pausedUntil && new Date(h.pausedUntil).getTime() > Date.now()) lines.push('休止中：' + stamp(h.pausedUntil) + ' まで（連続して失敗したため）：' + (h.lastError || ''));
     else if (h.lastSkip) lines.push('最近止まった理由：' + h.lastSkip);

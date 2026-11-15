@@ -1033,3 +1033,13 @@ p.co-h { font-weight: 800; font-size: 16px; margin: 0 0 6px; }
 /* 監査の全文・修正前後の全文（2026-11-16） */
 .wk-extra { margin-top: 6px; }
 .wk-pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; }
+.wk-blocked { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: #fff7e6; border: 1px solid #f0c36d; font-size: 13px; line-height: 1.6; }
+.pr-clog-sum { margin: 4px 0; font-size: 14px; }
+.pr-clog-row { border-top: 1px solid var(--line); padding: 8px 0; }
+.pr-clog-row.failed { background: #fff3f3; }
+.pr-clog-head { margin: 0; font-size: 13px; }
+.pr-clog-text { margin: 2px 0; font-size: 14px; }
+.pr-ok { color: #1f6f43; font-weight: 700; }
+.pr-ng { color: #b42318; font-weight: 700; }
+.pr-draft { color: #8a5a00; font-weight: 700; background: #fff7e6; border-radius: 6px; padding: 0 6px; }
+.pr-clog-list > summary { cursor: pointer; font-weight: 700; color: var(--red); padding: 4px 0; font-size: 14px; }
