@@ -212,7 +212,10 @@
         if (p.code && window.V2Ig) {
           pc.appendChild(el('p', 'hint', p.roomDone ? '楽天ROOMに登録済み（社長の記録）' : '① 紹介文をコピー → ② 楽天ROOMで貼り付けて登録 → ③「ROOMに登録した」を押す'));
           var rb = el('div', 'btns');
-          rb.appendChild(btn('紹介文をコピーしてROOMを開く', 'btn small', function (e) { var b = e.currentTarget; var ok = window.V2Ig.copyNow(roomText); b.textContent = ok ? 'コピーしました。ROOMを開きます' : 'コピーできませんでした（下の「紹介文だけコピー」を使ってください）'; var url = window.V2Ig.roomUrl(p.code); var win = window.open(url, '_blank'); if (!win) location.href = url; }));
+          // ROOMは普通のリンクで開く（1.0と同じ）。押した瞬間に紹介文をコピーし、そのままリンクが開く（2026-11-16 社長の報告：プログラムで新しい画面を開くと、iPhoneで真っ白のページになった）
+          var ra = el('a', 'btn small', '紹介文をコピーしてROOMを開く'); ra.href = window.V2Ig.roomUrl(p.code); ra.target = '_blank'; ra.rel = 'noopener';
+          ra.addEventListener('click', function () { var ok = window.V2Ig.copyNow(roomText); ra.textContent = ok ? 'コピーしました。ROOMを開きます' : 'コピーできませんでした（下の「紹介文だけコピー」を使ってください）'; });
+          rb.appendChild(ra);
           rb.appendChild(btn('紹介文だけコピー', 'btn ghost', function (e) { var b = e.currentTarget; b.textContent = window.V2Ig.copyNow(roomText) ? 'コピーしました' : 'コピーできませんでした'; setTimeout(function () { b.textContent = '紹介文だけコピー'; }, 2000); }));
           rb.appendChild(btn(p.roomDone ? '登録を取り消す（記録だけ）' : 'ROOMに登録した', p.roomDone ? 'btn ghost' : 'btn', function () { api({ action: 'room', id: s.id, code: p.code, done: !p.roomDone }).then(function () { showSet(s.id); }); }));
           pc.appendChild(rb);

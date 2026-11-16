@@ -154,3 +154,4 @@ input[type=file] { width: 100%; margin: 8px 0; }
 .pr-card .p-row { flex-wrap: wrap; gap: 6px; }
 textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .tabs button { font-size: 11px; padding-left: 0; padding-right: 0; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; box-sizing: border-box; }
