@@ -138,6 +138,15 @@
   function renderSets() {
     openSet = null;
     var box = $('sets'); box.textContent = '';
+    (state.drafts || []).forEach(function (d) {
+      var c = el('details', 'card draft');
+      c.appendChild(el('summary', null, '画像待ちの制作物：「' + d.title + '」'));
+      c.appendChild(el('p', 'hint', '画像以外はできています（' + d.step + (d.wait ? '・' + d.wait : '') + '）。画像ができたら正式な投稿セットとして届きます'));
+      if (d.pickReason) c.appendChild(el('p', '', '選定理由：' + d.pickReason));
+      d.products.forEach(function (p) { c.appendChild(el('p', '', p.role + '：' + p.name.slice(0, 40) + '（' + Number(p.price).toLocaleString('ja-JP') + '円）')); });
+      c.appendChild(el('p', 'field', 'Instagramのキャプション（案）')); c.appendChild(el('pre', 'text', d.caption));
+      box.appendChild(c);
+    });
     if (!state.sets.length) { box.appendChild(el('p', 'card hint', 'まだ完成品はありません。社員が完成させると、ここに届きます。')); return; }
     state.sets.forEach(function (x) {
       var c = el('button', 'card set-row'); c.type = 'button';
@@ -160,6 +169,7 @@
       c.appendChild(el('p', 'set-title big', s.title));
       c.appendChild(el('p', 'hint', (ST[s.status] || s.status) + '・' + day(s.deliveredAt) + ' ' + hm(s.deliveredAt) + ' 納品' + (s.revisions ? '・修正' + s.revisions + '回' : '')));
       if (s.theme || s.aim) { c.appendChild(el('p', 'field', '投稿テーマと狙い')); c.appendChild(el('p', '', (s.theme ? 'テーマ：' + s.theme : '') + (s.target ? '／対象：' + s.target : ''))); if (s.aim) c.appendChild(el('p', '', '狙い：' + s.aim)); }
+      if (s.pickReason) c.appendChild(el('p', '', '選定理由：' + s.pickReason + (s.band ? '（' + s.band + '）' : '')));
       if (s.who) c.appendChild(el('p', 'hint', '誰に：' + s.who + (s.problem ? '／悩み：' + s.problem : '') + (s.whyNow ? '／なぜ今：' + s.whyNow : '')));
       var fig = el('figure', 'cover'); var img = el('img'); img.src = '..' + s.image.url; img.alt = '表紙画像'; fig.appendChild(img); fig.appendChild(el('figcaption', null, s.image.label)); c.appendChild(fig);
       box.appendChild(c);
@@ -169,7 +179,7 @@
       s.products.forEach(function (p, i) {
         var pc = el('div', 'card product');
         var row = el('div', 'p-row'); var pi = el('img'); pi.src = p.image; pi.alt = ''; row.appendChild(pi);
-        var pt = el('div'); pt.appendChild(el('p', 'p-role', p.role || (i ? '代替・比較' : '本命'))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
+        var pt = el('div'); pt.appendChild(el('p', 'p-role', p.role || (i ? '代替・比較' : '本命'))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
         if (p.check) pc.appendChild(el('p', 'hint ' + (p.unverified ? 'warn' : 'ok'), p.check));
         var a = el('a', 'link', '楽天の商品ページを開く'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener'; pc.appendChild(a);
         pc.appendChild(el('p', 'field', '楽天ROOMの紹介文')); pc.appendChild(el('pre', 'text', p.room)); pc.appendChild(copyBtn('紹介文をコピー', p.room));
@@ -238,14 +248,28 @@
   // ---- 成果とお金（完成品・品質・正確性・重複・費用。売上は社長の入力） ----
   function renderMoney() {
     var m = state.money, R = state.results, box = $('money'); box.textContent = '';
+    var T = state.trial;
+    if (T) {
+      var t = el('div', 'card');
+      t.appendChild(el('p', 'field', '14日間の試験運用（' + day(T.start) + '〜' + day(new Date(Date.parse(T.end) - 1000).toISOString()) + (T.active ? '・実施中' : '・終了') + '）'));
+      [['完成した投稿セット', T.delivered + '件'], ['社長が採用', T.adopted + '件'], ['1セットあたりの実費', T.yenPerSet == null ? '未集計（完成0件）' : yen(T.yenPerSet)], ['期間中のAIの費用', yen(T.used) + ' ／ 上限 ' + yen(T.cap)], ['使える残り', yen(T.left) + '（試験の残りと今月の残りの少ない方）'], ['開始時点の今月の支出', yen(T.baseSpent)]].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); t.appendChild(p); });
+      t.appendChild(el('p', 'hint', T.active ? '期間中の合計が上限に届く有料の処理はしません。' : '試験は終わりました。上限は自動では増やしません（費用と成果を見て社長が決めます）。'));
+      box.appendChild(t);
+    }
+    if ((state.stopped || []).length) {
+      var sp = el('details', 'card');
+      sp.appendChild(el('summary', null, '止まった案件と理由（直近' + state.stopped.length + '件）'));
+      state.stopped.forEach(function (x) { sp.appendChild(el('p', 'hint', day(x.at) + ' ' + hm(x.at) + '「' + x.title + '」' + x.agent + '：' + x.why)); });
+      box.appendChild(sp);
+    }
     var r = el('div', 'card');
     r.appendChild(el('p', 'field', '会社の成果（' + R.month.replace('-', '年') + '月）'));
     [['完成した投稿セット', R.delivered + '件（これまでの合計 ' + R.deliveredTotal + '件）'], ['投稿できる品質に届いた割合', pct(R.passRate) + '（完成 ' + R.delivered + '件／途中で止まった ' + R.stopped + '件）'], ['商品情報を楽天で確認できた割合', pct(R.accuracy)], ['企画の重複率（似た企画を弾いた割合）', pct(R.dupRate)], ['1セットあたりの制作費（AI・画像）', R.yenPerSet == null ? '未集計' : yen(R.yenPerSet)], ['社長が採用', R.adopted + '件（投稿済み ' + R.posted + '件）'], ['投稿後の閲覧・クリック', '未取得（Instagramの公式APIの鍵が未設定）']].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); r.appendChild(p); });
     box.appendChild(r);
     var c = el('div', 'card');
     c.appendChild(el('p', 'field', 'AIの費用（実測）'));
-    [['今日（自律運営）', yen(m.spent.dayAuto) + ' ／ 上限 ' + yen(m.limits.dayAuto)], ['今月（全体）', yen(m.spent.month) + ' ／ 上限 ' + yen(m.limits.month)], ['今月の画像', yen(m.image.month) + ' ／ 上限 ' + yen(m.imageLimits.month) + '（今日 ' + m.image.dayCount + '枚 ／ ' + m.imageLimits.dayCount + '枚）']].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); c.appendChild(p); });
-    c.appendChild(el('p', 'hint', '画像は1日' + m.imageLimits.dayCount + '枚のため、完成品は最大で1日' + m.imageLimits.dayCount + '件です'));
+    [['今日（自律運営）', yen(m.spent.dayAuto) + ' ／ 上限 ' + yen(m.limits.dayAuto)], ['今月（全体）', yen(m.spent.month) + ' ／ 上限 ' + yen(m.limits.month)], ['今月の画像', yen(m.image.month) + ' ／ 上限 ' + yen(m.imageLimits.month) + '（今日 ' + yen(m.image.dayYen) + ' ／ 目安 ' + yen(m.imageToday) + '）']].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); c.appendChild(p); });
+    c.appendChild(el('p', 'hint', '画像の枚数は社員が判断します。月200円の残りを月末までに配分した目安と、ほかの工程に残す100円を守ります'));
     box.appendChild(c);
     var s = el('div', 'card');
     s.appendChild(el('p', 'field', '売上（' + m.month.replace('-', '年') + '月・楽天アフィリエイトの報酬）'));

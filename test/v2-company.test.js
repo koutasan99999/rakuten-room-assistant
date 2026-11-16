@@ -70,7 +70,8 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   assert.equal(k, order.length, `工程の順番：${steps.join(' / ')}`);
   const st = await V.officeState(kv, ENV);
   const ev = [...st.events].reverse();
-  assert.match(ev[0].text, /社長の指示を待たずに、新しい案件を始めた/);
+  assert.match(ev.find((e) => e.type === 'start').text, /社長の指示を待たずに、新しい案件を始めた/);
+  assert.match(ev[0].text, /14日間の試験運用を始めた/);
   assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'editor'), '監査→編集への差し戻し');
   assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'editor' && e.to === 'designer'), '編集→デザイナー');
   assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'pr'), '監査→広報');
@@ -93,7 +94,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
 test('実証3：一つの案件が画像待ちでも、別の案件が進む（並行）。各社員は1回の実行で2工程まで', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  await kv.set(`budget:image:count:${today()}`, '1'); // 今日の画像は使い切り
+  await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
   let waited = false; const jobsAfter = new Set();
   for (let i = 0; i < 14; i++) {
@@ -112,7 +113,7 @@ test('実証3：一つの案件が画像待ちでも、別の案件が進む（�
   assert.equal(st.staff.find((s) => s.id === 'designer').status, moving.some((c) => c.agent === 'designer') ? 'turn' : 'wait');
   assert.ok(st.cases.length <= V.MAX_ACTIVE + V.MAX_IMAGE_WAIT, '案件を抱えすぎない');
   // 翌日（画像の予算が戻る）：画像待ちの案件が自動で続きから進む
-  await kv.del(`budget:image:count:${today()}`);
+  await kv.del(`budget:image:yen:${today()}`);
   const r = await run(kv, env);
   assert.ok((r.steps || [])[0] === 'designer:image', `画像の予算が戻ったら最初に描く：${r.steps}`);
 });
@@ -232,4 +233,36 @@ test('定期実行：切り替え後は2.0だけ・切り替え前は手動の t
   await call(v2api, { action: 'activate', on: true }, { 'x-app-passcode': 'pw' }, env);
   await kv.del('worker:lock');
   assert.equal((await tick({})).data.company, 'v2');
+});
+
+test('試験運用（14日間・合計1,000円）：開始時点の支出を記録し、それ以降の増分だけを数える。上限に届く有料の処理はしない（月の予算と二重に数えない）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const month = today().slice(0, 7);
+  await kv.incrFloat(`budget:month:${month}`, 300); // 試験の前にすでに使っていた分
+  await run(kv);
+  let st = await V.officeState(kv, ENV);
+  assert.equal(st.trial.baseSpent, 300); assert.ok(st.trial.active);
+  assert.ok(st.trial.used > 0 && st.trial.used < 5, `試験の開始後の増分だけ（${st.trial.used}円）`);
+  assert.ok(st.trial.left <= 1000 - 300, '使える残りは、今月の残り（1,000円−300円）を超えない（二重に数えない）');
+  // 試験の上限に届いたら止める
+  const t = await kv.getJson(V.V2_KEYS.trial); t.base.spent = -2000; await kv.setJson(V.V2_KEYS.trial, t); // 期間中にすでに1,000円を使ったことにする
+  await run(kv);
+  st = await V.officeState(kv, ENV);
+  assert.ok(st.cases.some((c) => c.wait && c.wait.kind === 'budget' && /試験運用の上限/.test(c.wait.why)), '試験の上限で予算待ち');
+});
+
+test('画像以外ができた制作物は「画像待ちの制作物」として社長が見られる。選定理由と価格帯が完成品に入る', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.incrFloat(`budget:image:yen:${today()}`, 500);
+  for (let i = 0; i < 14; i++) { const r = await run(kv); if ((r.steps || []).some((x) => x.endsWith(':wait'))) break; }
+  const st = await V.officeState(kv, ENV);
+  assert.ok(st.drafts.length >= 1, '画像待ちの制作物');
+  assert.ok(st.drafts[0].caption && st.drafts[0].products.length >= 3);
+  await kv.del(`budget:image:yen:${today()}`);
+  for (let i = 0; i < 6; i++) { const r = await run(kv); if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break; }
+  const s = await V.getSet(kv, (await V.officeState(kv, ENV)).sets[0].id);
+  assert.ok(s.band && s.products.every((p) => p.band), '価格帯の目安');
+  assert.equal(V.bandOf(2500), '手頃な高コスパ'); assert.equal(V.bandOf(25000), '高級・特別なギフト');
 });
