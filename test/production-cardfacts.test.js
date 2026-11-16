@@ -16,13 +16,14 @@ const SET = { title: '雨の日“装備”をスマートに', pattern: 'discov
   item('長靴 レインブーツ メンズ', '') // 説明なし
 ] };
 
-test('補足文・一言メモは、商品データ（名前・説明）にそのままある短い言葉だけ。AIが書いた「日傘級の遮光タイプ」は使わない。根拠が無ければ空欄', async () => {
+test('補足文は商品データにそのままある短い言葉だけ・一言メモはデータに無い性能（真夏も涼しい）を通さない。AIが書いた「日傘級の遮光タイプ」は使わない。根拠が無ければ空欄', async () => {
   mock = installFetchMock({ rakuten: () => ({ ok: true, status: 200, json: async () => ({}) }), openai: () => aiReply({ topicSlug: 't', category: '雨', caption: '雨の日の装備を整える。', hashtags: [], items: [0, 1, 2].map((id) => ({ id, shortName: 'x', subline: id === 0 ? '日傘級の遮光タイプ。' : '雨でも安心', memo: id === 0 ? '真夏も涼しい' : '一つあると便利' })) }) });
   const r = await withUsage(() => P.copyStep({ set: SET, env: ENV }));
   assert.equal(r.ok, true);
   r.copy.items.forEach((c, i) => {
     const data = flat(`${SET.items[i].name} ${SET.items[i].caption}`);
-    for (const t of [c.subline, c.memo]) if (t) assert.ok(data.includes(flat(t)), `カード${i + 1}「${t}」は商品データにそのまま無い`);
+    if (c.subline) assert.ok(data.includes(flat(c.subline)), `カード${i + 1}「${c.subline}」は商品データにそのまま無い`);
+    assert.ok(P.memoOk(c.memo, SET.items[i]) || c.memo === P.fallbackMemo(SET.items[i].role, i), `くまの一言メモは決まりに合うものだけ：${c.memo}`); // 2026-11-16 改修：一言メモはAIの一言をコードで確認（データに無い性能は通さない）
     assert.ok(!/日傘級|安心|便利|涼しい/.test(`${c.subline}${c.memo}`), `AIの言い回しが残った：${c.subline}／${c.memo}`);
     assert.ok(String(c.subline || '').length <= 26 && String(c.memo || '').length <= 40, '長文を転載しない');
     assert.ok(!/送料無料|ポイント/.test(`${c.subline}${c.memo}`), '宣伝文句は使わない');
