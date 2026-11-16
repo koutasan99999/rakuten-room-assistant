@@ -450,6 +450,7 @@ test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完
   const set = await V.getSet(kv, 'm1');
   assert.equal(set.products[0].memo, '水受けトレー付きで、台が濡れにくい。');
   assert.equal(set.products[1].memo, '本命と比べて、違いを見てから選びたい候補。', '体験談は決まった一言に置き換える');
+  assert.equal(new Set(set.products.map((p) => p.memo)).size, 3, '同じ一言を並べない');
   assert.ok(!/涼しい/.test(set.products[2].memo), 'データに無い性能は通さない');
   const r2 = await run(kv);
   assert.ok(!(r2.steps || []).some((x) => x.startsWith('editor:memo')), '書き直したものは繰り返さない');
