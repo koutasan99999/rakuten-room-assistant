@@ -705,7 +705,7 @@
     var issues = (m.issues || []).concat(m.ruleIssues || []);
     var props = C.proposals().filter(function (p) { return p.meetingId === m.id || p.date === m.date; });
     var tasks = C.tasks().filter(function (t) { return t.from && t.from.id === m.id || (t.createdAt || '').slice(0, 10) === m.date; });
-    L.push('# 眼科医くま 経営会議 議事録（' + m.date + '）');
+    L.push('# サングラスくま 経営会議 議事録（' + m.date + '）');
     L.push('');
     L.push('- 日時：' + new Date(m.at).toLocaleString('ja-JP'));
     L.push('- 状態：' + ({ ok: '開催', partial: '一部（AIの会議は失敗。工程の確認と割り当てのみ）', failed: '失敗' }[m.status] || m.status) + (m.error ? '（' + m.error + '）' : ''));

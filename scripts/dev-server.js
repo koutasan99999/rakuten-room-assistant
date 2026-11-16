@@ -206,7 +206,7 @@ if (process.env.MOCK) {
       ? aiReply({ picks: (body.messages[1].content.includes('［')
         // ジャンルの違う候補から選ぶ（大分類が違うものを、最大の数まで）
         ? (() => { const seen = new Set(); const n = Number((body.messages[1].content.match(/最大(\d+)個/) || [])[1]) || 4; return [...body.messages[1].content.matchAll(/^(\d+): ［([^／]+)／/gm)].filter((m) => !seen.has(m[2]) && seen.add(m[2])).slice(0, n).map((m) => Number(m[1])); })()
-        : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((id) => ({ id, point: '説明に素材と作りの工夫が書かれている', title: '知らなかった、使える道具', who: '30代男性・自分用と贈り物', revenue: '5千円前後で贈り物に選ばれやすい価格帯（仮説）', score: 3 + (id % 3), scoreWhy: '素材の説明が具体的で、比べる理由がある', brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、という眼科医くまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
+        : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((id) => ({ id, point: '説明に素材と作りの工夫が書かれている', title: '知らなかった、使える道具', who: '30代男性・自分用と贈り物', revenue: '5千円前後で贈り物に選ばれやすい価格帯（仮説）', score: 3 + (id % 3), scoreWhy: '素材の説明が具体的で、比べる理由がある', brand: id % 2 ? '' : 'テストブランド', category: ['服', '香り', 'ガジェット', '雑貨'][id % 4], pitch: '社長、これどうすか？落ち着いた色なのに、よく見ると素材に表情があって、無難に見えないのがいいところです。休日のシャツの上に羽織っても、デスクに置いても絵になる感じ。説明を見るかぎり、普段使いしやすいサイズ感です。', fit: '落ち着いているのに無難ではない、というサングラスくまの基準に合う', caution: '色味は写真と違って見えることがあるので、商品ページの写真で確認したい' })) })
       : body.messages[0].content.includes('特集企画とカルーセル')
       ? aiReply({ title: '休日の机を少し良くする', target: '在宅の時間が長い30代男性', slides: ['1 表紙：休日の机、少し良くしたい人へ', '2 この商品のいいところ', '3 素材と見た目', '4 弱点も正直に', '5 楽天ROOMにまとめました'], caption: '【PR】楽天アフィリエイトを利用しています\n休日の机を、少し良くしたい人へ。', hashtags: ['#デスク周り', '#ガジェット', '#30代メンズ', '#ギフト', '#インテリア'] })
       : body.messages[0].content.includes('の商品バイヤーです')
@@ -269,7 +269,7 @@ if (process.env.MOCK) {
         { topic: 'タンブラー', subtitle: '― 高い本命と安い代替 ―', postType: '本命＋安い代替', target: '毎日コーヒーを持ち歩く人', priceBand: '1,500〜6,000円', genre: '旅行・アウトドア', brands: ['STANLEY', 'THERMOS', 'Hydro Flask'], axis: '所有満足感 vs 実用性', whyInteresting: '値段差が大きいのに見た目が似ているので、違いを整理する価値がある', slots: ['本命ブランド', '本命の中では買いやすい', 'コスパ代替', 'まず試す代替', '用途違いの別解', '一番バランスが良い'].map((label) => ({ label, keyword: 'タンブラー 真空断熱' })) },
         { topic: '旅行前に買っておくと楽なもの', postType: '旅行向け', target: '年末に旅行する人', priceBand: '〜5,000円', genre: '寝具・生活', brands: [], whyInteresting: '出発前の小さな不安を先回りで消せる', slots: ['迷ったらこれ', '機内用', '整理用', '充電用', '寝る用', '価格を抑えるなら'].map((label) => ({ label, keyword: '旅行 便利グッズ' })) }
       ] })
-      : body.messages[0].content.includes('眼科医くま')
+      : body.messages[0].content.includes('サングラスくま')
       ? aiReply({
         topicSlug: 'shussan-iwai', category: '出産祝い',
         ...(body.messages[0].content.includes('表紙）に載せる文字') ? { cover: { style: 'value_pick', title: '防災グッズ、\nまずコレを買え', accent: 'コレ', sub: '最初の1セットはここから' } } : {}),
@@ -305,7 +305,7 @@ if (process.env.MOCK) {
     if (process.env.MOCK_IG && u.includes('graph.instagram.com')) {
       const q = new URL(u);
       const p = q.pathname;
-      if (/\/me$/.test(p)) return json(200, { user_id: '1', username: 'ganka_kuma_', account_type: 'BUSINESS', followers_count: 12, follows_count: 5, media_count: 9 });
+      if (/\/me$/.test(p)) return json(200, { user_id: '1', username: 'gla_san_kuma_', account_type: 'BUSINESS', followers_count: 12, follows_count: 5, media_count: 9 });
       if (/\/me\/insights$/.test(p)) {
         if (q.searchParams.get('breakdown') === 'follow_type') return json(200, { data: [{ name: q.searchParams.get('metric'), total_value: { value: 41, breakdowns: [{ dimension_keys: ['follow_type'], results: [{ dimension_values: ['FOLLOWER'], value: 6 }, { dimension_values: ['NON_FOLLOWER'], value: 35 }] }] } }] });
         return json(200, { data: [{ name: q.searchParams.get('metric'), total_value: { value: 7 } }] });

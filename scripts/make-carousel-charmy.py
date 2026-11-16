@@ -8,7 +8,7 @@ BG=(247,240,229); INK=(38,30,26); ACC=(196,90,40); SUB=(110,96,86)
 def base(n):
     im=Image.new('RGB',(W,H),BG); d=ImageDraw.Draw(im)
     d.rounded_rectangle([W-170,50,W-50,115],radius=14,fill=INK); d.text((W-110,82),'PR',font=f(38),fill='white',anchor='mm')
-    d.text((60,H-70),'眼科医くま',font=f(36),fill=SUB,anchor='lm'); d.text((W-60,H-70),f'{n}/6',font=f(34),fill=SUB,anchor='rm')
+    d.text((60,H-70),'サングラスくま',font=f(36),fill=SUB,anchor='lm'); d.text((W-60,H-70),f'{n}/6',font=f(34),fill=SUB,anchor='rm')
     return im,d
 def lines(d,x,y,items,size,fill=INK,gap=1.55):
     for t in items:
@@ -48,7 +48,7 @@ im.save(f'{OUT}/5.png')
 im,d=base(6)
 d.text((W//2,400),'買う前の確認用に',font=f(80),fill=INK,anchor='mm')
 d.text((W//2,520),'保存しておくと便利です',font=f(64),fill=INK,anchor='mm')
-d.text((W//2,720),'眼科医くまの楽天ROOMは',font=f(50),fill=SUB,anchor='mm')
+d.text((W//2,720),'サングラスくまの楽天ROOMは',font=f(50),fill=SUB,anchor='mm')
 d.text((W//2,800),'プロフィールのリンクから',font=f(50),fill=SUB,anchor='mm')
 d.text((W//2,1000),'楽天アフィリエイトを利用しています',font=f(40),fill=SUB,anchor='mm')
 im.save(f'{OUT}/6.png')

@@ -158,7 +158,7 @@
     var dl = el('dl', 'radar-facts');
     var feat = p.feature || (p.caption ? String(p.caption).replace(/\s+/g, ' ').slice(0, 90) + '…（楽天の商品説明より）' : '');
     var vf = p.verified ? '価格 ' + (p.verified.price ? K.formatPrice(p.verified.price) : '未取得') + '・楽天の商品ページあり・レビュー ' + (p.verified.reviewCount ? p.verified.reviewCount + '件（平均' + (p.verified.reviewAverage || '-') + '）' : 'なし') + '（楽天の商品データで確認' + (p.verified.at ? '・' + new Date(p.verified.at).toLocaleDateString('ja-JP') : '') + '）' : '';
-    [['企画の面白さ・独自性', p.pitch], ['商品の特徴', feat], ['想定ターゲット', p.who], ['収益につながる仮説', p.revenue ? p.revenue + '（仮説）' : ''], ['確認済みの情報', vf], ['眼科医くまに合う理由', p.fit], ['買う前の弱点・注意点', p.caution]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
+    [['企画の面白さ・独自性', p.pitch], ['商品の特徴', feat], ['想定ターゲット', p.who], ['収益につながる仮説', p.revenue ? p.revenue + '（仮説）' : ''], ['確認済みの情報', vf], ['サングラスくまに合う理由', p.fit], ['買う前の弱点・注意点', p.caution]].forEach(function (x) { if (x[1]) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); } });
     card.appendChild(dl);
     if (p.sourcePost || p.sourceHandle) card.appendChild(el('p', 'hint', '商品ドロボー：@' + (p.sourceHandle || '不明') + (p.matchNote ? '｜' + p.matchNote : '')));
     var links = el('div', 'pitch-row');
