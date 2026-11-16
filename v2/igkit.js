@@ -43,6 +43,20 @@
     return Promise.resolve();
   }
   // 楽天ROOMの登録（コレ！）画面：商品番号を指定して開く（1.0と同じURL）
+  // その場で（ボタンを押したその瞬間に）コピーする。iPhoneでは別の画面を開いたあとのコピーは断られるため、ROOMを開く前に必ず済ませる（2026-11-16 社長の報告で修正）
+  function copyNow(text) {
+    var ok = false;
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.fontSize = '16px';
+      document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) { ok = false; }
+    // その場のコピーができなかったときだけ、もう1つの方法も試す（結果はあとで分かるので、成功とは扱わない）
+    if (!ok && navigator.clipboard && window.isSecureContext) { try { navigator.clipboard.writeText(text).catch(function () {}); } catch (e) {} }
+    return ok;
+  }
   function roomUrl(code) { return 'https://room.rakuten.co.jp/mix?itemcode=' + encodeURIComponent(code).replace(/%3A/gi, ':') + '&scid=we_room_upc60'; }
-  window.V2Ig = { buildSlides: buildSlides, saveFiles: saveFiles, roomUrl: roomUrl };
+  window.V2Ig = { buildSlides: buildSlides, saveFiles: saveFiles, roomUrl: roomUrl, copyNow: copyNow };
 })();
