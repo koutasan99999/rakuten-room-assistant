@@ -397,3 +397,16 @@ test('段階1：未公開（公開待ち3＋控え6）が満杯なら新しく�
   const by2 = Object.fromEntries((await state(kv2, ENV)).board.items.map((x) => [x.agent, x]));
   assert.match(by2.production.reason, /7日以上ない.*1件/);
 });
+
+test('QStash：1.0の番で1.0に仕事が無くすぐ終わったときは、同じ回で2.0を進める（空回りしない）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() }); // 外のサイトには行かない
+  await kv.incrFloat(`budget:month:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7)}`, 999.95); // 2.0は有料の処理をしない
+  const env = { ...ENV, __kv: kv, QSTASH_CURRENT_SIGNING_KEY: 'cur', QSTASH_NEXT_SIGNING_KEY: 'next' };
+  const r = await callWorker(env, { headers: { 'upstash-signature': qsig('cur'), 'upstash-message-id': 'c1' } }); // 1回目＝1.0の番（アプリの情報が無いので1.0はすぐ終わる）
+  assert.equal(r.status, 200);
+  assert.notEqual(r.data.company, 'v2');
+  assert.ok(!r.data.worked, '1.0は仕事をしていない');
+  assert.equal(r.data.v2 && r.data.v2.company, 'v2', `同じ回で2.0が動いた：${JSON.stringify(r.data).slice(0, 200)}`);
+});

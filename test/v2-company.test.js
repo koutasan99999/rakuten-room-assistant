@@ -52,7 +52,7 @@ function fetchMock({ failAi = false, themes = null } = {}) {
     }
   });
   const mocked = globalThis.fetch;
-  globalThis.fetch = async (url, opts) => { const u = String(url); if (u.startsWith(APP)) return new Response(fs.readFileSync(new URL('../' + u.slice(APP.length), import.meta.url)), { status: 200, headers: { 'Content-Type': 'image/png' } }); return mocked(url, opts); };
+  globalThis.fetch = async (url, opts) => { const u = String(url); if (/kinto|hario|lecreuset|snowpeak|balmuda|thermos|bodum/.test(u)) return new Response('<html><a href="https://www.instagram.com/brand_official/">IG</a></html>', { status: 200, headers: { 'Content-Type': 'text/html' } }); if (u.startsWith(APP)) return new Response(fs.readFileSync(new URL('../' + u.slice(APP.length), import.meta.url)), { status: 200, headers: { 'Content-Type': 'image/png' } }); return mocked(url, opts); };
   return m;
 }
 const run = (kv, env = ENV) => withUsage(() => V.tick({ kv, env, origin: APP, startedAt: Date.now(), trigger: 'test' }));
@@ -91,7 +91,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   assert.equal(st.results.delivered, 1); assert.ok(st.results.yenPerSet > 0);
 });
 
-test('実証3：一つの案件が画像待ちでも、別の案件が進む（並行）。各社員は1回の実行で2工程まで', async () => {
+test('実証3：一つの案件が画像待ちでも、別の案件が進む（並行）。各社員は1回の実行で決まった工程数まで', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
@@ -111,7 +111,7 @@ test('実証3：一つの案件が画像待ちでも、別の案件が進む（�
   const moving = st.cases.filter((c) => !c.wait);
   assert.ok(waiting.length >= 1, '画像待ちの案件がある');
   assert.ok(jobsAfter.size >= 1 && [...jobsAfter].some((id) => !waiting.find((w) => w.id === id)), '画像待ちのあいだも別の案件が進んだ');
-  assert.equal(st.staff.find((s) => s.id === 'designer').status, moving.some((c) => c.agent === 'designer') ? 'turn' : 'wait');
+  assert.equal(st.staff.find((s) => s.id === 'designer').status, moving.some((c) => c.agent === 'designer') ? 'queued' : 'wait');
   assert.ok(st.cases.length <= V.MAX_ACTIVE + V.MAX_IMAGE_WAIT, '案件を抱えすぎない');
   // 翌日（画像の予算が戻る）：画像待ちの案件が自動で続きから進む
   await kv.del(`budget:image:yen:${today()}`);
@@ -213,14 +213,14 @@ test('社長の修正依頼は、編集→監査→編集（整合性）→広�
   assert.equal(st.results.posted, 1);
 });
 
-test('社員の状態は実際の記録どおり：担当中・引き継ぎ中・待機（働いているふりをしない）', async () => {
+test('社員の状態は実際の記録どおり：次の定期実行待ち・引き継ぎ中・仕事なし（働いているふりをしない）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   await kv.setJson(V.V2_KEYS.cases, [{ id: 'j1', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: null, data: { plan: { title: '企画A' } } }]);
   await V.record(kv, { job: 'j0', agent: 'buyer', to: 'writer', type: 'handoff', text: 'ライターへ引き継ぎ', title: '企画A' });
   const st = await V.officeState(kv, ENV);
   const w = st.staff.find((x) => x.id === 'writer');
-  assert.equal(w.status, 'turn'); assert.match(w.doing, /次の番：Instagramの文章を書く/); assert.equal(w.title, '企画A'); assert.match(w.next, /ライター：楽天ROOMの紹介文を書く/);
+  assert.equal(w.status, 'queued'); assert.match(w.doing, /次の番：Instagramの文章を書く/); assert.equal(w.title, '企画A'); assert.match(w.next, /ライター：楽天ROOMの紹介文を書く/);
   assert.equal(st.staff.find((x) => x.id === 'buyer').status, 'handoff');
   assert.ok(st.staff.filter((x) => !['writer', 'buyer'].includes(x.id)).every((x) => x.status === 'idle'));
 });
@@ -258,7 +258,7 @@ test('試験運用（14日間・合計1,000円）：開始時点の支出を記�
   await run(kv);
   let st = await V.officeState(kv, ENV);
   assert.equal(st.trial.baseSpent, 300); assert.ok(st.trial.active);
-  assert.ok(st.trial.used > 0 && st.trial.used < 5, `試験の開始後の増分だけ（${st.trial.used}円）`);
+  assert.ok(st.trial.used > 0 && st.trial.used < 60, `試験の開始後の増分だけ（${st.trial.used}円。並行処理で1回に画像まで進む）`);
   assert.ok(st.trial.left <= 1000 - 300, '使える残りは、今月の残り（1,000円−300円）を超えない（二重に数えない）');
   // 試験の上限に届いたら止める
   const t = await kv.getJson(V.V2_KEYS.trial); t.base.spent = -2000; await kv.setJson(V.V2_KEYS.trial, t); // 期間中にすでに1,000円を使ったことにする
@@ -297,4 +297,139 @@ test('完成品ページ：Instagramの画像の材料（短い名前・商品�
   assert.ok((await V.officeState(kv, ENV)).events.some((e) => /楽天ROOMに登録した（社長の申告）/.test(e.text)));
   await call(v2api, { action: 'room', id, code: s.products[0].code, done: false }, undefined, E);
   assert.equal((await call(v2api, { action: 'set', id }, undefined, E)).data.set.products[0].roomDone, false, '取り消せる');
+});
+
+// ---- 2026-11-16 並行処理・仕事探し・広報の常設 ----
+// AIの応答を遅らせる（同時に進んだかを、工程の開始・終了の時刻で確かめる）。広報のコメント案と、その採点にも答える
+function slowAndPr(m, { ms = 150, prPass = true } = {}) {
+  const inner = globalThis.fetch;
+  const seen = { instagram: 0 };
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (/instagram\.com|graph\.facebook\.com/.test(u)) { seen.instagram += 1; throw new Error('Instagramには接続しない'); }
+    if (/kinto|hario|lecreuset|snowpeak|balmuda|thermos|bodum/.test(u)) { seen.sites = (seen.sites || 0) + 1; return new Response(`<html><a href="https://www.instagram.com/${u.match(/\/\/(?:www\.)?([a-z]+)/)[1]}_official/">Instagram</a></html>`, { status: 200, headers: { 'Content-Type': 'text/html' } }); }
+    if (u.includes('api.openai.com') && !u.includes('/images/')) {
+      await new Promise((r) => setTimeout(r, ms));
+      const body = JSON.parse(opts.body);
+      const sys = body.messages[0].content;
+      if (sys.includes('営業・交流担当AIです')) {
+        const id = (String(body.messages[1].content).match(/投稿 ([A-Za-z0-9_-]+)（P1/) || [])[1];
+        return aiReply({ drafts: [{ id, anchor: '朝の通勤', comment: '朝の通勤で使うなら、どの時間帯がいちばん便利ですか', relevance: 70, relevanceWhy: '通勤の道具', follow: 60, followWhy: '生活の道具の投稿' }] });
+      }
+      if (sys.includes('監査AIです（コメントを書く役はしない）')) {
+        const id = (String(body.messages[1].content).match(/案 ([A-Za-z0-9_-]+)/) || [])[1];
+        const sc = prPass ? [22, 22, 17, 13, 13] : [10, 10, 8, 5, 5];
+        return aiReply({ audits: [{ id, scores: { specific: { score: sc[0] }, natural: { score: sc[1] }, relevance: { score: sc[2] }, distance: { score: sc[3] }, compliance: { score: sc[4] } }, flags: {}, fixes: prPass ? [] : ['質問を具体的に'], proposal: prPass ? 'pass' : 'revise', summary: prPass ? '投稿の文章に沿っている' : '抽象的' }] });
+      }
+    }
+    return inner(url, opts);
+  };
+  const restore = m.restore;
+  m.restore = () => { globalThis.fetch = inner; restore(); };
+  return seen;
+}
+const overlap = (a, b) => a.from < b.to && b.from < a.to;
+const lanesOf = (r) => (r.parallel ? r.parallel.lanes : []).map((x) => { const m = x.match(/^L(\d+) ([\d.]+)-([\d.]+)s (\w+):(\w+)/); return { lane: +m[1], from: +m[2], to: +m[3], agent: m[4], step: m[5] }; });
+
+test('並行：違う案件の工程を同時に進める（同じ案件・同じ社員は同時にしない）。同時処理の件数を記録する', async () => {
+  mock = fetchMock();
+  slowAndPr(mock, { ms: 200 });
+  const kv = memoryKv();
+  const base = (id, step, extra = {}) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic', ...extra } });
+  await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find'), base('c', 'find')]);
+  const r = await run(kv);
+  const lanes = lanesOf(r);
+  assert.ok(r.parallel.peak >= 2, `同時に進んだ工程の最大数：${r.parallel.peak}（${r.parallel.lanes.join(' / ')}）`);
+  assert.ok(lanes.some((x, i) => lanes.some((y, j) => i !== j && x.agent !== y.agent && overlap(x, y))), `違う社員の工程が同じ時間に進んだ：${r.parallel.lanes.join(' / ')}`);
+  for (const x of lanes) for (const y of lanes) if (x !== y && x.agent === y.agent) assert.ok(!overlap(x, y), `同じ社員が同時に2つの仕事をしない：${x.agent}`);
+  // 同じ案件の工程は順番どおり（同時に進めない）
+  const st = await V.officeState(kv, ENV);
+  assert.ok(st.peak >= 2 && st.lanes.length >= 3, '画面に前回の同時処理の記録がある');
+  const evs = [...st.events].reverse().filter((e) => e.type === 'done' && e.job);
+  for (const id of ['a', 'b', 'c']) { const mine = evs.filter((e) => e.job === id); for (let i = 1; i < mine.length; i++) assert.ok(mine[i].at >= mine[i - 1].at); }
+  assert.ok(r.steps.length >= 4, `1回の実行で4工程以上進んだ：${r.steps}`);
+});
+
+test('仕事探し：工程の無い社員は、本当に必要な仕事だけを見つける（納品から24時間たった完成品の価格・販売の再確認）。無ければ理由つきで「仕事なし」', async () => {
+  mock = fetchMock();
+  slowAndPr(mock, { ms: 5 });
+  const kv = memoryKv();
+  const old = new Date(Date.now() - 25 * 3600000).toISOString();
+  await kv.setJson(V.V2_KEYS.sets, [{ id: 'set1', title: '台所の工夫', status: 'waiting', deliveredAt: old }]);
+  await kv.setJson(V.V2_KEYS.set('set1'), { id: 'set1', title: '台所の工夫', status: 'waiting', deliveredAt: old, jobId: 'j0', products: [{ code: 's:x1', name: '道具1', short: '道具1', price: 2000 }, { code: 's:x2', name: '道具2', short: '道具2', price: 2480 }] });
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 999.5); // 新しい案件は始めない（AIの費用の手前）
+  const r = await run(kv);
+  assert.ok((r.steps || []).includes('auditor:recheck:done'), `監査が完成品の再確認を見つけた：${r.steps}`);
+  const s = await kv.getJson(V.V2_KEYS.set('set1'));
+  assert.ok(s.recheckedAt, '再確認の日時');
+  assert.equal(s.products[0].recheck.status, 'changed', '価格が変わった（2,000円→2,480円）');
+  assert.equal(s.products[1].recheck.status, 'same');
+  const st = await V.officeState(kv, ENV);
+  assert.ok(st.events.some((e) => e.type === 'find' && e.agent === 'auditor' && /仕事探し/.test(e.text)));
+  assert.ok(st.notices.some((n) => n.recheck && /2,480円/.test(n.text)), '変わった点を社長に知らせる');
+  // 2回目：24時間たっていないので、同じ再確認はしない（仕事をしているふりをしない）
+  const r2 = await run(kv);
+  assert.ok(!(r2.steps || []).some((x) => x.startsWith('auditor:recheck')), `同じ再確認を繰り返さない：${r2.steps}`);
+  const st2 = await V.officeState(kv, ENV);
+  const buyer = st2.staff.find((x) => x.id === 'buyer');
+  assert.equal(buyer.status, 'idle'); assert.match(buyer.doing, /^仕事なし：/);
+  assert.ok(st2.staff.find((x) => x.id === 'auditor').stats.side >= 1, '社員ごとの処理件数');
+});
+
+test('広報（常設）：交流候補の投稿にコメント案→監査が採点→社長の承認待ち。送信はしない。1日の上限・同じアカウントの間隔を守る', async () => {
+  mock = fetchMock();
+  const seen = slowAndPr(mock, { ms: 10 });
+  const kv = memoryKv();
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 990); // 案件は始めない（広報だけを見る）
+  const E = { ...ENV, __kv: kv };
+  const add = (n, handle) => call(v2api, { action: 'prAdd', url: `https://www.instagram.com/p/POST${n}abc/`, caption: `朝の通勤で使っているバッグの中身を紹介します ${n}`, handle }, undefined, E);
+  assert.equal((await add(1, 'shop_a')).status, 200);
+  assert.equal((await add(2, 'shop_a')).status, 200); // 同じアカウント（7日に1件まで）
+  for (const [n, h] of [[3, 'shop_b'], [4, 'shop_c'], [5, 'shop_d']]) await add(n, h);
+  assert.equal((await call(v2api, { action: 'prAdd', url: 'https://www.instagram.com/p/POST9abc/', caption: '' }, undefined, E)).status, 400, '投稿の文章が無いものは入れない');
+  await kv.del(`budget:month:${today().slice(0, 7)}`); await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 900);
+  for (let i = 0; i < 5; i++) await run(kv, { ...ENV, V2_THEMES: '' });
+  const st = await V.officeState(kv, ENV);
+  const d = st.pr.drafts;
+  assert.ok(d.length >= 1, 'コメント案ができた');
+  assert.ok(d.length <= 3, `1日の上限3件：${d.length}件`);
+  assert.ok(d.every((x) => x.status === 'approval'), `監査が合格にした案は社長の承認待ち：${d.map((x) => x.status)}`);
+  assert.equal(d.filter((x) => x.handle === 'shop_a').length, 1, '同じアカウントには7日に1件');
+  assert.ok(st.events.some((e) => e.type === 'handoff' && e.agent === 'pr' && e.to === 'auditor'), '広報→監査の引き継ぎ');
+  assert.equal(st.staff.find((x) => x.id === 'pr').status, 'approval', '広報は「承認待ち」');
+  assert.equal(seen.instagram, 0, 'Instagramには何も送らない（公式サイトの確認のみ・別のホスト）');
+  // 社長：承認 → 送った（社長の申告として記録）
+  const id = d[0].id;
+  assert.equal((await call(v2api, { action: 'prDecide', id, decision: 'sent' }, undefined, E)).status, 400, '承認の前に「送った」にはできない');
+  assert.equal((await call(v2api, { action: 'prDecide', id, decision: 'approve' }, undefined, E)).data.draft.status, 'approved');
+  assert.equal((await call(v2api, { action: 'prDecide', id, decision: 'sent' }, undefined, E)).data.draft.status, 'sent');
+  const log = await kv.hgetallJson('pr:comment:log');
+  assert.equal(Object.values(log)[0].source, 'owner_report', '送った記録は社長の申告（Instagramとは未照合）');
+  assert.equal(st.pr.access.sends, false);
+});
+
+test('広報：監査で不合格の案は直し、直しても届かなければ送らない（承認待ちにしない）', async () => {
+  mock = fetchMock();
+  slowAndPr(mock, { ms: 5, prPass: false });
+  const kv = memoryKv();
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 900);
+  await call(v2api, { action: 'prAdd', url: 'https://www.instagram.com/p/POSTZabc/', caption: '朝の通勤で使っているバッグの中身を紹介します', handle: 'shop_z' }, undefined, { ...ENV, __kv: kv });
+  for (let i = 0; i < 6; i++) await run(kv);
+  const st = await V.officeState(kv, ENV);
+  const d = st.pr.drafts[0];
+  assert.equal(d.status, 'dropped', `直しても届かなかった案は送らない：${d.status}`);
+  assert.equal(d.revisions, 2);
+  assert.equal(st.pr.counts.approval, 0);
+});
+
+test('予算：同時に進めても、月の上限を超えない（同時に進めている工程の見込みを足して確かめる）', async () => {
+  mock = fetchMock();
+  slowAndPr(mock, { ms: 50 });
+  const kv = memoryKv();
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 997.2);
+  const base = (id, step) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic' } });
+  await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find'), base('c', 'find')]);
+  for (let i = 0; i < 3; i++) await run(kv);
+  const s = await spent(kv);
+  assert.ok(s.month <= 1000, `今月 ${s.month}円（上限1,000円）`);
 });
