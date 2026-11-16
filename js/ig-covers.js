@@ -137,7 +137,7 @@
     ctx.textAlign = 'left';
   }
 
-  // 文字の左右に細い線（「— 眼科医くまの —」のような見出し）
+  // 文字の左右に細い線（「— サングラスくまの —」のような見出し）
   function linedText(ctx, text, y, font, color, lineColor, gap, lineLen) {
     ctx.font = font;
     var tw = ctx.measureText(text).width;
@@ -563,7 +563,7 @@
       var g = ctx.createRadialGradient(W * 0.45, H * 0.4, 100, W * 0.5, H * 0.5, W);
       g.addColorStop(0, '#2E2C29'); g.addColorStop(1, '#171615');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      // 吹き出しの枠に「眼科医くまの」
+      // 吹き出しの枠に「サングラスくまの」
       ctx.font = f(44, 800);
       var kw = ctx.measureText(K.ACCOUNT.name + 'の').width + 64;
       ctx.strokeStyle = '#FFF'; ctx.lineWidth = 3;

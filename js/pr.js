@@ -76,7 +76,7 @@
   // 使うのは、実在する投稿のURLと、確認できた投稿の文章だけ。文章のない投稿には作らない。送信はしない（社長がInstagramで行う）
   var MAX_REV = 2;
   var running = null; // 実行中の記録
-  // 眼科医くまの今のテーマ：今紹介している商品（採用した商品）・投稿セットの企画・広げるの起点（固定のジャンルにしない）
+  // サングラスくまの今のテーマ：今紹介している商品（採用した商品）・投稿セットの企画・広げるの起点（固定のジャンルにしない）
   function currentThemes() {
     var out = [];
     var add = function (t) { t = String(t || '').replace(/[【\[].*?[】\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30); if (t && out.indexOf(t) === -1) out.push(t); };

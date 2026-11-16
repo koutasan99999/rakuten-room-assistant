@@ -52,10 +52,10 @@
   // 楽天ROOMに全部登録するまでは「紹介したものは楽天ROOMにまとめています」と書かない（事実と違うため）
   function captionOf(set) {
     var c = set.captionEdit || (set.copy && set.copy.caption) || '';
-    if (!allRoom(set)) c = c.replace(/紹介したものは楽天ROOM(の「[^」]*」)?にまとめています。/, '眼科医くまの楽天ROOMは、');
+    if (!allRoom(set)) c = c.replace(/紹介したものは楽天ROOM(の「[^」]*」)?にまとめています。/, 'サングラスくまの楽天ROOMは、');
     return c;
   }
-  function ctaOf(set) { return allRoom(set) ? window.IgRender.CTA_MESSAGES[0] : '眼科医くまの\n楽天ROOMは\nプロフィールのリンクから'; }
+  function ctaOf(set) { return allRoom(set) ? window.IgRender.CTA_MESSAGES[0] : 'サングラスくまの\n楽天ROOMは\nプロフィールのリンクから'; }
 
   // 品質確認（画面側）：サーバーの確認に、文章とROOMの確認を足す
   function issuesOf(set) {

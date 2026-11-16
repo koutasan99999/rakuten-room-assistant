@@ -137,7 +137,7 @@ test('キャプション：本文→ROOM誘導→URL→アフィリエイト表�
   assert.equal(new Set(tags).size, tags.length);
   assert.ok(tags.every((t) => /^#[^#\s]+$/.test(t)), tags.join(' '));
   assert.ok(!tags.includes('#a/b'));
-  for (const t of ['#出産祝い', '#出産祝いギフト', '#眼科医くま']) assert.ok(tags.includes(t), t);
+  for (const t of ['#出産祝い', '#出産祝いギフト', '#サングラスくま']) assert.ok(tags.includes(t), t);
   assert.ok(!tags.includes('#防災'));
   assert.equal(data.items[0].memo, 'ブランド込みで贈るならこっち。'); // まとめで作った一言メモを優先
   // AIが失敗しても、予備の本文＋ROOM誘導・URL・表記・ハッシュタグ
@@ -148,13 +148,13 @@ test('キャプション：本文→ROOM誘導→URL→アフィリエイト表�
   assert.ok(tagsOf(fb.caption).length >= 2 && tagsOf(fb.caption).length <= 5);
 });
 
-test('ハッシュタグ：テーマごとに中身が変わり、5個まで（大きなカテゴリ1・テーマ3・#眼科医くま1）', () => {
+test('ハッシュタグ：テーマごとに中身が変わり、5個まで（大きなカテゴリ1・テーマ3・#サングラスくま1）', () => {
   const bousai = buildHashtags({ topic: '防災グッズ、まずこれ買っとけ', genre: '防災グッズ', postType: 'まずこれ買っとけ', aiTags: ['#停電対策', '#防災備蓄'] });
   const kosui = buildHashtags({ topic: '香水初心者の最初の3本', genre: '香り・美容' });
   for (const tags of [bousai, kosui, buildHashtags({ topic: 'なにか' })]) {
     assert.ok(tags.length >= 2 && tags.length <= 5, tags.join(' '));
     assert.equal(new Set(tags).size, tags.length);
-    assert.equal(tags[tags.length - 1], '#眼科医くま');
+    assert.equal(tags[tags.length - 1], '#サングラスくま');
     assert.ok(!tags.includes('#買ってよかった'));
   }
   assert.equal(bousai[0], '#防災');
@@ -165,7 +165,7 @@ test('ハッシュタグ：テーマごとに中身が変わり、5個まで（�
   assert.ok(!kosui.includes('#防災') && !kosui.includes('#便利グッズ'));
   // AIのタグが多すぎても5個まで、アカウントのタグは残る
   const many = buildHashtags({ topic: '防災', aiTags: Array.from({ length: 30 }, (_, i) => `#タグ${i}`) });
-  assert.ok(many.length <= 5 && many.includes('#眼科医くま'));
+  assert.ok(many.length <= 5 && many.includes('#サングラスくま'));
 });
 
 test('「まずこれ買っとけ」型の予備企画は、表紙サブタイトルを3種類から選ぶ', () => {

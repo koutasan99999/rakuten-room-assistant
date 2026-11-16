@@ -10,8 +10,8 @@
   var M = 84; // 外側の余白
 
   var ACCOUNT = {
-    name: '眼科医くま',
-    handle: '@ganka_kuma_'
+    name: 'サングラスくま',
+    handle: '@gla_san_kuma_'
   };
 
   // 投稿全体で統一する色（表紙・誘導はグレージュ、商品カードは薄いグレーで商品を主役に）
