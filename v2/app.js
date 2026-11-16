@@ -268,8 +268,9 @@
     box.appendChild(r);
     var c = el('div', 'card');
     c.appendChild(el('p', 'field', 'AIの費用（実測）'));
-    [['今日（自律運営）', yen(m.spent.dayAuto) + ' ／ 上限 ' + yen(m.limits.dayAuto)], ['今月（全体）', yen(m.spent.month) + ' ／ 上限 ' + yen(m.limits.month)], ['今月の画像', yen(m.image.month) + ' ／ 上限 ' + yen(m.imageLimits.month) + '（今日 ' + yen(m.image.dayYen) + ' ／ 目安 ' + yen(m.imageToday) + '）']].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); c.appendChild(p); });
-    c.appendChild(el('p', 'hint', '画像の枚数は社員が判断します。月200円の残りを月末までに配分した目安と、ほかの工程に残す100円を守ります'));
+    var inTrial = state.trial && state.trial.active;
+    [['今日（自律運営）', yen(m.spent.dayAuto) + (inTrial ? '（試験運用中は1日の上限なし）' : ' ／ 上限 ' + yen(m.limits.dayAuto))], ['今月（全体）', yen(m.spent.month) + ' ／ 上限 ' + yen(m.limits.month)], ['今月の画像', yen(m.image.month) + (inTrial ? '（試験運用中は画像の上限なし）' : ' ／ 上限 ' + yen(m.imageLimits.month) + '（今日 ' + yen(m.image.dayYen) + ' ／ 目安 ' + yen(m.imageToday) + '）')]].forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); c.appendChild(p); });
+    c.appendChild(el('p', 'hint', inTrial ? '試験運用中は、試験期間の合計1,000円と今月の合計1,000円の範囲で、画像の枚数とタイミングを社員が判断します' : '画像の枚数は社員が判断します。月200円の残りを月末までに配分した目安と、ほかの工程に残す100円を守ります'));
     box.appendChild(c);
     var s = el('div', 'card');
     s.appendChild(el('p', 'field', '売上（' + m.month.replace('-', '年') + '月・楽天アフィリエイトの報酬）'));
