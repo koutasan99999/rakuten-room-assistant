@@ -281,3 +281,20 @@ test('画像以外ができた制作物は「画像待ちの制作物」とし�
   assert.ok(s.band && s.products.every((p) => p.band), '価格帯の目安');
   assert.equal(V.bandOf(2500), '手頃な高コスパ'); assert.equal(V.bandOf(25000), '高級・特別なギフト');
 });
+
+test('完成品ページ：Instagramの画像の材料（短い名前・商品番号）を渡し、楽天ROOMに登録した記録を残せる（社長の申告）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const E = { ...ENV, __kv: kv };
+  await untilDelivered(kv);
+  const id = (await V.officeState(kv, ENV)).sets[0].id;
+  let s = (await call(v2api, { action: 'set', id }, undefined, E)).data.set;
+  assert.ok(s.products.every((p) => p.code && p.shortName), '商品番号と短い名前');
+  assert.ok(s.slides && s.slides.topic);
+  await call(v2api, { action: 'room', id, code: s.products[0].code }, undefined, E);
+  s = (await call(v2api, { action: 'set', id }, undefined, E)).data.set;
+  assert.equal(s.products[0].roomDone, true); assert.equal(s.products[1].roomDone, false);
+  assert.ok((await V.officeState(kv, ENV)).events.some((e) => /楽天ROOMに登録した（社長の申告）/.test(e.text)));
+  await call(v2api, { action: 'room', id, code: s.products[0].code, done: false }, undefined, E);
+  assert.equal((await call(v2api, { action: 'set', id }, undefined, E)).data.set.products[0].roomDone, false, '取り消せる');
+});

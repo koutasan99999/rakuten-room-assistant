@@ -126,3 +126,6 @@ input[type=number], input[type=password] { width: 100%; font: inherit; border: 1
 .plain { margin: 4px 0; padding-left: 1.3em; }
 .plain li { margin: 4px 0; }
 input[type=text], input[type=url] { width: 100%; font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 6px 0; background: var(--bg); color: var(--ink); }
+
+.slides { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scroll-snap-type: x mandatory; }
+.slides img { width: 46%; flex: none; border-radius: 8px; border: 1px solid var(--line); scroll-snap-align: start; aspect-ratio: 4 / 5; object-fit: cover; background: #fff; }
