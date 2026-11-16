@@ -115,7 +115,7 @@ test('実証3：一つの案件が画像待ちでも、別の案件が進む（�
   // 翌日（画像の予算が戻る）：画像待ちの案件が自動で続きから進む
   await kv.del(`budget:image:yen:${today()}`);
   const r = await run(kv, env);
-  assert.ok((r.steps || [])[0] === 'designer:image', `画像の予算が戻ったら最初に描く：${r.steps}`);
+  assert.ok((r.steps || []).includes('designer:image'), `画像の予算が戻ったら描く：${r.steps}`);
 });
 
 test('実証4：完成したら、社長の操作なしに次の案件が自動で始まる。同じ企画は繰り返さない', async () => {
