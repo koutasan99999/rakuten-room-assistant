@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { memoryKv } from '../lib/kv.js';
 import { withUsage } from '../lib/ai-usage.js';
 import * as C from '../lib/kuma-cover.js';
-import { imageSpent, imageCheck, spent } from '../lib/budget.js';
+import { imageSpent, imageCheck, spent, imageLimits, imageDayAllowance } from '../lib/budget.js';
 import { MASTERS } from '../lib/kuma-master-manifest.js';
 import { tick, WORKER_KEYS, coverWaitList, MAX_COVER_ROUNDS } from '../lib/worker.js';
 import * as S from '../lib/store.js';
@@ -80,20 +80,24 @@ test('画像の生成：マスター画像（指紋を確認）と商品写真�
   assert.equal((await spent(kv)).dayAuto, 0, '自律運営の1日25円（文章のAI）には入れない');
 });
 
-test('画像の生成：1日2枚・月200円・全体の月1,000円を超えるなら呼ばない。マスター画像が差し替えられていたら呼ばない（別のくまで代用しない）', async () => {
+test('画像の生成（2026-11-16）：1日の枚数は固定しない。月200円の残りを月末まで配分した今日の目安・月200円・全体の月1,000円（ほかの工程に100円を残す）を超えるなら呼ばない。マスター画像が差し替えられていたら呼ばない', async () => {
   const kv = memoryKv();
   let calls = fake();
-  await C.imageStep({ kv, env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM });
-  await C.imageStep({ kv, env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM });
-  const third = await C.imageStep({ kv, env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM });
-  assert.match(third.skip, /今日の画像の上限（2枚）/);
-  assert.equal(calls.images.length, 2);
+  let last = null;
+  for (let i = 0; i < 12; i++) { last = await C.imageStep({ kv, env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM }); if (last.skip) break; }
+  assert.match(last.skip, /今日の画像の目安（[0-9.]+円：月の残りを月末まで配分）/);
+  assert.ok(calls.images.length >= 1, '固定の1日1枚ではなく、目安の範囲で描ける');
+  const sp = await imageSpent(kv);
+  assert.ok(sp.month <= 200 && sp.dayYen <= imageDayAllowance(imageLimits(ENV), sp) + 20, '今日の目安を大きく超えない');
+  const kvR = memoryKv();
+  await kvR.incrFloat(`budget:month:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7)}`, 890);
+  assert.match((await imageCheck(kvR, ENV)).reason, /ほかの工程に100円を残す/);
   const kv2 = memoryKv();
   await kv2.incrFloat(`budget:image:month:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7)}`, 190);
   assert.match((await imageCheck(kv2, ENV)).reason, /今月の画像の費用が上限（200円）/);
   const kv3 = memoryKv();
   await kv3.incrFloat(`budget:month:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7)}`, 990);
-  assert.match((await imageCheck(kv3, ENV)).reason, /全体の上限（1000円）/);
+  assert.match((await imageCheck(kv3, ENV)).reason, /全体の上限（1000円）に近い/);
   globalThis.fetch = original; calls = fake({ tamper: true });
   const t = await C.imageStep({ kv: memoryKv(), env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM });
   assert.match(t.skip, /マスター画像.*問題/);
@@ -171,7 +175,7 @@ test('表紙画像待ちの投稿セットは、次の定期実行で表紙画�
   assert.equal(first.prod.result, 'cover_wait');
   globalThis.fetch = original; original = null;
   // 翌日（画像の1日の上限が戻ったあと）を想定：画像の枚数を数え直す
-  await kv.del(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`);
+  await kv.del(`budget:image:yen:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`);
   const calls = fake();
   const steps = [];
   for (let i = 0; i < 6; i++) {
@@ -200,11 +204,11 @@ test('表紙画像待ち：使い方を商品データで確かめられない�
 
 test('制作ライン：画像の上限に達していたら、画像を作らずに「表紙画像待ち」で保存する（理由を残す）', async () => {
   const kv = memoryKv();
-  await kv.incr(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`); await kv.incr(`budget:image:count:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`);
+  await kv.incrFloat(`budget:image:yen:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)}`, 500);
   const { steps, calls, prod } = await runCover(kv);
   assert.deepEqual(steps, ['scene:true', 'image:true:done']);
   assert.equal(calls.images.length, 0);
-  assert.equal(prod.result, 'cover_wait'); assert.match(prod.why, /今日の画像の上限/);
+  assert.equal(prod.result, 'cover_wait'); assert.match(prod.why, /今日の画像の目安/);
   assert.equal((await coverWaitList(kv)).length, 1);
 });
 
@@ -224,9 +228,9 @@ test('制作ライン：画像生成が時間切れなら、作り直しは品�
   assert.equal((await coverWaitList(kv2))[0].set.id, SET.id, '文章・商品は表紙画像待ちとして保存');
 });
 
-test('初回の本番検証の初期値：画像は1日1枚、自動の作り直しなし（1回の仕事でも、あとからでも作り直さない）', async () => {
+test('初期値：画像の自動の作り直しなし（1回の仕事でも、あとからでも作り直さない）・1日の枚数は固定しない', async () => {
   const { imageLimits } = await import('../lib/budget.js');
-  assert.equal(imageLimits({}).dayCount, 1); assert.equal(imageLimits({}).month, 200);
+  assert.equal(imageLimits({}).dayCount, undefined, '1日の枚数は固定しない（2026-11-16）'); assert.equal(imageLimits({}).month, 200); assert.equal(imageLimits({}).reserve, 100);
   assert.equal(C.imageTries({}), 1);
   const kv = memoryKv();
   const base = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app' };
@@ -242,5 +246,13 @@ test('初回の本番検証の初期値：画像は1日1枚、自動の作り直
   assert.equal(prod.result, 'cover_wait'); assert.match(prod.why, /保留/);
   assert.equal((await coverWaitList(kv)).length, 0, 'あとでの作り直しの一覧にも入れない');
   assert.equal(await S.get(kv, SET.id), null, '社長の確認待ちには入れない');
-  assert.match((await imageCheck(kv, base)).reason, /今日の画像の上限（1枚）/);
+  // 2026-11-16：1日の枚数は固定しない。作り直しをしないことは、画像の呼び出しが1回だけであることで確かめている
+});
+
+test('場面の根拠（2026-11-16）：AIが根拠の言葉を言い換えても、商品データにある言葉が使い方に含まれていれば、その言葉を根拠にする。商品データに無い使い方は通さない', () => {
+  const item = { name: '高圧洗浄機 コードレス', caption: 'ペットボトル給水に対応。バケツからも給水できる。' };
+  const ok = C.pickScene([{ usage: 'ベランダでペットボトル給水しながら泥汚れを洗い流す', usageQuote: 'ペットボトルでの給水', place: 'ベランダ', action: '洗っている', outfit: 'パーカー' }], item, []);
+  assert.ok(ok.scene, ok.notes.join('／')); assert.equal(ok.scene.usageQuote, 'ペットボトル給水');
+  const ng = C.pickScene([{ usage: '車を丸ごと洗う', usageQuote: '洗車に最適', place: '駐車場', action: '洗車', outfit: 'パーカー' }], item, []);
+  assert.equal(ng.scene, null);
 });
