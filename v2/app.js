@@ -174,6 +174,18 @@
       var fig = el('figure', 'cover'); var img = el('img'); img.src = '..' + s.image.url; img.alt = '表紙画像'; fig.appendChild(img); fig.appendChild(el('figcaption', null, s.image.label)); c.appendChild(fig);
       box.appendChild(c);
       if (s.order && s.order.length) { var o = el('div', 'card'); o.appendChild(el('p', 'field', '推奨の投稿順')); o.appendChild(list(s.order, true)); box.appendChild(o); }
+      var ig = el('div', 'card');
+      ig.appendChild(el('p', 'field', 'Instagramに貼る画像'));
+      ig.appendChild(el('p', 'hint', '表紙（サングラスくま・AI生成イメージ）→ 商品カード → 楽天ROOMへの案内の順です。この端末で作ります（費用はかかりません）'));
+      var strip = el('div', 'slides'); ig.appendChild(strip);
+      var igStatus = el('p', 'hint', '画像を作っています…'); ig.appendChild(igStatus);
+      box.appendChild(ig);
+      if (window.V2Ig) window.V2Ig.buildSlides(s).then(function (out) {
+        igStatus.textContent = out.files.length + '枚' + (out.missing ? '（商品写真を読み込めなかった商品が' + out.missing + '点あります）' : '') + (out.cover ? '' : '（表紙画像を読み込めなかったため、表紙は文字だけです）');
+        out.urls.forEach(function (u, i) { var im = el('img'); im.src = u; im.alt = out.files[i].name; strip.appendChild(im); });
+        ig.appendChild(btn('画像をまとめて保存（' + out.files.length + '枚）', 'btn', function () { window.V2Ig.saveFiles(out.files); }));
+        ig.appendChild(el('p', 'hint', 'iPhoneでは共有の画面で「画像を保存」を選ぶと、写真に入ります'));
+      }, function (e) { igStatus.textContent = '画像を作れませんでした（' + e.message + '）'; });
       var cap = el('div', 'card'); cap.appendChild(el('p', 'field', 'Instagramのキャプション')); cap.appendChild(el('pre', 'text', s.caption)); cap.appendChild(copyBtn('キャプションをコピー', s.caption)); box.appendChild(cap);
       if (s.hashtags && s.hashtags.length) { var h = el('div', 'card'); h.appendChild(el('p', 'field', 'ハッシュタグ（' + s.hashtags.length + '個）')); var ht = s.hashtags.join(' '); h.appendChild(el('pre', 'text', ht)); h.appendChild(copyBtn('ハッシュタグをコピー', ht)); box.appendChild(h); }
       s.products.forEach(function (p, i) {
@@ -182,7 +194,15 @@
         var pt = el('div'); pt.appendChild(el('p', 'p-role', p.role || (i ? '代替・比較' : '本命'))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
         if (p.check) pc.appendChild(el('p', 'hint ' + (p.unverified ? 'warn' : 'ok'), p.check));
         var a = el('a', 'link', '楽天の商品ページを開く'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener'; pc.appendChild(a);
-        pc.appendChild(el('p', 'field', '楽天ROOMの紹介文')); pc.appendChild(el('pre', 'text', p.room)); pc.appendChild(copyBtn('紹介文をコピー', p.room));
+        pc.appendChild(el('p', 'field', '楽天ROOMの紹介文')); pc.appendChild(el('pre', 'text', p.room));
+        var roomText = p.room + (p.tags && p.tags.length ? '\n\n' + p.tags.join(' ') : '');
+        if (p.code && window.V2Ig) {
+          pc.appendChild(el('p', 'hint', p.roomDone ? '楽天ROOMに登録済み（社長の記録）' : '① 紹介文をコピー → ② 楽天ROOMで貼り付けて登録 → ③「ROOMに登録した」を押す'));
+          var rb = el('div', 'btns');
+          rb.appendChild(btn('紹介文をコピーしてROOMを開く', 'btn small', function () { var win = window.open(window.V2Ig.roomUrl(p.code), '_blank'); navigator.clipboard.writeText(roomText).catch(function () {}); if (!win) location.href = window.V2Ig.roomUrl(p.code); }));
+          rb.appendChild(btn(p.roomDone ? '登録を取り消す（記録だけ）' : 'ROOMに登録した', p.roomDone ? 'btn ghost' : 'btn', function () { api({ action: 'room', id: s.id, code: p.code, done: !p.roomDone }).then(function () { showSet(s.id); }); }));
+          pc.appendChild(rb);
+        } else pc.appendChild(copyBtn('紹介文をコピー', roomText));
         box.appendChild(pc);
       });
       if (s.compare && s.compare.length) { var cp = el('div', 'card'); cp.appendChild(el('p', 'field', '本命と代替の比較')); s.compare.forEach(function (x) { cp.appendChild(el('p', '', x.name + '：' + Number(x.price).toLocaleString('ja-JP') + '円（' + x.vsHero + '）')); }); cp.appendChild(el('p', 'hint', (s.compare[0] || {}).note || '')); box.appendChild(cp); }

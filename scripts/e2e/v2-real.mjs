@@ -12,6 +12,7 @@ import * as V from '../../lib/v2/company.js';
 import { spent } from '../../lib/budget.js';
 import v2api from '../../server/v2.js';
 import media from '../../server/media.js';
+import image from '../../server/image.js';
 
 const items = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const placeholder = fs.readFileSync(process.argv[3]).toString('base64');
@@ -71,6 +72,7 @@ if (process.env.SERVE) {
     const u = new URL(req.url, 'http://x');
     if (u.pathname === '/api/v2') { let b = ''; req.on('data', (c) => { b += c; }); await new Promise((r) => req.on('end', r)); req.body = JSON.parse(b || '{}'); return v2api(req, res, env); }
     if (u.pathname === '/api/media') return media(req, res, env);
+    if (u.pathname === '/api/image') return image(req, res, { ...env, APP_PASSCODE: 'local', OPENAI_API_KEY: env.OPENAI_API_KEY || 'x' });
     let p = path.join(root, decodeURIComponent(u.pathname));
     if (!p.startsWith(root)) { res.statusCode = 403; return res.end(); }
     if (p.endsWith('/')) p += 'index.html';

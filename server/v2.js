@@ -21,6 +21,7 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'state') return send(res, 200, { configured: true, ...(await V.officeState(kv, env)) });
     if (action === 'set') { const s = await V.getSet(kv, body.id); return s ? send(res, 200, { set: s }) : send(res, 404, { error: 'その完成品はありません' }); }
     if (action === 'decide') return send(res, 200, await V.decide(kv, { id: String(body.id || ''), action: String(body.decision || ''), note: body.note }));
+    if (action === 'room') return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
     if (action === 'request') return send(res, 200, { requests: await V.addRequest(kv, { text: body.text, url: body.url }) });
     if (action === 'sales') return send(res, 200, { sales: await V.setSales(kv, { month: body.month, yen: body.yen }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });
