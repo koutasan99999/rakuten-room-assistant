@@ -254,6 +254,7 @@
     if (!s) return out;
     if (s.waiting) out.push({ key: 'sets', title: '完成品の確認（' + s.waiting + '件）', text: '採用・却下・修正依頼を選んでください。確認待ちが5件になると、新しい案件は始めません。' });
     if (s.pr && s.pr.counts.approval) out.push({ key: 'pr', title: 'Instagramのコメント案の承認（' + s.pr.counts.approval + '件）', text: '広報が作り、監査が合格にした案です。送るかどうかは社長が決め、送るときは社長がInstagramで送ります（アプリは送りません）。' });
+    if (s.pr && !s.pr.access.fb) out.push({ key: 'prfb', title: '広報が投稿を自分で集めるための設定（1回だけ）', text: 'MetaのFacebookログイン方式でInstagramの公式APIを使えるようにすると、広報が関連アカウントの直近の投稿を毎日自分で集め、コメント案まで作ります。社長にしかできないのは、Metaの開発者ページでのログインと権限の承認です。発行された IG_FB_ACCESS_TOKEN と IG_FB_USER_ID は Vercel の環境変数に入れます（画面・会話には貼らないでください）。費用はかかりません。コメントの送信はこの設定でもできません。' });
     if (!s.active) out.push({ key: 'switch', title: '会社を2.0に切り替える', text: '切り替えると、15分ごとの定期実行をすべて2.0が使います（1.0は止まります。データは消しません。いつでも戻せます）。' });
     return out;
   }
@@ -408,10 +409,13 @@
     var P = state.pr; if (!P) { box.appendChild(el('p', 'card hint', '読み込めませんでした')); return; }
     var info = el('div', 'card');
     info.appendChild(el('p', 'field', '広報の交流（常設の仕事）'));
-    info.appendChild(el('p', 'hint', '広報が交流候補の投稿の文章を読んでコメント案を作り、監査が採点します。合格した案だけがここに届きます。送るかどうかは社長が決め、送るときは社長がInstagramで送ります。アプリはコメント・いいね・フォローを送りません（Instagramの公式APIに、他の人の投稿へのコメントの機能はありません）。'));
+    info.appendChild(el('p', 'hint', '広報は、公式サイトから関連アカウントを自分で探し、投稿の文章を読めたものにだけコメント案を作ります。Instagramの公式APIには、他の人の投稿にコメント・いいね・フォローする機能が無いため、アプリからは送りません（非公式な方法・ブラウザの自動操作でも送りません）。「送った」と表示するのは、Instagramで確認できたものと社長の記録だけです。'));
     info.appendChild(el('p', 'hint', '決まり：1日' + P.access.limits.dayDrafts + '件まで／同じアカウントには' + P.access.limits.handleDays + '日に1件まで／投稿の文章に無いことは書かない／宣伝・定型の褒め言葉・絵文字は監査とコードで落とす'));
     info.appendChild(el('p', 'hint ' + (P.access.fb ? '' : 'warn'), P.access.fb ? '公式API（Facebookログイン方式）：設定済み。関連アカウントの直近の投稿を1日1回集めます' : '公式API（Facebookログイン方式）：未設定。投稿を自動では集められないため、交流候補は社長が追加した投稿だけです'));
     box.appendChild(info);
+    box.appendChild(prHistory(P));
+    box.appendChild(prReach(P));
+    box.appendChild(el('h2', 'h2', 'コメント案（まだ送っていない）'));
     var groups = [['approval', '社長の承認待ち'], ['approved', '承認済み（Instagramで送ったら記録）'], ['audit', '監査の採点待ち'], ['revise', '広報が直している'], ['sent', '送った（社長の申告）'], ['failed', '送れなかった（社長の申告）'], ['rejected', '見送り'], ['dropped', '監査で不合格（送らない）']];
     groups.forEach(function (g) {
       var ds = P.drafts.filter(function (d) { return d.status === g[0]; });
@@ -435,6 +439,55 @@
     ac.appendChild(el('p', 'hint', P.sitesAt ? '最後に調べた日：' + day(P.sitesAt) + '（7日ごと・費用0円）' : 'まだ調べていません（次の定期実行で広報が調べます）'));
     P.accounts.forEach(function (a) { var p = el('p', 'hint'); var l = el('a', 'link', '@' + a.handle); l.href = 'https://www.instagram.com/' + a.handle + '/'; l.target = '_blank'; l.rel = 'noopener'; p.appendChild(l); p.appendChild(document.createTextNode('　' + a.brand + '（' + a.from + '）')); ac.appendChild(p); });
     box.appendChild(ac);
+  }
+  // 実際にInstagramへ送ったコメント（根拠つき）と、社長の事後確認
+  function prHistory(P) {
+    var c = el('div', 'card');
+    var H = P.history || [];
+    var sent = H.filter(function (e) { return e.result === 'sent'; });
+    var flagged = H.filter(function (e) { return e.review && e.review.status === 'flagged'; }).length;
+    var unchecked = sent.filter(function (e) { return !e.review || e.review.status === 'unchecked'; }).length;
+    c.appendChild(el('p', 'field', '交流の履歴（実際にInstagramへ送ったコメント）'));
+    c.appendChild(el('p', 'hint', '送信済み ' + sent.length + '件・送れなかった ' + (H.length - sent.length) + '件／社長が未確認 ' + unchecked + '件' + (flagged ? '・不適切の印 ' + flagged + '件' : '') + '。記録の無い送信・失敗は確認できません（推測で埋めません）。'));
+    if (!H.length) { c.appendChild(el('p', 'hint', 'まだ送信の記録はありません。')); return c; }
+    var d = el('details'); d.open = unchecked > 0 && unchecked <= 5;
+    d.appendChild(el('summary', null, '履歴を見る（' + H.length + '件）'));
+    H.forEach(function (e) {
+      var r = el('div', 'pr-card');
+      var top = el('p', 'hint');
+      top.appendChild(el('b', null, '@' + (e.handle || '不明')));
+      top.appendChild(document.createTextNode('　' + (e.sentAt ? day(e.sentAt) + ' ' + hm(e.sentAt) : '送信日時の記録なし') + '　' + (e.result === 'sent' ? '送信成功' : '送れなかった')));
+      r.appendChild(top);
+      r.appendChild(el('p', 'pr-comment', e.text));
+      r.appendChild(el('p', 'hint', '根拠：' + e.evidence + (e.by ? '／実行：' + e.by : '／実行：記録なし')));
+      r.appendChild(el('p', 'hint' + (e.review.status === 'flagged' ? ' warn' : ''), e.reviewLabel + (e.review.note ? '（' + e.review.note + '）' : '')));
+      var row = el('div', 'p-row');
+      var a = el('a', 'btn small', 'Instagramで投稿を開く'); a.href = e.postUrl; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a);
+      var rv = function (st, label, cls) { return btn(label, cls || 'btn ghost', function () { var note = st === 'flagged' ? (prompt('どこが不適切か（任意）') || '') : ''; api({ action: 'commentReview', id: e.id, status: st, note: note }).then(function (x) { if (x.status !== 200) alert((x.data && x.data.error) || 'できませんでした'); refresh().then(renderPr); }); }); };
+      if (e.result === 'sent' && e.review.status !== 'deleted') {
+        if (e.review.status !== 'ok') row.appendChild(rv('ok', '問題なし'));
+        if (e.review.status !== 'flagged') row.appendChild(rv('flagged', '不適切'));
+        else row.appendChild(rv('deleted', 'Instagramで削除した'));
+      }
+      r.appendChild(row);
+      if (e.review.status === 'flagged') r.appendChild(el('p', 'hint warn', '削除のしかた：「Instagramで投稿を開く」→ 自分のコメントを左にスワイプ（iPhone）→ ゴミ箱のマーク。アプリからは削除できません（公式APIで消せるのは自分の投稿のコメントだけ）。消したら「Instagramで削除した」を押してください。'));
+      d.appendChild(r);
+    });
+    c.appendChild(d);
+    return c;
+  }
+  // 広報が自分で見つけた交流先の実数と、送信できる方法の有無
+  function prReach(P) {
+    var c = el('div', 'card');
+    c.appendChild(el('p', 'field', '広報が自分で見つけた交流先'));
+    var sites = P.sites || [];
+    var api2 = P.targets.filter(function (t) { return t.source === '公式APIで取得'; }).length;
+    c.appendChild(el('p', 'hint', '関連アカウント ' + P.accounts.length + '件（公式サイト ' + sites.length + '件を調べ、' + sites.filter(function (x) { return x.ok; }).length + '件でInstagramへのリンクを確認）／公式APIで集めた投稿 ' + api2 + '件'));
+    var leads = P.leads || [];
+    if (leads.length) c.appendChild(el('p', 'hint', '企画・バイヤーへ引き継いだ手がかり ' + leads.length + '件（使った ' + leads.filter(function (l) { return l.used; }).length + '件）：' + leads.slice(0, 6).map(function (l) { return l.topic + (l.used ? '（企画「' + l.usedFor + '」で使用）' : ''); }).join('・')));
+    c.appendChild(el('p', 'hint ' + (P.access.fb ? '' : 'warn'), P.access.fb ? '投稿の収集：公式API（Facebookログイン方式）で1日1回' : '投稿の収集：未設定。投稿の文章を読めないため、広報はコメント案を作れません（内容を推測して作らないため）。「対応」タブの設定をすると、関連アカウントの投稿を自分で集めます。'));
+    c.appendChild(el('p', 'hint', '送信できる方法：他の人の投稿へのコメントは、公式に認められた自動の方法がありません（社長がInstagramで送るだけ）。自分の投稿へのコメントへの返信と、@サングラスくまが付いた投稿への返信は公式APIで送れますが、Instagramのトークン（' + (P.access.ig ? '設定済み' : '未設定') + '）とコメント管理の権限が必要です（未実装）。'));
+    return c;
   }
   function prCard(d) {
     var c = el('div', 'card pr-card');

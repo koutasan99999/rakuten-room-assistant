@@ -1,3 +1,4 @@
+import { OFFICIAL_SITES } from '../lib/ig-discovery.js';
 // サングラスくま株式会社 2.0（2026-11-16 24時間の自律運営）：社長の指示なしで仕事を始め、7人が工程ごとに引き継ぎ、
 //   複数の案件を並行して進め、投稿できる完成品を社長に納品する。費用の上限は超えない。画面の材料は実際の記録だけ
 import { test, afterEach } from 'node:test';
@@ -440,7 +441,7 @@ test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完
   slowAndPr(mock, { ms: 5 });
   const kv = memoryKv();
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 990); // 新しい案件は始めない
-  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys(OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const items = [0, 1, 2].map((n) => ({ name: `キッチン 道具${n}`, caption: '水受けトレー付きで、水滴がたれにくい。', price: 1000 + n, role: n ? '代替・比較' : '本命', code: `c${n}` }));
   const raw = { title: '台所の工夫', items, copy: { items: items.map(() => ({ shortName: '道具', subline: '水滴がたれにくい', memo: 'この一台が変えます', factOnly: true })) } };
   await kv.setJson(V.V2_KEYS.sets, [{ id: 'm1', title: '台所の工夫', status: 'waiting', deliveredAt: new Date().toISOString() }]);
