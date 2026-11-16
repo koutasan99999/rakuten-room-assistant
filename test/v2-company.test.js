@@ -312,6 +312,7 @@ function slowAndPr(m, { ms = 150, prPass = true } = {}) {
       await new Promise((r) => setTimeout(r, ms));
       const body = JSON.parse(opts.body);
       const sys = body.messages[0].content;
+      if (sys.includes('「くまの一言メモ」だけを作ります')) return aiReply({ items: [{ n: 1, memo: '水受けトレー付きで、台が濡れにくい。' }, { n: 2, memo: '私も愛用しています。' }, { n: 3, memo: '真夏も涼しい一本。' }] });
       if (sys.includes('営業・交流担当AIです')) {
         const id = (String(body.messages[1].content).match(/投稿 ([A-Za-z0-9_-]+)（P1/) || [])[1];
         return aiReply({ drafts: [{ id, anchor: '朝の通勤', comment: '朝の通勤で使うなら、どの時間帯がいちばん便利ですか', relevance: 70, relevanceWhy: '通勤の道具', follow: 60, followWhy: '生活の道具の投稿' }] });
@@ -432,4 +433,24 @@ test('予算：同時に進めても、月の上限を超えない（同時に�
   for (let i = 0; i < 3; i++) await run(kv);
   const s = await spent(kv);
   assert.ok(s.month <= 1000, `今月 ${s.month}円（上限1,000円）`);
+});
+
+test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完成品の、説明文の切れ端の一言を、編集が仕事探しで書き直す。体験談・データに無い性能は通さない', async () => {
+  mock = fetchMock();
+  slowAndPr(mock, { ms: 5 });
+  const kv = memoryKv();
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 990); // 新しい案件は始めない
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
+  const items = [0, 1, 2].map((n) => ({ name: `キッチン 道具${n}`, caption: '水受けトレー付きで、水滴がたれにくい。', price: 1000 + n, role: n ? '代替・比較' : '本命', code: `c${n}` }));
+  const raw = { title: '台所の工夫', items, copy: { items: items.map(() => ({ shortName: '道具', subline: '水滴がたれにくい', memo: 'この一台が変えます', factOnly: true })) } };
+  await kv.setJson(V.V2_KEYS.sets, [{ id: 'm1', title: '台所の工夫', status: 'waiting', deliveredAt: new Date().toISOString() }]);
+  await kv.setJson(V.V2_KEYS.set('m1'), { id: 'm1', title: '台所の工夫', status: 'waiting', deliveredAt: new Date().toISOString(), products: items.map((it) => ({ ...it, short: '道具' })), raw });
+  const r = await run(kv);
+  assert.ok((r.steps || []).includes('editor:memo:done'), `編集が一言メモの書き直しを見つけた：${r.steps}`);
+  const set = await V.getSet(kv, 'm1');
+  assert.equal(set.products[0].memo, '水受けトレー付きで、台が濡れにくい。');
+  assert.equal(set.products[1].memo, '本命と比べて、違いを見てから選びたい候補。', '体験談は決まった一言に置き換える');
+  assert.ok(!/涼しい/.test(set.products[2].memo), 'データに無い性能は通さない');
+  const r2 = await run(kv);
+  assert.ok(!(r2.steps || []).some((x) => x.startsWith('editor:memo')), '書き直したものは繰り返さない');
 });
