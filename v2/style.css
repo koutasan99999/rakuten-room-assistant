@@ -129,3 +129,15 @@ input[type=text], input[type=url] { width: 100%; font: inherit; border: 1px soli
 
 .slides { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scroll-snap-type: x mandatory; }
 .slides img { width: 46%; flex: none; border-radius: 8px; border: 1px solid var(--line); scroll-snap-align: start; aspect-ratio: 4 / 5; object-fit: cover; background: #fff; }
+
+.post-img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+.cand { border-top: 1px solid var(--line); padding: 8px 0; }
+.cand summary { cursor: pointer; font-weight: 700; list-style-position: inside; }
+.match { margin: 8px 0; }
+.match img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; background: #fff; }
+.p-name.small { font-size: 13px; }
+.pill.lv-same { color: var(--ok); } .pill.lv-maybe { color: #2f6f9f; } .pill.lv-similar { color: var(--warn); } .pill.lv-none { color: var(--muted); }
+.pill { display: inline-block; font-size: 11px; font-weight: 700; border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; }
+.small-ghost { min-height: 36px; font-size: 13px; margin-top: 8px; }
+input[type=file] { width: 100%; margin: 8px 0; }
+.tabs button { font-size: 12px; }

@@ -4,7 +4,7 @@
   var PASS_KEY = 'room-passcode'; // 1.0と同じ合言葉
   var SEEN_KEY = 'v2-seen-notice';
   var state = null, seenAt = '', openSet = null, tab = 'office';
-  var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', owner: '#c49a00' };
+  var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
   var ST_LABEL = { work: '仕事中', turn: '担当中', handoff: '引き継ぎ中', error: 'エラー', budget: '予算待ち', wait: '画像待ち', idle: '待機' };
   var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち' };
 
@@ -302,12 +302,93 @@
     box.appendChild(s);
   }
 
+  // ---- ポスト：社長が「ただ調べてほしい」スクショを入れる（鑑定が商品の候補を抜き出し、バイヤーが楽天で探す。投稿セットは作らない） ----
+  var postBusy = false, postMsg = '';
+  var LV = { same: '同一商品確認済み', maybe: '同一商品の可能性あり', similar: '類似商品', none: '未特定' };
+  // 端末で縮小してから送る（長い辺1280px・JPEG）
+  function shrink(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1280 / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = function () { reject(new Error('画像を読み込めませんでした')); };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  function renderPost() {
+    var box = $('post'); box.textContent = '';
+    var c = el('div', 'card');
+    c.appendChild(el('p', 'field', '調べてほしいスクショを入れる'));
+    c.appendChild(el('p', 'hint', 'Instagram・ストーリーズ・YouTube・テレビなどのスクショ。鑑定が身につけている物の候補を見つけ、バイヤーが楽天で探します（1枚およそ1〜2円）。人物は画像からは判断しないので、分かればメモに書いてください。'));
+    var fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.id = 'post-file'; c.appendChild(fi);
+    var note = el('input'); note.type = 'text'; note.id = 'post-note'; note.placeholder = 'メモ（任意）：例）紅しょうがの帽子とTシャツ'; c.appendChild(note);
+    var go = btn(postBusy ? '鑑定が調べています（30秒ほど）…' : 'ポストに入れて調べる', 'btn', function () {
+      if (postBusy) return;
+      var f = fi.files && fi.files[0];
+      if (!f) { postMsg = '画像を選んでください'; renderPost(); return; }
+      postBusy = true; postMsg = ''; renderPost();
+      shrink(f).then(function (dataUrl) { return api({ action: 'post', image: dataUrl, note: note.value }); }).then(function (r) {
+        postBusy = false;
+        if (r.status !== 200) postMsg = (r.data && r.data.error) || '調べられませんでした';
+        refresh(); renderPost();
+      }, function (e) { postBusy = false; postMsg = e.message; renderPost(); });
+    });
+    go.disabled = postBusy; c.appendChild(go);
+    if (postMsg) c.appendChild(el('p', 'hint warn', postMsg));
+    box.appendChild(c);
+    var list = el('div'); box.appendChild(list);
+    api({ action: 'posts' }).then(function (r) {
+      var posts = (r.data && r.data.posts) || [];
+      if (!posts.length) { list.appendChild(el('p', 'card hint', 'まだポストに入れたスクショはありません。')); return; }
+      posts.forEach(function (p) { list.appendChild(postCard(p)); });
+    });
+  }
+  function postCard(p) {
+    var c = el('div', 'card post');
+    var head = el('div', 'p-row');
+    var im = el('img', 'post-img'); im.src = '..' + p.image; im.alt = 'スクショ'; head.appendChild(im);
+    var t = el('div');
+    t.appendChild(el('p', 'p-name', p.note ? '社長のメモ：' + p.note : 'メモなし（人物は未確認）'));
+    t.appendChild(el('p', 'hint', day(p.at) + ' ' + hm(p.at) + '・' + ({ running: '調査中', done: '調査済み', error: '止まった' })[p.status] + (p.yen ? '・' + yen(p.yen) : '')));
+    head.appendChild(t); c.appendChild(head);
+    if (p.status === 'error') c.appendChild(el('p', 'hint warn', p.error || '調べられませんでした'));
+    if (p.lookNote) c.appendChild(el('p', 'hint', '鑑定の注意：' + p.lookNote));
+    (p.candidates || []).forEach(function (cd) {
+      var d = el('details', 'cand');
+      var sm = el('summary'); sm.appendChild(el('span', 'pill lv-' + (cd.level || 'none'), LV[cd.level] || '未特定')); sm.appendChild(document.createTextNode(' ' + (cd.who ? cd.who + '：' : '') + cd.category + (cd.color ? '（' + cd.color + '）' : ''))); d.appendChild(sm);
+      var facts = [];
+      if (cd.visibleText) facts.push('読めた文字：' + cd.visibleText);
+      if (cd.logo) facts.push('ロゴ：' + cd.logo);
+      if (cd.print) facts.push('プリント：' + cd.print);
+      if (cd.material) facts.push('素材：' + cd.material);
+      if (cd.features && cd.features.length) facts.push('特徴：' + cd.features.join('・'));
+      facts.forEach(function (x) { d.appendChild(el('p', 'hint', x)); });
+      if (!cd.visibleText) d.appendChild(el('p', 'hint', 'ブランドの文字やロゴが読めないため、同じ商品とは言えません。下は見た目の種類・色で探した似た商品です。'));
+      (cd.matches || []).forEach(function (m) {
+        var row = el('div', 'p-row match');
+        var mi = el('img'); mi.src = m.image; mi.alt = ''; row.appendChild(mi);
+        var mt = el('div'); mt.appendChild(el('p', 'p-name small', m.name.slice(0, 60))); mt.appendChild(el('p', 'hint', Number(m.price).toLocaleString('ja-JP') + '円・' + m.shop + '・' + m.label));
+        mt.appendChild(el('p', 'hint', '根拠：' + m.why));
+        var a = el('a', 'link', '楽天で見る'); a.href = m.url; a.target = '_blank'; a.rel = 'noopener'; mt.appendChild(a);
+        row.appendChild(mt); d.appendChild(row);
+      });
+      if (!(cd.matches || []).length) d.appendChild(el('p', 'hint', '楽天で見つかりませんでした（未特定）'));
+      c.appendChild(d);
+    });
+    c.appendChild(btn('このスクショを消す', 'btn ghost small-ghost', function () { api({ action: 'postDelete', id: p.id }).then(renderPost); }));
+    return c;
+  }
+
   function switchTab(t) {
     tab = t;
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
-    ['office', 'sets', 'todo', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
+    ['office', 'sets', 'todo', 'post', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
-    if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney();
+    if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost();
     window.scrollTo(0, 0);
   }
   Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.addEventListener('click', function () { switchTab(b.dataset.tab); }); });

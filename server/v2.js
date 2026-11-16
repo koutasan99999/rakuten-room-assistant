@@ -6,6 +6,8 @@ import { send, readBody } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { maskSecrets } from '../lib/ai.js';
 import * as V from '../lib/v2/company.js';
+import * as Post from '../lib/v2/post.js';
+import { requestReferer } from '../lib/http.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 
@@ -21,6 +23,9 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'state') return send(res, 200, { configured: true, ...(await V.officeState(kv, env)) });
     if (action === 'set') { const s = await V.getSet(kv, body.id); return s ? send(res, 200, { set: s }) : send(res, 404, { error: 'その完成品はありません' }); }
     if (action === 'decide') return send(res, 200, await V.decide(kv, { id: String(body.id || ''), action: String(body.decision || ''), note: body.note }));
+    if (action === 'post') return send(res, 200, { post: await Post.submitPost(kv, env, { image: body.image, note: body.note, referer: requestReferer(req, env) }) });
+    if (action === 'posts') return send(res, 200, { posts: await Post.listPosts(kv) });
+    if (action === 'postDelete') return send(res, 200, await Post.removePost(kv, String(body.id || '')));
     if (action === 'room') return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
     if (action === 'request') return send(res, 200, { requests: await V.addRequest(kv, { text: body.text, url: body.url }) });
     if (action === 'sales') return send(res, 200, { sales: await V.setSales(kv, { month: body.month, yen: body.yen }) });
