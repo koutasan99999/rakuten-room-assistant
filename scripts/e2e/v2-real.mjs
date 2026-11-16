@@ -2,7 +2,9 @@
 //   本物：OpenAI の文章のAI（バイヤー・監査・企画・ライター・編集・デザイナーの場面）
 //   偽物：楽天のAPI（実在の商品ページから集めた商品データを返す）／画像生成（テスト用の仮画像）／画像の品質確認（仮画像なので合格扱い）
 //   本番の保存場所・本番の予算の記録には触れない（memoryKv）。SERVE=<port> を付けると、試験の結果のまま画面（/v2/）を開ける
-// 使い方：OPENAI_API_KEY=<鍵> node scripts/e2e/v2-real.mjs <実在の商品データ.json> <仮画像.jpg> [最大の段階数]
+// 使い方：OPENAI_API_KEY=<鍵> node scripts/e2e/v2-real.mjs <実在の商品データ.json> <仮画像.jpg> [最大の実行回数]
+//   DELIVER=<件数>：その件数が完成するまで続ける（既定1）／PR=1：広報の交流候補（試験用の投稿の文章）を1件入れておく（Instagramには何も送らない）
+//   1回ごとに、同時に進めた工程（レーン・開始〜終了の秒）を表示する（2026-11-16 並行処理）
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -45,14 +47,18 @@ globalThis.fetch = async (url, opts = {}) => {
 const kv = memoryKv();
 const env = { ...process.env, RAKUTEN_APP_ID: 'mock', APP_PASSCODE: 'local', __kv: kv };
 const log = [];
+const want = Number(process.env.DELIVER) || 1; let delivered = 0; const peaks = [];
+if (process.env.PR) { const { addTarget } = await import('../../lib/v2/pr.js'); await addTarget(kv, { url: 'https://www.instagram.com/p/TESTe2e01/', handle: 'test_account', caption: '在宅勤務の机まわりを片づけました。ケーブルを1本のトレーにまとめたら、足元がすっきりしました。皆さんはケーブルをどうしていますか？' }); }
 for (let i = 0; i < maxSteps; i++) {
   const r = await withUsage(() => V.tick({ kv, env, origin: ORIGIN, startedAt: Date.now(), trigger: 'e2e' }));
   const w = r.worked;
   if (!w) { console.log(i, r.idle || r.skipped); if (r.idle) break; continue; }
   log.push(...(r.steps || []));
   console.log(`${i} ${(r.steps || []).join(' → ')}`);
+  if (r.parallel) { peaks.push(r.parallel.peak); console.log(`   同時に最大${r.parallel.peak}件：${r.parallel.lanes.join(' ｜ ')}`); }
   console.log(`   案件：${(r.cases || []).join(' ／ ')}`);
-  if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break;
+  delivered += (r.steps || []).filter((x) => x.endsWith(':deliver')).length;
+  if (delivered >= want) break;
 }
 const st = await V.officeState(kv, env);
 const flow = [...st.events].reverse().map((e) => `${e.at.slice(11, 19)} ${e.agent}${e.to ? '→' + e.to : ''} [${e.type}] ${e.text}`);
@@ -60,9 +66,9 @@ console.log(flow.join('\n'));
 const set = st.sets[0] ? await V.getSet(kv, st.sets[0].id) : null;
 const devLog = ((await kv.listJson(V.V2_KEYS.events, 50)) || []).filter((e) => e.dev).map((e) => `${e.type}: ${e.dev}`);
 console.log('DEV', devLog.join('\n'));
-const out = { steps: log, flow, set, devLog, yen: await spent(kv), mocked };
+const out = { steps: log, flow, set, devLog, yen: await spent(kv), mocked, peaks, delivered, staff: st.staff.map((x) => ({ id: x.id, status: x.status, doing: x.doing, stats: x.stats })), pr: st.pr };
 fs.writeFileSync(process.env.OUT || 'v2-e2e.json', JSON.stringify(out, null, 1));
-console.log(JSON.stringify({ delivered: !!set, title: set && set.title, products: set && set.products.length, yen: out.yen, mocked }, null, 1));
+console.log(JSON.stringify({ delivered, peaks, staff: out.staff.map((x) => `${x.id}:${x.stats.steps}+${x.stats.side}/貢献${x.stats.delivered}/${x.stats.yen}円`), prDrafts: st.pr.drafts.map((d) => `${d.status}:${d.comment}`), title: set && set.title, products: set && set.products.length, yen: out.yen, mocked }, null, 1));
 
 // 試験の結果のまま画面を開く（手元だけ）
 if (process.env.SERVE) {

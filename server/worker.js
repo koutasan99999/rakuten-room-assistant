@@ -6,6 +6,8 @@ import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import * as V2 from '../lib/v2/company.js';
+const V = V2;
+const V2_CHAIN_MS = 6000; // 1.0がこの時間までに終わったら、同じ回で2.0を進める（関数の上限60秒の内側）
 import { maskSecrets } from '../lib/ai.js';
 import { verifyQstash, keyInfo, readRawBody } from '../lib/qstash.js';
 
@@ -58,7 +60,10 @@ export default async function handler(req, res, env = process.env) {
       let runV2 = (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
       if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
       if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger })) });
-      return send(res, 200, await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger }));
+      const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
+      // 1.0の番でも、1.0がすぐに終わった（仕事が無い・止まっている）ときは、同じ回で2.0を進める（2026-11-16：1.0の番の15分が空回りしていた）
+      if (trigger === 'qstash' && !r1.worked && Date.now() - startedAt < V2_CHAIN_MS) return send(res, 200, { ...r1, v2: { company: 'v2', ...(await V.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt: Date.now(), trigger: 'qstash' })) } });
+      return send(res, 200, r1);
     } catch (e) {
       return send(res, 200, { ok: false, error: maskSecrets(String(e && e.message || e)).slice(0, 300) });
     }

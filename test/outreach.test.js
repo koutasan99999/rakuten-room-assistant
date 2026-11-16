@@ -107,3 +107,15 @@ test('第1段階：出勤状況。記録がなければ「今は仕事してい�
   assert.ok(staff.every((x) => x.auto && typeof x.auto.can === 'boolean' && (x.auto.can ? x.auto.how : x.auto.why)), '社員ごとに、自律運営できるか・できない理由');
   assert.equal(staff.filter((x) => x.auto.can).map((x) => x.key).sort().join(','), 'auditor,buyer,editor,illustrator,outreach,planner,set');
 });
+
+test('コードの確認：体験談（私も〜まとめました）と、投稿の文章をまるごと写した「触れている点」は不合格（2026-11-16 本物のAIで監査を通った案）', () => {
+  const post = { caption: '在宅勤務の机まわりを片づけました。ケーブルを1本のトレーにまとめたら、足元がすっきりしました。皆さんはケーブルをどうしていますか？' };
+  const bad = checkComment({ id: 'a', comment: '私も足元が散らかるので、ケーブルを1本のトレーにまとめました。皆さんはどうしていますか？', anchor: post.caption }, post, []);
+  assert.equal(bad.hardFail, true);
+  assert.equal(bad.checks.find((k) => k.key === 'experience').ok, false);
+  assert.equal(bad.checks.find((k) => k.key === 'anchorShort').ok, false);
+  const ok = checkComment({ id: 'b', comment: 'トレー1本にまとめると、掃除のときも楽になりそうですね', anchor: 'ケーブルを1本のトレーにまとめたら' }, post, []);
+  assert.equal(ok.hardFail, false, JSON.stringify(ok.checks.filter((k) => k.ok === false)));
+  const q = checkComment({ id: 'c', comment: 'トレーは机の裏に付けましたか？', anchor: 'ケーブルを1本のトレーにまとめたら' }, post, []);
+  assert.equal(q.checks.find((k) => k.key === 'experience').ok, true, '「〜ましたか」の質問は体験談ではない');
+});

@@ -5,7 +5,8 @@
   var SEEN_KEY = 'v2-seen-notice';
   var state = null, seenAt = '', openSet = null, tab = 'office';
   var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
-  var ST_LABEL = { work: '仕事中', turn: '担当中', handoff: '引き継ぎ中', error: 'エラー', budget: '予算待ち', wait: '画像待ち', idle: '待機' };
+  // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
+  var ST_LABEL = { work: '担当中', queued: '次の定期実行待ち', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
   var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち' };
 
   function $(id) { return document.getElementById(id); }
@@ -43,8 +44,9 @@
     var s = state;
     var working = s.staff.filter(function (x) { return x.status === 'work'; })[0];
     var active = s.cases.filter(function (c) { return !c.wait; }).length;
-    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
+    $('top-status').textContent = working ? working.name + 'が担当中（処理中）' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
+    $('badge-pr').textContent = s.pr && s.pr.counts.approval ? String(s.pr.counts.approval) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
     notice();
     Office.update(s.staff);
@@ -52,6 +54,7 @@
     if (tab === 'sets' && !openSet) renderSets();
     if (tab === 'todo') renderTodo();
     if (tab === 'money') renderMoney();
+    if (tab === 'pr') renderPr();
   }
 
   // 完成品のお知らせ（社長に通知：画面のお知らせ・タブの数字・ホーム画面のアイコンの数字（対応している端末））
@@ -89,12 +92,17 @@
       var who = el('span', 'ev-who', nameOf(c.agent)); who.style.background = COLOR[c.agent] || '#777'; row.appendChild(who);
       var t = el('div', 'case-txt');
       t.appendChild(el('p', 'case-title', c.title + (c.kind === 'fix' ? '（社長の修正依頼）' : '')));
-      t.appendChild(el('p', 'hint', c.working ? '仕事中：' + c.task : c.wait ? WAIT_LABEL[c.wait.kind] + '：' + c.wait.why : '次の番：' + c.task + (c.next ? ' → 次は' + c.nextAgent + '（' + c.next + '）' : '')));
+      t.appendChild(el('p', 'hint', c.working ? '担当中（処理中）：' + c.task : c.wait ? WAIT_LABEL[c.wait.kind] + '：' + c.wait.why : '次の番：' + c.task + (c.next ? ' → 次は' + c.nextAgent + '（' + c.next + '）' : '')));
       row.appendChild(t);
       if (c.wait) row.classList.add('wait-' + c.wait.kind);
       box.appendChild(row);
     });
-    if (!s.active) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使い、2.0は30分に1回進みます（切り替えは「対応」タブ）'));
+    if (s.lanes && s.lanes.length) {
+      var lp = el('details', 'lanes'); lp.appendChild(el('summary', null, '前回の定期実行：同時に最大' + s.peak + '件の工程を進めた（' + s.lanes.length + '工程）'));
+      s.lanes.forEach(function (x) { lp.appendChild(el('p', 'hint', 'レーン' + x.lane + '　' + x.from + '〜' + x.to + '秒　' + nameOf(x.agent) + '：' + (x.side ? '仕事探し（' + x.step + '）' : x.step) + (x.final ? '・' + ({ deliver: '納品', stop: '停止', wait: '待ち', done: '完了', fail: '失敗' })[x.final] : ''))); });
+      box.appendChild(lp);
+    }
+    if (!s.active) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
     if (s.lastTickAt) box.appendChild(el('p', 'hint', '最後に動いた時刻：' + day(s.lastTickAt) + ' ' + hm(s.lastTickAt)));
   }
   var LABEL = { start: '開始', done: '完成', handoff: '引き継ぎ', wait: '画像待ち', stop: '停止', deliver: '納品', owner: '社長', retry: '再試行', budget: '予算待ち', resume: '再開' };
@@ -119,15 +127,20 @@
     var s = state.staff.filter(function (x) { return x.id === id; })[0]; if (!s) return;
     var b = $('sheet-body'); b.textContent = '';
     var h = el('p', 'sheet-name', s.name + '（' + s.job + '）'); h.style.borderColor = COLOR[id]; b.appendChild(h);
-    b.appendChild(el('p', 'sheet-st', ST_LABEL[s.status] + (s.doing ? '：' + s.doing : '（今は担当の仕事がありません）')));
+    b.appendChild(el('p', 'sheet-st', ST_LABEL[s.status] + (s.doing ? '：' + s.doing.replace(/^仕事なし：?/, '') : '')));
+    var k = s.stats || {};
+    var sg = el('div', 'stat-grid');
+    [['今日の仕事', (k.today || 0) + '件'], ['これまでの工程', (k.steps || 0) + '件'], ['仕事探しで見つけた仕事', (k.side || 0) + '件'], ['完成品への貢献', (k.delivered || 0) + '件'], ['やり直し・停止', (k.retries || 0) + '・' + (k.stops || 0) + '件'], ['使ったAIの費用', yen(k.yen)]].forEach(function (x) { var d = el('div'); d.appendChild(el('small', null, x[0])); d.appendChild(el('b', null, x[1])); sg.appendChild(d); });
+    b.appendChild(sg);
+    b.appendChild(el('p', 'hint', '件数は実際の記録から数えています（2026-11-16 の改修から）。完成品への貢献＝その社員が工程を完成させた案件のうち、納品まで届いた数'));
     b.appendChild(el('p', 'field', '担当している案件'));
     if (!s.cases.length) b.appendChild(el('p', 'hint', 'なし'));
     s.cases.forEach(function (c) { b.appendChild(el('p', '', '「' + c.title + '」：' + c.task + (c.wait ? '（' + WAIT_LABEL[c.wait.kind] + '）' : ''))); });
     if (s.next) { b.appendChild(el('p', 'field', '次の工程')); b.appendChild(el('p', '', s.next)); }
     b.appendChild(el('p', 'field', '直近の成果'));
     b.appendChild(el('p', '', s.last ? day(s.last.at) + ' ' + hm(s.last.at) + '　' + s.last.text + (s.last.title ? '（' + s.last.title + '）' : '') : 'まだありません'));
-    var mine = state.events.filter(function (e) { return e.agent === id && (e.type === 'done' || e.type === 'deliver' || e.type === 'stop' || e.type === 'retry'); }).slice(1, 7);
-    if (mine.length) { b.appendChild(el('p', 'field', 'その前の仕事')); mine.forEach(function (e) { b.appendChild(el('p', 'hint', day(e.at) + ' ' + hm(e.at) + '　' + e.text)); }); }
+    var mine = (s.history || []).slice(1, 10);
+    if (mine.length) { b.appendChild(el('p', 'field', '作業の履歴')); mine.forEach(function (e) { b.appendChild(el('p', 'hint', day(e.at) + ' ' + hm(e.at) + '　' + e.text + (e.title ? '（' + e.title + '）' : ''))); }); }
     b.appendChild(btn('閉じる', 'btn ghost', function () { $('sheet').hidden = true; }));
     $('sheet').hidden = false;
   }
@@ -236,7 +249,8 @@
   function todoItems() {
     var s = state, out = [];
     if (!s) return out;
-    if (s.waiting) out.push({ key: 'sets', title: '完成品の確認（' + s.waiting + '件）', text: '採用・却下・修正依頼を選んでください。確認待ちが3件になると、新しい案件は始めません。' });
+    if (s.waiting) out.push({ key: 'sets', title: '完成品の確認（' + s.waiting + '件）', text: '採用・却下・修正依頼を選んでください。確認待ちが5件になると、新しい案件は始めません。' });
+    if (s.pr && s.pr.counts.approval) out.push({ key: 'pr', title: 'Instagramのコメント案の承認（' + s.pr.counts.approval + '件）', text: '広報が作り、監査が合格にした案です。送るかどうかは社長が決め、送るときは社長がInstagramで送ります（アプリは送りません）。' });
     if (!s.active) out.push({ key: 'switch', title: '会社を2.0に切り替える', text: '切り替えると、15分ごとの定期実行をすべて2.0が使います（1.0は止まります。データは消しません。いつでも戻せます）。' });
     return out;
   }
@@ -247,6 +261,7 @@
     items.forEach(function (it) {
       var c = el('div', 'card'); c.appendChild(el('p', 'field', it.title)); c.appendChild(el('p', '', it.text));
       if (it.key === 'sets') c.appendChild(btn('完成品を見る', 'btn', function () { switchTab('sets'); }));
+      if (it.key === 'pr') c.appendChild(btn('広報を開く', 'btn', function () { switchTab('pr'); }));
       if (it.key === 'switch') {
         var lab = el('label', 'check'); var cb = el('input'); cb.type = 'checkbox'; lab.appendChild(cb); lab.appendChild(document.createTextNode(' 1.0のデータのバックアップを保存した')); c.appendChild(lab);
         var a = el('a', 'link', '1.0の「社長の対応」を開く（バックアップを保存）'); a.href = '../#todo'; c.appendChild(a);
@@ -383,12 +398,66 @@
     return c;
   }
 
+  // ---- 広報：Instagramの交流（コメント案は社長の承認制。アプリは送らない） ----
+  var prMsg = '';
+  function renderPr() {
+    var box = $('pr'); box.textContent = '';
+    var P = state.pr; if (!P) { box.appendChild(el('p', 'card hint', '読み込めませんでした')); return; }
+    var info = el('div', 'card');
+    info.appendChild(el('p', 'field', '広報の交流（常設の仕事）'));
+    info.appendChild(el('p', 'hint', '広報が交流候補の投稿の文章を読んでコメント案を作り、監査が採点します。合格した案だけがここに届きます。送るかどうかは社長が決め、送るときは社長がInstagramで送ります。アプリはコメント・いいね・フォローを送りません（Instagramの公式APIに、他の人の投稿へのコメントの機能はありません）。'));
+    info.appendChild(el('p', 'hint', '決まり：1日' + P.access.limits.dayDrafts + '件まで／同じアカウントには' + P.access.limits.handleDays + '日に1件まで／投稿の文章に無いことは書かない／宣伝・定型の褒め言葉・絵文字は監査とコードで落とす'));
+    info.appendChild(el('p', 'hint ' + (P.access.fb ? '' : 'warn'), P.access.fb ? '公式API（Facebookログイン方式）：設定済み。関連アカウントの直近の投稿を1日1回集めます' : '公式API（Facebookログイン方式）：未設定。投稿を自動では集められないため、交流候補は社長が追加した投稿だけです'));
+    box.appendChild(info);
+    var groups = [['approval', '社長の承認待ち'], ['approved', '承認済み（Instagramで送ったら記録）'], ['audit', '監査の採点待ち'], ['revise', '広報が直している'], ['sent', '送った（社長の申告）'], ['failed', '送れなかった（社長の申告）'], ['rejected', '見送り'], ['dropped', '監査で不合格（送らない）']];
+    groups.forEach(function (g) {
+      var ds = P.drafts.filter(function (d) { return d.status === g[0]; });
+      if (!ds.length) return;
+      box.appendChild(el('h2', 'h2', g[1] + '（' + ds.length + '件）'));
+      ds.forEach(function (d) { box.appendChild(prCard(d)); });
+    });
+    if (!P.drafts.length) box.appendChild(el('p', 'card hint', 'まだコメント案はありません。下で交流候補の投稿を追加すると、次の定期実行で広報が案を作ります。'));
+    var add = el('div', 'card');
+    add.appendChild(el('p', 'field', '交流候補の投稿を追加'));
+    add.appendChild(el('p', 'hint', 'Instagramで見つけた投稿のURLと、その投稿の文章（キャプション）を貼ってください。文章が無い投稿には、内容を推測してコメント案を作りません。'));
+    var u = el('input'); u.type = 'url'; u.placeholder = 'https://www.instagram.com/p/…'; add.appendChild(u);
+    var h = el('input'); h.type = 'text'; h.placeholder = 'アカウント名（任意）：例）shop_name'; add.appendChild(h);
+    var c = el('textarea'); c.rows = 4; c.placeholder = '投稿の文章'; add.appendChild(c);
+    add.appendChild(btn('交流候補に入れる', 'btn', function () { api({ action: 'prAdd', url: u.value, handle: h.value, caption: c.value }).then(function (r) { prMsg = r.status === 200 ? '入れました。次の定期実行で広報がコメント案を作ります' : (r.data && r.data.error) || '入れられませんでした'; refresh().then(renderPr); }); }));
+    if (prMsg) add.appendChild(el('p', 'hint warn', prMsg));
+    box.appendChild(add);
+    var tg = P.targets.filter(function (t) { return t.status === 'new' || t.status === 'skipped'; });
+    if (tg.length) { var tc = el('details', 'card'); tc.appendChild(el('summary', null, 'まだ案の無い交流候補（' + tg.length + '件）')); tg.forEach(function (t) { tc.appendChild(el('p', 'hint', '@' + (t.handle || '不明') + '・' + t.source + '・' + (t.status === 'skipped' ? '案を作らなかった：' + t.why : '案を作る順番待ち（1日の上限・同じアカウントの間隔を守ります）'))); }); box.appendChild(tc); }
+    var ac = el('details', 'card'); ac.appendChild(el('summary', null, '関連アカウント（公式サイトがリンクしているInstagram・' + P.accounts.length + '件）'));
+    ac.appendChild(el('p', 'hint', P.sitesAt ? '最後に調べた日：' + day(P.sitesAt) + '（7日ごと・費用0円）' : 'まだ調べていません（次の定期実行で広報が調べます）'));
+    P.accounts.forEach(function (a) { var p = el('p', 'hint'); var l = el('a', 'link', '@' + a.handle); l.href = 'https://www.instagram.com/' + a.handle + '/'; l.target = '_blank'; l.rel = 'noopener'; p.appendChild(l); p.appendChild(document.createTextNode('　' + a.brand + '（' + a.from + '）')); ac.appendChild(p); });
+    box.appendChild(ac);
+  }
+  function prCard(d) {
+    var c = el('div', 'card pr-card');
+    var a = el('a', 'link', '@' + (d.handle || '不明') + ' の投稿を開く'); a.href = d.url; a.target = '_blank'; a.rel = 'noopener'; c.appendChild(a);
+    c.appendChild(el('p', 'hint', '投稿の文章：' + d.caption.slice(0, 100) + (d.caption.length > 100 ? '…' : '') + '（' + d.source + '）'));
+    c.appendChild(el('p', 'pr-comment', d.comment));
+    c.appendChild(el('p', 'hint', '触れている点：「' + d.anchor + '」' + (d.relevanceWhy ? '・' + d.relevanceWhy : '')));
+    if (d.why) c.appendChild(el('p', 'hint', '監査：' + d.why));
+    var row = el('div', 'p-row');
+    var act = function (decision, label, cls) { return btn(label, cls || 'btn small', function () { var note = decision === 'reject' || decision === 'failed' ? (prompt('理由（任意）') || '') : ''; api({ action: 'prDecide', id: d.id, decision: decision, note: note }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderPr); }); }); };
+    if (d.status === 'approval') { row.appendChild(act('approve', '承認する（自分で送る）')); row.appendChild(act('reject', '見送る', 'btn ghost')); }
+    if (d.status === 'approved') {
+      row.appendChild(btn('コメントをコピーして投稿を開く', 'btn small', function (e) { var b = e.currentTarget; b.textContent = window.V2Ig.copyNow(d.comment) ? 'コピーしました' : 'コピーできませんでした'; var w = window.open(d.url, '_blank'); if (!w) location.href = d.url; }));
+      row.appendChild(act('sent', '送った')); row.appendChild(act('failed', '送れなかった', 'btn ghost')); row.appendChild(act('reject', 'やめる', 'btn ghost'));
+    }
+    if (row.childNodes.length) c.appendChild(row);
+    var hs = el('details'); hs.appendChild(el('summary', 'hint', '経緯（' + (d.history || []).length + '件）')); (d.history || []).forEach(function (x) { hs.appendChild(el('p', 'hint', day(x.at) + ' ' + hm(x.at) + '　' + nameOf(x.by) + '：' + x.text)); }); c.appendChild(hs);
+    return c;
+  }
+
   function switchTab(t) {
     tab = t;
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
-    ['office', 'sets', 'todo', 'post', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
+    ['office', 'sets', 'todo', 'post', 'pr', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
-    if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost();
+    if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost(); if (t === 'pr') renderPr();
     window.scrollTo(0, 0);
   }
   Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.addEventListener('click', function () { switchTab(b.dataset.tab); }); });

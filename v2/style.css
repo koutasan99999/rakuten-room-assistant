@@ -36,7 +36,8 @@ p { margin: 4px 0; }
 .who.error .st { color: #c62828; font-weight: 700; }
 .who.budget .st { color: #757575; font-weight: 700; }
 .who.handoff .st { color: #2f6f9f; }
-.who.turn .st { color: #2f6f9f; font-weight: 700; }
+.who.queued .st { color: #2f6f9f; font-weight: 700; }
+.who.approval .st { color: #c49a00; font-weight: 700; }
 .who.wait .st { color: var(--warn); font-weight: 700; }
 .now-who { font-weight: 700; font-size: 16px; }
 .now-doing { font-size: 15px; }
@@ -105,8 +106,10 @@ input[type=number], input[type=password] { width: 100%; font: inherit; border: 1
 .crew .s { font-size: 11px; color: var(--muted); }
 .crew .work { border-color: var(--ok); }
 .crew .work .s { color: var(--ok); font-weight: 700; }
-.crew .turn { border-color: #2f6f9f; }
-.crew .turn .s { color: #2f6f9f; font-weight: 700; }
+.crew .queued { border-color: #2f6f9f; }
+.crew .approval { border-color: #c49a00; }
+.crew .approval .s { color: #a07c00; font-weight: 700; }
+.crew .queued .s { color: #2f6f9f; font-weight: 700; }
 .crew .wait { border-color: var(--warn); }
 .crew .wait .s { color: var(--warn); font-weight: 700; }
 
@@ -141,3 +144,13 @@ input[type=text], input[type=url] { width: 100%; font: inherit; border: 1px soli
 .small-ghost { min-height: 36px; font-size: 13px; margin-top: 8px; }
 input[type=file] { width: 100%; margin: 8px 0; }
 .tabs button { font-size: 12px; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.stat-grid div { border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+.stat-grid small { display: block; font-size: 10px; color: var(--muted); }
+.stat-grid b { font-size: 15px; }
+.lanes summary { cursor: pointer; font-size: 13px; margin-top: 6px; }
+.pr-comment { font-weight: 700; padding: 8px; background: #f6f3ea; border-radius: 8px; }
+.pr-card .p-row { flex-wrap: wrap; gap: 6px; }
+textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.tabs button { font-size: 11px; padding-left: 0; padding-right: 0; }
