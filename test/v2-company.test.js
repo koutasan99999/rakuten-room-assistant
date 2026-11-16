@@ -95,6 +95,7 @@ test('実証3：一つの案件が画像待ちでも、別の案件が進む（�
   mock = fetchMock();
   const kv = memoryKv();
   await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
+  await kv.setJson(V.V2_KEYS.trial, { start: new Date(Date.now() - 20 * 86400000).toISOString(), end: new Date(Date.now() - 6 * 86400000).toISOString(), cap: 1000, base: { month: today().slice(0, 7), spent: 0 } }); // 試験運用のあと（通常の上限）
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
   let waited = false; const jobsAfter = new Set();
   for (let i = 0; i < 14; i++) {
@@ -134,21 +135,35 @@ test('実証4：完成したら、社長の操作なしに次の案件が自動�
   assert.ok(st2.results.dupRate > 0, '企画の重複率を数えている');
 });
 
-test('実証6：費用の上限を超えない。上限に届いたら「予算待ち」になり、翌日自動で続ける', async () => {
+test('実証6：費用の上限を超えない。試験運用中は1日25円で止めず、月1,000円・期間の合計1,000円に届いたら「予算待ち」になり、余地ができたら自動で続ける', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   const env = { ...ENV, AUTONOMY_DAILY_YEN: '3' };
-  for (let i = 0; i < 12; i++) await run(kv, env);
-  const s = await spent(kv);
-  assert.ok(s.dayAuto <= 3 + 1, `今日の自律運営の費用 ${s.dayAuto}円（上限3円＋最後の1工程の見込み1円まで）`);
-  const st = await V.officeState(kv, env);
-  assert.ok(st.cases.some((c) => c.wait && c.wait.kind === 'budget'), '予算待ちの案件');
+  for (let i = 0; i < 6; i++) await run(kv, env);
+  assert.ok((await spent(kv)).dayAuto > 3, '試験運用中は1日の上限（ここでは3円）で止めない');
+  const month = today().slice(0, 7);
+  const kv2 = memoryKv();
+  await kv2.incrFloat(`budget:month:${month}`, 999.5); // 月の上限の手前
+  await kv2.setJson(V.V2_KEYS.cases, [{ id: 'jb', kind: 'make', step: 'propose', attempts: 0, runs: [], wait: null, data: {} }]); // 途中の案件
+  for (let i = 0; i < 4; i++) await run(kv2, env);
+  const s = await spent(kv2);
+  assert.ok(s.month <= 1000, `今月の費用 ${s.month}円（上限1,000円を超えない）`);
+  assert.equal((await kv2.getJson(V.V2_KEYS.cases)).length, 1, '上限の手前では新しい案件を始めない');
+  const st = await V.officeState(kv2, env);
+  assert.ok(st.cases.some((c) => c.wait && c.wait.kind === 'budget'), `予算待ちの案件：${JSON.stringify(st.cases.map((c) => [c.step, c.wait]))}`);
   assert.ok(st.staff.some((x) => x.status === 'budget'), '社員の状態に「予算待ち」');
   assert.ok(st.events.some((e) => e.type === 'budget'));
-  // 予算が戻ったら（翌日）、同じ案件の続きから
-  await kv.del(`budget:auto:${today()}`); await kv.del(`budget:month:${today().slice(0, 7)}`);
-  const r = await run(kv, env);
-  assert.ok((r.steps || []).length >= 1, '予算が戻ったら自動で続ける');
+});
+
+test('試験運用が終わったら、通常の上限（1日25円）に戻る（自動で増やさない）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, AUTONOMY_DAILY_YEN: '3' };
+  await run(kv, env);
+  const t = await kv.getJson(V.V2_KEYS.trial); t.end = new Date(Date.now() - 1000).toISOString(); await kv.setJson(V.V2_KEYS.trial, t);
+  for (let i = 0; i < 8; i++) await run(kv, env);
+  assert.ok((await spent(kv)).dayAuto <= 3 + 1, '試験後は1日の上限で止まる');
+  assert.equal((await V.officeState(kv, env)).trial.active, false);
 });
 
 test('失敗は時間を空けて再試行（エラー表示）し、3回目で理由を残して止まる。鍵は記録に出さない', async () => {
