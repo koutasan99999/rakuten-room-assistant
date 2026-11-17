@@ -66,7 +66,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   const kv = memoryKv();
   const steps = await untilDelivered(kv);
   const mine = steps.filter((x) => !x.includes('propose') || steps.indexOf(x) === 0);
-  const order = ['planner:propose', 'buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'editor:review', 'designer:scene', 'designer:image', 'auditor:checkImage', 'pr:pack:deliver'];
+  const order = ['planner:propose', 'buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'editor:review', 'designer:scene', 'designer:image', 'pr:pack:deliver'];
   let k = 0; for (const s of mine) if (s === order[k]) k++;
   assert.equal(k, order.length, `工程の順番：${steps.join(' / ')}`);
   const st = await V.officeState(kv, ENV);
@@ -75,7 +75,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   assert.match(ev[0].text, /14日間の試験運用を始めた/);
   assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'editor'), '監査→編集への差し戻し');
   assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'editor' && e.to === 'designer'), '編集→デザイナー');
-  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'auditor' && e.to === 'pr'), '監査→広報');
+  assert.ok(ev.some((e) => e.type === 'handoff' && e.agent === 'designer' && e.to === 'pr'), 'デザイナー→広報（画像は1枚・監査の描き直しなし）');
   assert.ok(ev.every((e) => !('dev' in e)), '開発者向けの記録は社長の画面に出さない');
   // 完成品：投稿にそのまま移れるもの
   const set = await V.getSet(kv, st.sets[0].id);
@@ -92,42 +92,34 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   assert.equal(st.results.delivered, 1); assert.ok(st.results.yenPerSet > 0);
 });
 
-test('実証3：一つの案件が画像待ちでも、別の案件が進む（並行）。各社員は1回の実行で決まった工程数まで', async () => {
+test('実証3：画像の予算が足りないときは待たずに、表紙画像なしで完成品を届ける（1企画1枚・投稿セットの完成を止めない）。各社員は1回の実行で決まった工程数まで', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
   await kv.setJson(V.V2_KEYS.trial, { start: new Date(Date.now() - 20 * 86400000).toISOString(), end: new Date(Date.now() - 6 * 86400000).toISOString(), cap: 1000, base: { month: today().slice(0, 7), spent: 0 } }); // 試験運用のあと（通常の上限）
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
-  let waited = false; const jobsAfter = new Set();
+  const all = [];
   for (let i = 0; i < 14; i++) {
     const r = await run(kv, env);
-    if ((r.steps || []).some((x) => x.endsWith(':wait'))) { waited = true; (r.jobs || []).forEach((j) => jobsAfter.add(`w:${j}`)); continue; }
-    if (waited) (r.jobs || []).forEach((j) => jobsAfter.add(j));
+    all.push(...(r.steps || []));
     const count = {}; (r.steps || []).forEach((x) => { const a = x.split(':')[0]; count[a] = (count[a] || 0) + 1; });
     assert.ok(Object.values(count).every((n) => n <= V.AGENT_PER_TICK), `1人の社員が1回で${V.AGENT_PER_TICK}工程まで：${r.steps}`);
+    if (all.some((x) => x.endsWith(':deliver'))) break;
   }
-  assert.ok(waited, '画像待ちになった');
+  assert.ok(all.some((x) => x.endsWith(':deliver')), `画像なしでも届く：${all.join(' / ')}`);
+  assert.ok(!all.some((x) => x.endsWith(':wait')), '画像待ちにしない');
+  assert.equal(mock.calls.images.length, 0, '予算が足りないので画像APIは呼ばない');
   const st = await V.officeState(kv, env);
-  const waiting = st.cases.filter((c) => c.wait && c.wait.kind === 'image');
-  const moving = st.cases.filter((c) => !c.wait);
-  assert.ok(waiting.length >= 1, '画像待ちの案件がある');
-  assert.ok(jobsAfter.size >= 1 && [...jobsAfter].some((id) => !waiting.find((w) => w.id === id)), '画像待ちのあいだも別の案件が進んだ');
-  assert.equal(st.staff.find((s) => s.id === 'designer').status, moving.some((c) => c.agent === 'designer') ? 'queued' : 'wait');
-  assert.ok(st.cases.length <= V.MAX_ACTIVE + V.MAX_IMAGE_WAIT, '案件を抱えすぎない');
-  // 翌日（画像の予算が戻る）：画像待ちの案件が自動で続きから進む
-  await kv.del(`budget:image:yen:${today()}`);
-  const r = await run(kv, env);
-  assert.ok((r.steps || []).includes('designer:image'), `画像の予算が戻ったら描く：${r.steps}`);
+  assert.equal((await V.getSet(kv, st.sets[0].id)).image, null);
 });
-
 test('実証4：完成したら、社長の操作なしに次の案件が自動で始まる。同じ企画は繰り返さない', async () => {
   mock = fetchMock({ themes: ['キッチン収納', 'キッチン収納', '鍋まわり', 'コンロ掃除'] });
   const kv = memoryKv();
   await untilDelivered(kv);
   const r = await run(kv);
   const st = await V.officeState(kv, ENV);
-  assert.ok(st.cases.length >= 1, '次の案件がある');
-  assert.ok(st.events.some((e) => e.type === 'start' && /指示を待たずに/.test(e.text) && e.at >= st.sets[0].deliveredAt), '完成のあとに新しい案件が自動で始まった');
+  assert.ok(st.cases.length >= 1 || st.sets.length >= 2, '次の案件がある（速いと、次の案件も同じ回で届く）');
+  assert.ok(st.events.some((e) => e.type === 'start' && /指示を待たずに/.test(e.text) && e.at >= st.sets[st.sets.length - 1].deliveredAt), '完成のあとに新しい案件が自動で始まった');
   void r;
   // 同じテーマ（キッチン収納）が2回目に出ても、似た企画として弾いて考え直す
   for (let i = 0; i < 4; i++) await run(kv);
@@ -234,7 +226,7 @@ test('旧形式（1件の仕事・画像待ち）は消さずに案件へ移す'
   await run(kv, { ...ENV, IMAGE_DAILY_COUNT: '1' });
   const cs = await kv.getJson(V.V2_KEYS.cases);
   assert.ok(cs.find((c) => c.id === 'old1') || (await V.officeState(kv, ENV)).events.some((e) => e.job === 'old1'));
-  assert.ok(cs.find((c) => c.id === 'old2'));
+  assert.ok(cs.find((c) => c.id === 'old2') || (await V.officeState(kv, ENV)).events.some((e) => e.job === 'old2'), '画像待ちだった旧案件も消さずに移し、続きを進めた（記録に残る）');
 });
 
 test('定期実行：切り替え後は2.0だけ・切り替え前は手動の target=v2 と QStash の交互で2.0が動く。APIは合言葉が必要', async () => {
@@ -263,26 +255,25 @@ test('試験運用（14日間・合計1,000円）：開始時点の支出を記�
   assert.ok(st.trial.left <= 1000 - 300, '使える残りは、今月の残り（1,000円−300円）を超えない（二重に数えない）');
   // 試験の上限に届いたら止める
   const t = await kv.getJson(V.V2_KEYS.trial); t.base.spent = -2000; await kv.setJson(V.V2_KEYS.trial, t); // 期間中にすでに1,000円を使ったことにする
+  const calls0 = mock.calls.openai.length + mock.calls.images.length;
   await run(kv);
   st = await V.officeState(kv, ENV);
-  assert.ok(st.cases.some((c) => c.wait && c.wait.kind === 'budget' && /試験運用の上限/.test(c.wait.why)), '試験の上限で予算待ち');
+  assert.equal(mock.calls.openai.length + mock.calls.images.length, calls0, '試験の上限に届いたら、有料の処理（文章・画像）をしない');
+  assert.ok(st.cases.every((c) => !c.wait || c.wait.kind === 'budget'), '進行中の案件があれば予算待ち');
 });
 
-test('画像以外ができた制作物は「画像待ちの制作物」として社長が見られる。選定理由と価格帯が完成品に入る', async () => {
+test('画像の予算がない日も、画像なしで完成品を届ける。選定理由と価格帯が完成品に入る', async () => {
   mock = fetchMock();
   const kv = memoryKv();
+  await kv.setJson(V.V2_KEYS.trial, { start: new Date(Date.now() - 20 * 86400000).toISOString(), end: new Date(Date.now() - 6 * 86400000).toISOString(), cap: 1000, base: { month: today().slice(0, 7), spent: 0 } });
   await kv.incrFloat(`budget:image:yen:${today()}`, 500);
-  for (let i = 0; i < 14; i++) { const r = await run(kv); if ((r.steps || []).some((x) => x.endsWith(':wait'))) break; }
-  const st = await V.officeState(kv, ENV);
-  assert.ok(st.drafts.length >= 1, '画像待ちの制作物');
-  assert.ok(st.drafts[0].caption && st.drafts[0].products.length >= 3);
-  await kv.del(`budget:image:yen:${today()}`);
-  for (let i = 0; i < 6; i++) { const r = await run(kv); if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break; }
+  for (let i = 0; i < 14; i++) { const r = await run(kv, { ...ENV, IMAGE_DAILY_COUNT: '1' }); if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break; }
   const s = await V.getSet(kv, (await V.officeState(kv, ENV)).sets[0].id);
+  assert.equal(s.image, null, '画像なしで届く');
+  assert.ok(s.caption && s.products.length >= 3);
   assert.ok(s.band && s.products.every((p) => p.band), '価格帯の目安');
   assert.equal(V.bandOf(2500), '手頃な高コスパ'); assert.equal(V.bandOf(25000), '高級・特別なギフト');
 });
-
 test('完成品ページ：Instagramの画像の材料（短い名前・商品番号）を渡し、楽天ROOMに登録した記録を残せる（社長の申告）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
@@ -525,7 +516,7 @@ test('残高不足：前の実行で「再試行待ち」になった残高不�
 test('AI画像生成の停止：OpenAIの画像APIを1回も呼ばずに、企画→商品→文章→監査→仕上げまで進めて完成品を届ける。社長が後から表紙画像を追加できる（前の画像は消さない）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  const env = { ...ENV, AI_IMAGE_GEN: '', __kv: kv };
+  const env = { ...ENV, AI_IMAGE_GEN: '0', __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const steps = await untilDelivered(kv, env);
   assert.ok(steps.some((x) => x.endsWith(':deliver')), `完成品が届いた：${steps.join(' / ')}`);
@@ -551,7 +542,7 @@ test('AI画像生成の停止：OpenAIの画像APIを1回も呼ばずに、企�
 test('AI画像生成の停止：表紙画像の工程（場面・画像待ち・画像の確認）にいた案件は、消さずに画像なしの仕上げへ進む', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  const env = { ...ENV, AI_IMAGE_GEN: '' };
+  const env = { ...ENV, AI_IMAGE_GEN: '0' };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const C = await import('../lib/kuma-cover.js');
   const r = await C.imageStep({ kv, env, origin: APP, scene: {}, item: {} });
@@ -578,4 +569,36 @@ test('残高待ち：手動の実行では時刻を待たずに1件だけ試し�
   assert.equal(await kv.getJson(V.V2_KEYS.quota), null, '試して通ったので残高待ちを解いた');
   assert.ok((await kv.getJson(V.V2_KEYS.cases)).every((c) => !c.wait || c.wait.kind !== 'quota'), '2件とも続きから');
   assert.ok((r.steps || []).length >= 2, `仕事が進んだ：${r.steps}`);
+});
+
+test('表紙画像：1企画1枚（監査の自動の描き直しなし）。描けなくても完成品は届く。社長が作り直しを頼むと次の実行で1枚だけ描き、前の画像は残す（1つの完成品につき3回まで）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, __kv: kv };
+  const steps = await untilDelivered(kv, env);
+  assert.equal(mock.calls.images.length, 1, `画像は1枚だけ：${steps.join(' / ')}`);
+  assert.ok(!steps.some((x) => /checkImage/.test(x)), '監査の画像の確認（描き直しにつながる）を通らない');
+  let st = await V.officeState(kv, env);
+  const id = st.sets[0].id;
+  const first = await V.getSet(kv, id);
+  assert.ok(first.image && first.image.mediaId, '表紙画像が入って届く');
+  assert.equal((await call(v2api, { action: 'regenImage', id }, undefined, env)).status, 200);
+  assert.equal((await call(v2api, { action: 'regenImage', id }, undefined, env)).status, 400, '頼んだ作り直しが終わるまでは重ねて頼めない');
+  await kv.del('kuma:scenes'); // テストのAIは毎回同じ場面を返すため、場面の重なりの確認を外す（本物のAIは別の場面を出す）
+  for (let i = 0; i < 4; i++) { const r = await run(kv, env); if ((r.steps || []).some((x) => x.startsWith('designer:attach'))) break; }
+  assert.equal(mock.calls.images.length, 2, '作り直しで1枚だけ');
+  const after = await kv.getJson(V.V2_KEYS.set(id));
+  assert.notEqual(after.image.mediaId, first.image.mediaId, '新しい画像に差し替わった');
+  assert.equal(after.imageHistory[0].mediaId, first.image.mediaId, '前の画像は残す');
+  assert.equal(after.regenPending, false);
+  st = await V.officeState(kv, env);
+  assert.equal(st.sets.filter((x) => x.id === id).length, 1, '完成品は増えない（同じ完成品の画像だけ）');
+  await kv.setJson(V.V2_KEYS.set(id), { ...after, regenCount: 3 });
+  assert.equal((await call(v2api, { action: 'regenImage', id }, undefined, env)).status, 400, '3回まで');
+});
+test('AI画像生成の切り替え：未設定・空なら動く（2026-11-17 再開）。AI_IMAGE_GEN=0 のときだけ止まる', async () => {
+  const C = await import('../lib/kuma-cover.js');
+  assert.equal(C.aiImageEnabled({ AI_IMAGE_GEN: '' }), true);
+  assert.equal(C.aiImageEnabled({ AI_IMAGE_GEN: '1' }), true);
+  assert.equal(C.aiImageEnabled({ AI_IMAGE_GEN: '0' }), false);
 });

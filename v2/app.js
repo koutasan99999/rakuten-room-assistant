@@ -189,7 +189,11 @@
       // 表紙画像は社長がChatGPTで作って追加する（2026-11-17 AIの画像生成を停止）。前の画像は消さずに残る
       var up = el('div', 'cover-up');
       up.appendChild(el('p', 'field', s.image ? '表紙画像を差し替える' : '表紙画像はまだありません'));
-      up.appendChild(el('p', 'hint', 'ChatGPTで作ったサングラスくまの画像を選ぶと、表紙に入ります（アプリはAIで画像を作りません・費用0円）'));
+      // デザイナーAIの作り直し（2026-11-17 再開：1企画1枚・自動の描き直しなし。作り直しは社長が頼む）
+      var left = 3 - (s.regenCount || 0);
+      if (s.regenPending) up.appendChild(el('p', 'hint', 'デザイナーが表紙画像を作り直しています（次の定期実行で1枚描きます。前の画像は残ります）'));
+      else if (left > 0) up.appendChild(btn('AIで表紙画像を作り直す（1枚 約15円・あと' + left + '回）', 'btn ghost small-ghost', function () { if (!confirm('デザイナーAIに表紙画像を1枚描き直してもらいますか？（約15円・前の画像は残ります）')) return; api({ action: 'regenImage', id: s.id }).then(function (r) { if (r.status !== 200) { alert((r.data && r.data.error) || '頼めませんでした'); return; } refresh().then(function () { showSet(s.id); }); }); }));
+      up.appendChild(el('p', 'hint', '自分で作った画像（ChatGPTなど）を選ぶと、表紙に入ります（費用0円）'));
       var fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; up.appendChild(fi);
       var upMsg = el('p', 'hint');
       up.appendChild(btn(s.image ? '画像を差し替える' : '表紙画像を追加', 'btn small', function () {
