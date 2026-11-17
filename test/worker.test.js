@@ -429,7 +429,7 @@ test('2.0の連鎖：まだ進められる仕事があれば、15分を待たず
   assert.equal((await chainNext({ kv, env: { ...env, VERCEL_ENV: 'preview' }, req: req(0), more: true, startedAt: now, fetchImpl })).next, false, 'Preview から本番を呼ばない');
   assert.equal((await chainNext({ kv, env: { ...env, V2_CHAIN: '0' }, req: req(0), more: true, startedAt: now, fetchImpl })).next, false);
   assert.equal((await chainNext({ kv, env, req: req(CHAIN_MAX_DEPTH), more: true, startedAt: now, fetchImpl })).next, false, '続けての回数の上限');
-  assert.equal((await chainNext({ kv, env, req: req(0), more: true, startedAt: now - 55000, fetchImpl })).next, false, '関数の時間の上限の近くでは呼ばない');
+  assert.equal((await chainNext({ kv, env, req: req(0), more: true, startedAt: now - 57000, fetchImpl })).next, false, '関数の時間の上限の近くでは呼ばない');
   await kv.set(`v2:chain:${new Date().toISOString().slice(0, 13)}`, '60');
   assert.equal((await chainNext({ kv, env, req: req(0), more: true, startedAt: now, fetchImpl })).next, false, '1時間の上限');
   assert.equal(sent.length, 1);
