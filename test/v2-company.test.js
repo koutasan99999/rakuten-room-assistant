@@ -456,3 +456,67 @@ test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完
   const r2 = await run(kv);
   assert.ok(!(r2.steps || []).some((x) => x.startsWith('editor:memo')), '書き直したものは繰り返さない');
 });
+
+// ---- 2026-11-17 OpenAIの残高不足：通常の失敗と分け、残高待ちで保存し、残高が戻ったら続きから ----
+function noCredits(m) {
+  const inner = globalThis.fetch;
+  const st = { on: true, ai: 0 };
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('api.openai.com')) {
+      st.ai += 1;
+      if (st.on) return new Response(JSON.stringify({ error: { message: 'You have no credits remaining. Add credits to continue using the API.', type: 'insufficient_quota', code: 'insufficient_quota' } }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+    }
+    return inner(url, opts);
+  };
+  const restore = m.restore; m.restore = () => { globalThis.fetch = inner; restore(); };
+  return st;
+}
+test('残高不足：案件を終わらせず「残高待ち」で保存し、失敗の回数に数えない。残高待ちの間はAIを呼ばない。残高が戻ったら1件で確かめて全部を続きから', async () => {
+  mock = fetchMock();
+  const st = noCredits(mock);
+  const kv = memoryKv();
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
+  const base = (id, step) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 2, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic' } });
+  await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find')]);
+  await run(kv);
+  let cases = await kv.getJson(V.V2_KEYS.cases);
+  assert.equal(cases.length, 2, '案件は消えない・終わらない');
+  assert.ok(cases.every((c) => c.wait && c.wait.kind === 'quota'), `残高待ち：${JSON.stringify(cases.map((c) => c.wait))}`);
+  assert.ok(cases.every((c) => c.attempts === 2), '失敗の回数を増やさない');
+  const q = await kv.getJson(V.V2_KEYS.quota);
+  assert.ok(q && Date.parse(q.until) > Date.now() + 25 * 60000, '30分後まで試さない');
+  const calls1 = st.ai;
+  assert.ok(calls1 <= 2, `残高不足が分かったら、ほかのモデル・ほかの案件で呼び続けない：${calls1}回`);
+  for (let i = 0; i < 3; i++) await run(kv);
+  assert.equal(st.ai, calls1, '残高待ちの間はAIを呼ばない');
+  assert.equal((await kv.getJson(V.V2_KEYS.cases)).length, 2, '何回実行しても案件は終わらない');
+  const office = await V.officeState(kv, ENV);
+  assert.ok(office.quota && office.staff.find((s) => s.id === 'planner').status === 'budget');
+  assert.match(office.staff.find((s) => s.id === 'planner').doing, /OpenAIの残高待ち/);
+  // 残高が戻った（時刻が来た）：1件で確かめて、通れば全部を続きから
+  st.on = false;
+  await kv.setJson(V.V2_KEYS.quota, { ...q, until: new Date(Date.now() - 1000).toISOString() });
+  const r = await run(kv);
+  assert.equal(await kv.getJson(V.V2_KEYS.quota), null, '残高が戻ったら残高待ちを解く');
+  cases = await kv.getJson(V.V2_KEYS.cases);
+  assert.ok(cases.every((c) => !c.wait || c.wait.kind !== 'quota'), '残高待ちの案件はすべて続きから');
+  assert.ok((r.steps || []).length >= 2, `再開して進んだ：${r.steps}`);
+});
+test('残高不足：前の実行で「再試行待ち」になった残高不足の案件は、失敗の回数を戻して残高待ちに移す。画像の描き直しの回数にも数えない', async () => {
+  mock = fetchMock();
+  noCredits(mock);
+  const kv = memoryKv();
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
+  await kv.setJson(V.V2_KEYS.cases, [
+    { id: 'x', kind: 'make', step: 'scene', attempts: 2, runs: [], wait: { kind: 'retry', until: new Date(Date.now() + 3600000).toISOString(), why: 'gpt-5.4-nano: OpenAI APIエラー 429 You have no credits remaining.' }, data: { set: { items: [], copy: {} } } },
+    { id: 'y', kind: 'make', step: 'image', attempts: 0, runs: [], wait: null, data: { imageRounds: 2, cover: { scene: { usage: '台所で使う', place: 'キッチン', action: '料理の途中で道具を使っている' }, item: { name: 'キッチン 道具', image: 'https://thumbnail.image.rakuten.co.jp/x.jpg' }, tries: 0 }, set: { items: [], copy: {} } } }
+  ]);
+  await run(kv);
+  const cases = await kv.getJson(V.V2_KEYS.cases);
+  const x = cases.find((c) => c.id === 'x'); const y = cases.find((c) => c.id === 'y');
+  assert.equal(x.wait.kind, 'quota'); assert.equal(x.attempts, 0, '残高不足で増えた失敗の回数を戻す');
+  assert.ok(y, '画像の工程の案件も終わらない');
+  assert.equal(y.data.imageRounds, 2, '画像の描き直しの回数に数えない');
+  assert.equal(y.wait && y.wait.kind, 'quota');
+});
