@@ -563,3 +563,19 @@ test('AI画像生成の停止：表紙画像の工程（場面・画像待ち・
   assert.ok(ev.some((e) => e.job === 'w' && /表紙画像なしで仕上げる/.test(e.text)), '画像なしで仕上げへ');
   assert.equal(mock.calls.images.length, 0);
 });
+
+test('残高待ち：手動の実行では時刻を待たずに1件だけ試し、通れば全部を続きから再開する（定期実行は時刻まで待つ）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  const base = (id) => ({ id, kind: 'make', step: 'propose', createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: { kind: 'quota', why: '残高' }, data: {} });
+  await kv.setJson(V.V2_KEYS.cases, [base('a'), base('b')]);
+  await kv.setJson(V.V2_KEYS.quota, { since: new Date().toISOString(), until: new Date(Date.now() + 3 * 3600000).toISOString(), tries: 4 });
+  const before = mock.calls.openai.length;
+  await withUsage(() => V.tick({ kv, env: ENV, origin: APP, startedAt: Date.now(), trigger: 'qstash' }));
+  assert.equal(mock.calls.openai.length, before, '定期実行は時刻まで待つ（AIを呼ばない）');
+  const r = await withUsage(() => V.tick({ kv, env: ENV, origin: APP, startedAt: Date.now(), trigger: 'workflow_dispatch', probeNow: true }));
+  assert.equal(await kv.getJson(V.V2_KEYS.quota), null, '試して通ったので残高待ちを解いた');
+  assert.ok((await kv.getJson(V.V2_KEYS.cases)).every((c) => !c.wait || c.wait.kind !== 'quota'), '2件とも続きから');
+  assert.ok((r.steps || []).length >= 2, `仕事が進んだ：${r.steps}`);
+});
