@@ -665,3 +665,50 @@ test('連鎖の判断：進められる仕事が残っていれば more=true。�
   const r2 = await run(kv);
   assert.equal(r2.more, false, '待つべき案件だけなら呼ばない');
 });
+
+// ---- 2026-11-17 1企画につき最低6点（足りなければ探す範囲を広げる・それでも足りなければ保留） ----
+function widenMock(m, { empty = false } = {}) {
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('api.openai.com') && !u.includes('/images/')) {
+      const body = JSON.parse(opts.body); const sys = body.messages[0].content;
+      if (sys.includes('商品がまだ足りません')) return aiReply({ slots: [{ role: '関連商品', keyword: '保存容器 ガラス' }, { role: '連想商品', keyword: 'キッチンタイマー' }, { role: '変わり種', keyword: '鍋敷き 木製' }, { role: '低価格帯', keyword: 'シリコン ふた' }] });
+    }
+    if (empty && u.includes('rakuten') && /keyword=(%E4%BF%9D|%E3%82%AD%E3%83%83%E3%83%81%E3%83%B3%E3%82%BF|%E9%8D%8B|%E3%82%B7%E3%83%AA)/.test(u)) return new Response(JSON.stringify({ Items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return inner(url, opts);
+  };
+  const restore = m.restore; m.restore = () => { globalThis.fetch = inner; restore(); };
+}
+const it6 = (n, kw = 'キッチン 道具') => ({ code: `s:z${n}`, name: `${kw}${n}`, price: 1000 + n * 500, url: `https://item.rakuten.co.jp/s/z${n}/`, image: 'https://thumbnail.image.rakuten.co.jp/x.jpg', shop: 'ショップ', caption: '水受けトレー付きで、水滴がたれにくい。', reviewCount: 100 });
+test('最低6点：選んだ商品が6点に届かなければ、すぐエラーにせず関連・連想・価格帯へ探す範囲を広げて6点以上にする（確認できた商品だけ）', async () => {
+  mock = fetchMock();
+  widenMock(mock);
+  const kv = memoryKv();
+  const plan = { title: 'キッチンの工夫', target: '料理する人', adopted: [], slots: [{ role: '本命', keyword: 'キッチン 道具' }] };
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'k', kind: 'make', step: 'pick', attempts: 2, runs: [], wait: null, data: { theme: 'キッチン', plan, source: [], gathered: { fresh: [], missing: [], slotResults: [{ slot: plan.slots[0], candidates: [it6(1), it6(2)] }] } } }]);
+  const steps = [];
+  for (let i = 0; i < 4; i++) { steps.push(...((await run(kv)).steps || [])); if (steps.some((x) => x.startsWith('writer:'))) break; }
+  assert.ok(steps.some((x) => x.startsWith('buyer:widen')), `探す範囲を広げた：${steps}`);
+  const c = (await kv.getJson(V.V2_KEYS.cases)).find((x) => x.id === 'k');
+  const st = await V.officeState(kv, ENV);
+  const items = c ? c.data.set.items : (await V.getSet(kv, st.sets[0].id)).products; // 速いと完成品まで届く
+  assert.ok(items.length >= V.V2_MIN_ITEMS, `6点以上：${items.length}点`);
+  assert.ok(items.every((it) => it.price > 0 && /^https:\/\/item\.rakuten\.co\.jp\//.test(it.url) && it.image), '価格・販売ページ・画像がある商品だけ');
+  assert.equal(new Set(items.map((it) => it.url)).size, items.length, '重複なし');
+});
+test('最低6点：広げても足りなければ、無関係な商品で埋めずに「保留」（理由と不足数を残す・案件は消さない）', async () => {
+  mock = fetchMock();
+  widenMock(mock, { empty: true });
+  const kv = memoryKv();
+  const plan = { title: 'キッチンの工夫', target: '料理する人', adopted: [], slots: [{ role: '本命', keyword: 'キッチン 道具' }] };
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'h', kind: 'make', step: 'pick', attempts: 0, runs: [], wait: null, data: { theme: 'キッチン', plan, source: [], gathered: { fresh: [], missing: [], slotResults: [{ slot: plan.slots[0], candidates: [it6(1), it6(2)] }] } } }]);
+  for (let i = 0; i < 5; i++) await run(kv);
+  const c = (await kv.getJson(V.V2_KEYS.cases)).find((x) => x.id === 'h');
+  assert.ok(c, '案件は消えない');
+  assert.equal(c.wait && c.wait.kind, 'hold');
+  assert.match(c.wait.why, /6点に\d点足りない/);
+  assert.ok(c.data.set.items.length < V.V2_MIN_ITEMS);
+  const st = await V.officeState(kv, ENV);
+  assert.equal(st.cases.find((x) => x.id === 'h').wait.kind, 'hold', '保留として画面に出る（エラーで止まったとは出さない）');
+});
