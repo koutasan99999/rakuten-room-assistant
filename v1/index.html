@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- 1.0の閲覧用（2026-11-17 運用終了）：ファイルの場所はそのまま、/v1/ から開く -->
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#bf0000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ROOM発掘">
+  <!-- 更新するたびに変える（js/app.js の APP_VERSION と、下の ?v= も同じ値に。test/version.test.js で確認） -->
+  <meta name="app-version" content="2026-11-17.13">
+  <title>ROOM商品発掘（1.0・閲覧用）</title>
+  <link rel="stylesheet" href="css/style.css?v=2026-11-17.13">
+</head>
+<body>
+  <div style="background:#2b2b2b;color:#fff;padding:12px 16px;font-size:14px;line-height:1.6">1.0は運用を終了しました（2026-11-17）。ここは過去の記録を見るための閲覧用です。AI社員・定期実行は動きません（AIを使うボタンは「運用を終了しました」と表示されます）。<a href="/v2/" style="color:#ffd27a">2.0を開く</a></div>
+  <header class="header">
+    <h1>ROOM商品発掘</h1>
+    <p class="lead">楽天市場から投稿向きの商品を探して、紹介文まで用意します。</p>
+    <nav class="view-tabs" aria-label="画面の切り替え">
+      <!-- 2026-11-03 整理：メインは「社長、これどうすか？」（プレゼン・広げる・採用済み・投稿セット）。検索は補助。
+           商品ドロボー（#thief）・バイヤー発掘便（#buyer）・ふるさと納税（#furusato）は、画面とデータを残してタブだけ隠す（検索の画面の下から開ける） -->
+      <a href="#pitch" class="view-tab" data-view="pitch">社長、これどうすか？</a>
+      <a href="#company" class="view-tab" data-view="company">経営報告 <span id="company-count" class="tab-count"></span></a>
+      <a href="#todo" class="view-tab" data-view="todo">社長の対応 <span id="todo-count" class="tab-count"></span></a>
+      <a href="#pr" class="view-tab" data-view="pr">広報</a>
+      <a href="#discover" class="view-tab" data-view="discover">検索（補助）</a>
+      <a href="#manage" class="view-tab" data-view="manage">投稿管理 <span id="manage-count" class="tab-count"></span></a>
+      <a href="#jobs" class="view-tab" data-view="jobs">検索ジョブ <span id="jobs-count" class="tab-count"></span></a>
+    </nav>
+  </header>
+
+  <main class="container" id="view-discover">
+    <!-- 探し方は3つ。1つずつ開いて、画面が長くなりすぎないようにする -->
+    <p class="editor-note">補助の検索です。ふだんは「社長、これどうすか？」で、AI社員のプレゼンと「この商品から広げる」を使ってください。</p>
+    <nav class="mode-tabs" aria-label="探し方">
+      <button type="button" class="mode-tab" data-mode="cond">キーワード・条件で探す</button>
+      <button type="button" class="mode-tab" data-mode="radar">新商品・予約</button>
+      <button type="button" class="mode-tab" data-mode="trend">トレンド</button>
+    </nav>
+    <!-- 企画から探す・完全ランダム・コーデを作るは「社長、これどうすか？」の「広げる」と投稿セットの自動制作に統合。入口だけ畳んで残す -->
+    <details class="detail-box old-menu">
+      <summary>前の探し方（企画から・ランダム・コーデ）</summary>
+      <nav class="mode-tabs" aria-label="前の探し方">
+        <button type="button" class="mode-tab" data-mode="idea">企画から探す</button>
+        <button type="button" class="mode-tab" data-mode="random">完全ランダム</button>
+        <button type="button" class="mode-tab" data-mode="coord">コーデを作る</button>
+      </nav>
+    </details>
+
+    <!-- 編集中の企画（下書き）。ページを移っても、あとから開き直せる -->
+    <div id="plan-drafts" class="plan-drafts" hidden></div>
+    <!-- 保存したコーデ（AIコーデスタジオ）。開き直して続きから編集できる -->
+    <div id="coord-saved" class="plan-drafts" hidden></div>
+
+    <section class="mode-panel" id="mode-idea" hidden>
+      <button type="button" id="ideas-btn" class="btn btn-discover">今日の企画を考える</button>
+      <p class="editor-note">商品より先に、Instagram投稿の企画を3案考えます。AIの案はたたき台なので、「編集」で自由に直してから探せます。</p>
+      <div id="ideas-loading" class="loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>企画を考えています…<br><span class="sub">20〜40秒ほどかかります</span></p>
+      </div>
+      <div id="ideas-message" class="message" role="alert" hidden></div>
+      <div id="ideas-panel" class="ideas-panel" hidden>
+        <button type="button" id="ideas-toggle" class="ideas-toggle" aria-expanded="true">
+          <span class="ideas-toggle-label">企画候補</span>
+          <span id="ideas-chosen" class="ideas-chosen"></span>
+          <span id="ideas-arrow" class="ideas-arrow">▲ 折りたたむ</span>
+        </button>
+        <div id="ideas" class="ideas"></div>
+      </div>
+
+      <details class="plans-box" id="plans-box">
+        <summary>最初の10投稿の企画<span id="plans-progress" class="tab-count"></span></summary>
+        <p class="hint">「○○について 本気出して考えてみた」シリーズ。上から順に作るのがおすすめの順番です。</p>
+        <div id="plans-list" class="plans-list"></div>
+      </details>
+    </section>
+
+    <section class="mode-panel search-box" id="mode-cond" hidden aria-label="条件を指定して探す">
+      <label class="field">
+        <span class="field-label">ジャンル</span>
+        <select id="genre-select" class="select">
+          <option value="">おまかせ</option>
+          <option value="useful">便利グッズ</option>
+          <option value="disaster">防災グッズ</option>
+          <option value="appliance">家電</option>
+          <option value="gadget">ガジェット</option>
+          <option value="interior">インテリア</option>
+          <option value="storage">収納</option>
+          <option value="kitchen">キッチン</option>
+          <option value="tableware">食器</option>
+          <option value="fashion">ファッション</option>
+          <option value="shoes">靴</option>
+          <option value="bag">バッグ</option>
+          <option value="perfume">香水</option>
+          <option value="beauty">美容</option>
+          <option value="health">健康・ダイエット</option>
+          <option value="travel">旅行</option>
+          <option value="outdoor">アウトドア</option>
+          <option value="gift">プレゼント</option>
+          <option value="food">食品</option>
+          <option value="other">その他</option>
+        </select>
+      </label>
+      <!-- 選び方の型（まずコレ・本命と代替・プレゼントなど）は、AIが企画を考えるときの編集パターンとして内部に残す。入口は隠す（おまかせ） -->
+      <div class="field" hidden>
+        <span class="field-label">選び方の型</span>
+        <div id="type-choices" class="type-choices" role="radiogroup" aria-label="選び方の型"></div>
+      </div>
+      <label class="field">
+        <span class="field-label">自由入力 <span class="optional">任意</span></span>
+        <textarea id="free-text" class="textarea" rows="2" maxlength="120" placeholder="例：30代男性へのプレゼント、1万円以下"></textarea>
+      </label>
+      <details class="detail-box" id="detail-box">
+        <summary>詳細条件 <span class="optional">任意</span></summary>
+        <div class="detail-grid">
+          <label class="field"><span class="field-label">価格の下限（円）</span><input id="d-min" class="input" type="number" inputmode="numeric" min="0" step="500" placeholder="例：3000"></label>
+          <label class="field"><span class="field-label">価格の上限（円）</span><input id="d-max" class="input" type="number" inputmode="numeric" min="0" step="500" placeholder="例：10000"></label>
+          <label class="field"><span class="field-label">ターゲット</span><input id="d-target" class="input" type="text" maxlength="40" placeholder="例：職場の先輩、一人暮らしの弟"></label>
+          <label class="field"><span class="field-label">年齢</span>
+            <select id="d-age" class="select">
+              <option value="">指定なし</option><option>10代</option><option>20代</option><option>30代</option><option>40代</option><option>50代以上</option>
+            </select>
+          </label>
+          <div class="field"><span class="field-label">誰が使う？</span>
+            <div class="seg" role="radiogroup">
+              <label><input type="radio" name="d-purpose" value="" checked> 指定なし</label>
+              <label><input type="radio" name="d-purpose" value="gift"> プレゼント</label>
+              <label><input type="radio" name="d-purpose" value="self"> 自分用</label>
+            </div>
+          </div>
+          <label class="pick"><input type="checkbox" id="d-brand"> 有名ブランド重視</label>
+          <label class="pick"><input type="checkbox" id="d-trend"> トレンド重視</label>
+        </div>
+      </details>
+      <button type="button" id="search-btn" class="btn btn-discover">この条件で探す</button>
+      <button type="button" id="cond-clear" class="link-btn cond-clear">条件をすべてクリア</button>
+    </section>
+
+    <section class="mode-panel random-box" id="mode-random" hidden>
+      <button type="button" id="discover-btn" class="btn btn-random">おまかせで発掘</button>
+      <p class="random-note">偶然見つけた1商品から、新しい投稿企画を生む場所です。何が出るか分からない商品の中で「これ良いかも」と思ったら、「この商品から企画を考える」を押してください。</p>
+    </section>
+
+    <!-- 新作・予約・再販レーダー：今出たもの・これから出るものを眺める -->
+    <!-- トレンド発掘：売れ筋（楽天ランキング）・検索急上昇（Googleトレンド）・新作・話題（新作レーダー）を混ぜずに見せる -->
+    <!-- コーデを作る：起点のアイテムを自分で検索して、AIコーデスタジオへ。保存したコーデもここから開ける -->
+    <section class="mode-panel" id="mode-coord" hidden>
+      <div id="coord-entry"></div>
+    </section>
+
+    <section class="mode-panel" id="mode-trend" hidden>
+      <div id="trend-body"></div>
+    </section>
+
+    <section class="mode-panel" id="mode-radar" hidden>
+      <button type="button" id="radar-scan" class="btn btn-discover">レーダーを更新</button>
+      <p id="radar-last" class="editor-note">新作・予約・発売予定・再販・限定・コラボ・新色の商品を、選んだジャンルとフォロー中のブランドから集めます（30〜50秒）。見つけた商品はこのiPhoneに貯まっていきます。</p>
+      <div id="radar-loading" class="loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>新作・予約の商品を探しています…<br><span class="sub">30〜50秒ほどかかります</span></p>
+      </div>
+      <div id="radar-message" class="message" role="alert" hidden></div>
+      <div id="radar-dash" class="radar-dash"></div>
+
+      <details class="plans-box" id="radar-settings">
+        <summary>見るジャンル・ブランド</summary>
+        <details class="sub-box" id="radar-genre-box" open>
+          <summary>見るジャンル <span id="rg-count" class="tab-count"></span></summary>
+          <p class="hint">1回の更新で、選んだジャンルから6つずつ順番に見ます。</p>
+          <div class="bulk-bar">
+            <button type="button" id="rg-all" class="btn btn-secondary">全選択</button>
+            <button type="button" id="rg-none" class="btn btn-secondary">クリア</button>
+            <button type="button" class="btn btn-secondary fold-btn" data-fold="radar-genre-box">畳む</button>
+          </div>
+          <div id="radar-genres" class="radar-genres"></div>
+        </details>
+        <details class="sub-box" id="radar-brand-box" open>
+        <summary>ブランドの新作探し <span id="bf-count" class="tab-count"></span></summary>
+        <p class="hint">「新作を探す」で、そのブランドの新作・予約・再販をすぐ探せます。チェックが入っているブランドは「レーダーを更新」でも自動で探します（最初は全部チェック済み。要らないものだけ外してください）。検索の回数を抑えるため、自動では1回に数ブランドずつ、12時間以内に探したブランドは飛ばします。</p>
+        <div class="bf-tools">
+          <label class="field"><span class="field-label">ブランド検索</span><input id="bf-search" class="input" type="text" maxlength="30" placeholder="例：Anker"></label>
+          <label class="field"><span class="field-label">ジャンル</span><select id="bf-genre" class="select"></select></label>
+        </div>
+        <div class="bulk-bar">
+          <button type="button" id="bf-all" class="btn btn-secondary">全選択</button>
+          <button type="button" id="bf-none" class="btn btn-secondary">クリア</button>
+          <button type="button" class="btn btn-secondary fold-btn" data-fold="radar-brand-box">畳む</button>
+        </div>
+        <p id="bf-genre-note" class="hint"></p>
+        <div id="bf-list" class="bf-list"></div>
+        <div class="radar-add">
+          <input id="radar-brand-input" class="input" type="text" maxlength="30" placeholder="一覧にないブランドの新作を探す（例：New Balance）">
+          <button type="button" id="radar-brand-add" class="btn btn-secondary">探す</button>
+        </div>
+        </details>
+        <button type="button" class="btn btn-secondary fold-btn fold-all" data-fold="radar-settings">ジャンル・ブランドの設定を畳む</button>
+        <button type="button" id="radar-reset" class="btn btn-secondary radar-reset">新作レーダーをリセット（見つけた商品を消す）</button>
+      </details>
+
+      <!-- ブランドの新作探し（個別に探しても、自動で探す設定は変えない） -->
+      <section id="brand-detail" class="brand-detail" hidden>
+        <button type="button" id="bd-back" class="link-btn">← 新作レーダーに戻る</button>
+        <h3 id="bd-name" class="curation-title"></h3>
+        <p id="bd-meta" class="hint"></p>
+        <div class="bf-actions">
+          <button type="button" id="bd-search" class="btn btn-primary">もう一度探す</button>
+          <button type="button" id="bd-follow" class="btn btn-secondary"></button>
+        </div>
+        <p id="bd-note" class="hint"></p>
+        <div id="bd-list" class="cand-list"></div>
+      </section>
+
+      <details class="detail-box" id="radar-filter-box">
+        <summary>絞り込み・並び順 <span id="radar-filter-note" class="optional"></span></summary>
+        <div class="detail-grid">
+          <label class="field"><span class="field-label">並び順</span>
+            <select id="rf-sort" class="select">
+              <option value="new">新着順</option>
+              <option value="release">発売日が近い順</option>
+              <option value="preorder_end">予約終了が近い順</option>
+              <option value="price_asc">価格が安い順</option>
+              <option value="price_desc">価格が高い順</option>
+              <option value="score">注目順</option>
+              <option value="mine">自分の好みに近い順</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">状態</span>
+            <select id="rf-status" class="select">
+              <option value="">すべて</option>
+              <option value="PRE_ORDER">予約中</option>
+              <option value="COMING_SOON">発売予定</option>
+              <option value="NEW">新発売</option>
+              <option value="RESTOCK">再販・再入荷</option>
+              <option value="LIMITED">限定</option>
+              <option value="COLLAB">コラボ</option>
+              <option value="NEW_COLOR">新色</option>
+              <option value="SPECIAL">特別販売・期間限定</option>
+              <option value="LIMITED_COLLAB">限定・コラボ</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">発売時期</span>
+            <select id="rf-period" class="select">
+              <option value="">すべて</option>
+              <option value="today">今日</option>
+              <option value="week">今週</option>
+              <option value="month">今月</option>
+              <option value="next">来月</option>
+              <option value="unknown">発売日未定</option>
+              <option value="new_today">今日の新着（今日はじめて見つけた）</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">ジャンル</span><select id="rf-genre" class="select"></select></label>
+          <label class="field"><span class="field-label">ブランド</span><select id="rf-brand" class="select"></select></label>
+          <label class="field"><span class="field-label">価格</span>
+            <select id="rf-price" class="select">
+              <option value="">すべて</option>
+              <option value="0-3000">〜3,000円</option>
+              <option value="3000-5000">3,000〜5,000円</option>
+              <option value="5000-10000">5,000〜10,000円</option>
+              <option value="10000-30000">10,000〜30,000円</option>
+              <option value="30000-">30,000円以上</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">販売サイト</span><select id="rf-source" class="select"></select></label>
+          <label class="pick"><input type="checkbox" id="rf-fav"> 気になるだけ（ウォッチリスト）</label>
+          <button type="button" id="rf-clear" class="link-btn">絞り込みをすべてクリア</button>
+        </div>
+      </details>
+
+      <p id="radar-count" class="list-count"></p>
+      <div id="radar-list" class="cand-list"></div>
+      <button type="button" id="radar-more" class="btn btn-secondary" hidden>もっと見る</button>
+    </section>
+
+    <nav class="quick-links" aria-label="その他の機能">
+      <a class="quick" href="#buyer">バイヤー発掘便</a>
+      <a class="quick" href="#furusato">ふるさと納税</a>
+    </nav>
+    <nav class="quick-links" aria-label="投稿管理">
+      <a class="quick" href="#manage:room_candidate">ROOM候補</a>
+      <a class="quick" href="#manage:ig_waiting">Instagram投稿待ち</a>
+      <a class="quick" href="#manage:history">投稿履歴</a>
+    </nav>
+
+    <div id="loading" class="loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-text">商品を探しています…<br><span class="sub">いくつかの方向から探すので、30〜60秒ほどかかります</span></p>
+    </div>
+
+    <div id="message" class="message" role="alert" hidden></div>
+
+    <p id="genre" class="genre" hidden></p>
+    <div class="fold-all-bar fold-skip"><button type="button" class="link-btn" id="fold-all-close">すべて畳む</button><button type="button" class="link-btn" id="fold-all-open">すべて開く</button></div>
+    <div id="results" class="results"></div>
+  </main>
+
+  <!-- 社長、これどうすか？：バイヤー（AI）が1商品ずつプレゼンし、社長が判断する（js/pitch.js） -->
+  <main class="container" id="view-pitch" hidden>
+    <h2 class="curation-title">社長、これどうすか？</h2>
+    <div id="pitch-body"></div>
+  </main>
+
+  <!-- 社長の対応（js/todo.js）：判断が要ること・同期の問題（まとめて選ぶ）・データの整理 -->
+  <main class="container" id="view-todo" hidden>
+    <h2 class="curation-title">社長の対応</h2>
+    <div id="todo-body"></div>
+  </main>
+
+  <!-- Instagram広報部：フォロー候補・コメント候補・実施状況（js/pr.js）。フォローとコメントは社長がInstagramで行い、ここに記録する -->
+  <main class="container" id="view-pr" hidden>
+    <h2 class="curation-title">Instagram広報部</h2>
+    <div id="pr-body"></div>
+  </main>
+
+  <!-- 経営報告：AI社員の毎日の経営会議・社長への提言・業務・会議室（js/company.js） -->
+  <main class="container" id="view-company" hidden>
+    <h2 class="curation-title">経営報告</h2>
+    <div id="company-body"></div>
+  </main>
+
+  <!-- 商品ドロボー：Instagramの商品紹介アカウントで見つけた商品を楽天で探す（js/thief.js）。Instagramの投稿は読み込まない -->
+  <main class="container" id="view-thief" hidden>
+    <h2 class="curation-title">商品ドロボー</h2>
+    <div id="thief-body"></div>
+  </main>
+
+  <!-- バイヤー発掘便：「こんな商品があるなんて知らなかった！」を探す（評価は次の発掘に反映） -->
+  <main class="container" id="view-buyer" hidden>
+    <h2 class="curation-title">バイヤー発掘便</h2>
+    <div id="buyer-body"></div>
+  </main>
+
+  <!-- ふるさと納税コーナー（通常の商品発掘とは別） -->
+  <main class="container" id="view-furusato" hidden>
+    <h2 class="curation-title">ふるさと納税</h2>
+    <div id="furusato-body"></div>
+  </main>
+
+  <!-- 検索ジョブ：検索の記録と進み具合。別のアプリを開いても、戻ると続きから進む -->
+  <main class="container" id="view-jobs" hidden>
+    <h2 class="curation-title">検索ジョブ</h2>
+    <p class="hint">検索を始めたら、ほかの画面へ移ったり、別のアプリを開いたりしても大丈夫です。通信が切れた分は、アプリに戻ると自動で続きから進みます。終わった結果はこのiPhoneに保存され、再検索せずに見られます。ブラウザを閉じている間は進みません（開き直すと続きから進みます）。</p>
+    <div id="jobs-list" class="jobs-list"></div>
+  </main>
+
+  <main class="container" id="view-manage" hidden>
+    <div class="status-tabs" id="status-tabs" role="tablist"></div>
+    <div id="ig-bar" class="ig-bar" hidden>
+      <p id="ig-selected" class="ig-selected">0件選択中</p>
+      <div class="ig-actions">
+        <button type="button" id="ig-copy" class="btn btn-secondary" disabled>まとめてコピー</button>
+        <button type="button" id="ig-done" class="btn btn-secondary" disabled>投稿済みにする</button>
+        <button type="button" id="ig-create" class="btn btn-primary" disabled>Instagram画像を作る</button>
+      </div>
+    </div>
+    <div id="manage-list" class="results"></div>
+    <p id="manage-empty" class="manage-empty" hidden></p>
+    <p class="manage-note">記録はこのiPhoneのブラウザに保存されます。別の端末やブラウザとは共有されません。</p>
+  </main>
+
+  <main class="container" id="view-compose" hidden>
+    <a href="#manage" class="back-link">← 投稿管理に戻る</a>
+    <h2 class="compose-title">Instagram画像を作る</h2>
+    <section class="search-box">
+      <label class="field">
+        <span class="field-label">投稿テーマ</span>
+        <input id="ig-theme" class="input" type="text" maxlength="40" placeholder="例：出産祝い">
+        <span class="hint">「◯◯について本気出して考えてみた」の◯◯を入れます</span>
+      </label>
+      <label class="field">
+        <span class="field-label">表紙のデザイン</span>
+        <select id="ig-cover-style" class="select"></select>
+        <span class="hint">発掘ページで選んだ「選び方の型」に合わせたシリーズになります。企画（本気出して考えてみた）は今までの表紙です</span>
+      </label>
+      <div id="ig-cover-fields" class="cover-fields">
+        <label class="field">
+          <span class="field-label">表紙の大見出し <span class="optional">任意</span></span>
+          <textarea id="ig-cover-title" class="textarea" rows="2" maxlength="30" placeholder="空欄ならAIが作ります（改行で2行に。例：防災グッズ、↵まずコレを買え）"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">目立たせる言葉 <span class="optional">任意</span></span>
+          <input id="ig-cover-accent" class="input" type="text" maxlength="8" placeholder="大見出しの中の言葉（例：コレ、アリ、5,000）">
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">表紙の小見出し <span class="optional">任意</span></span>
+        <input id="ig-subtitle" class="input" type="text" maxlength="24" placeholder="空欄なら自動（本気出して〜は「迷ったので整理しました」）">
+      </label>
+      <label class="field">
+        <span class="field-label">カテゴリ <span class="optional">任意</span></span>
+        <input id="ig-category" class="input" type="text" maxlength="10" placeholder="空欄ならテーマと同じ（商品カード左上の小ラベル）">
+      </label>
+      <label class="field">
+        <span class="field-label">最後のROOM誘導の文言</span>
+        <select id="ig-cta" class="select"></select>
+      </label>
+    </section>
+
+    <h3 class="compose-sub">2枚目のまとめ</h3>
+    <section class="search-box">
+      <label class="pick"><input type="checkbox" id="ig-sum-on"> 2枚目に「まとめ」を入れる</label>
+      <div id="ig-sum-fields" class="summary-fields">
+        <label class="field">
+          <span class="field-label">見出し</span>
+          <input id="ig-sum-title" class="input" type="text" maxlength="40">
+        </label>
+        <label class="field">
+          <span class="field-label">説明</span>
+          <textarea id="ig-sum-lead" class="textarea" rows="4" maxlength="200"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">結論</span>
+          <textarea id="ig-sum-verdict" class="textarea" rows="2" maxlength="90"></textarea>
+        </label>
+        <p class="hint">選び方まとめから来たときは、その内容が入っています。見出しか結論が空欄なら、AIが商品と役割から作ります。</p>
+      </div>
+    </section>
+
+    <h3 class="compose-sub">使う商品 <span id="ig-count" class="tab-count"></span></h3>
+    <p class="hint">▲▼で並び順を変えられます（上の商品ほど大きく紹介されます）。役割（迷ったらこれ・本命・安い代替 など）は任意です。1投稿に最大20商品まで。商品が多いときは、1枚に2〜4商品をのせて10枚以内に収めます。</p>
+    <p id="ig-plan-note" class="ig-plan-note"></p>
+    <div id="ig-items" class="ig-items"></div>
+
+    <button type="button" id="ig-generate" class="btn btn-discover">投稿素材をまとめて作る</button>
+    <p class="hint">カルーセル画像・キャプション・ハッシュタグ・ROOM誘導文と、同じ商品でReel（台本・テロップ・動画）とStory 3枚をまとめて作ります。</p>
+    <div id="ig-loading" class="loading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p>カルーセルとキャプションを作っています…<br><span class="sub">10〜20秒ほどかかります。そのあとReel・Storyも続けて作ります</span></p>
+    </div>
+    <div id="ig-message" class="message" role="alert" hidden></div>
+
+    <section id="ig-result" class="ig-result" hidden>
+      <button type="button" id="ig-room" class="btn btn-discover">ROOM登録準備へ</button>
+      <p class="hint">Instagramに出す前に、紹介する商品をROOMに入れておくと、見た人がそのままROOMで見つけられます。</p>
+      <h3 class="compose-sub">スライド構成</h3>
+      <div id="ig-layout" class="ig-layout"></div>
+      <h3 class="compose-sub">できあがり</h3>
+      <div id="ig-preview" class="ig-preview"></div>
+      <h3 class="compose-sub">キャプション</h3>
+      <textarea id="ig-caption" class="textarea caption" rows="12"></textarea>
+      <div class="actions">
+        <button type="button" id="ig-caption-copy" class="btn btn-secondary">キャプションをコピー</button>
+      </div>
+      <h3 class="compose-sub">保存</h3>
+      <div class="actions">
+        <button type="button" id="ig-share" class="btn btn-primary">写真に保存（まとめて）</button>
+        <button type="button" id="ig-zip" class="btn btn-secondary">ZIPでまとめてダウンロード</button>
+        <button type="button" id="ig-mark" class="btn btn-secondary">この商品をInstagram投稿済みにする</button>
+      </div>
+      <p class="hint">「写真に保存」で出てくる画面の「画像を保存」を選ぶと、全部まとめて写真アプリに入ります。1枚ずつなら、画像を長押しして保存もできます。</p>
+      <h3 class="compose-sub">Reel・Story（同じ企画・同じ商品で）</h3>
+      <p class="hint">カルーセル＝詳しく説明、Reel＝興味を引いて投稿へ、Story＝最新投稿へ誘導、と役割を変えています。</p>
+      <div id="ig-assets"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>紹介文は商品ページの情報と合っているか確認してから投稿してください。</p>
+    <button type="button" id="reset-passcode" class="link-btn" hidden>合言葉を入れ直す</button>
+  </footer>
+
+  <main class="container" id="view-assets" hidden>
+    <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
+    <h2 class="compose-title">Reel・Story</h2>
+    <p id="assets-title" class="room-title"></p>
+    <div id="assets-status" class="asset-status"></div>
+    <div id="assets-body"></div>
+  </main>
+
+  <main class="container" id="view-room" hidden>
+    <a href="#manage:history" class="back-link">← 投稿履歴へ</a>
+    <h2 class="compose-title">ROOM登録準備</h2>
+    <p id="room-title" class="room-title"></p>
+    <p id="room-furusato-note" class="message" hidden>ふるさと納税の返礼品です。楽天ROOM・楽天アフィリエイトの対象かどうかは確認できていません。ROOMに載せる前に、楽天の最新の規約・ヘルプで確認してください。紹介文にポイント還元・節税額は書かないでください。</p>
+    <div class="room-progress">
+      <p class="room-progress-label">ROOM登録 <span id="room-bar" class="room-bar"></span> <span id="room-count"></span></p>
+      <p id="room-complete" class="room-complete" hidden>ROOM登録完了</p>
+    </div>
+    <p class="hint">ROOMへの投稿は、ROOMのルール上アプリからは行えません。各商品の「コピーしてROOMで投稿」で、紹介文をコピーしながらROOMの投稿画面を開き、紹介文を貼り付けて、ROOMで「投稿」を押してください。終わったら「ROOM投稿済みにする」を押すと、進み具合が記録されます。</p>
+    <section class="search-box room-tags-box">
+      <h3 class="compose-sub">ROOM用ハッシュタグ</h3>
+      <p class="hint">企画のテーマと、商品の用途・紹介文から作ります（商品カテゴリだけでは決めません）。「コピーしてROOMで投稿」で、紹介文と一緒にコピーされます。</p>
+      <p id="room-tags-common" class="room-tags"></p>
+      <button type="button" id="room-tags-btn" class="btn btn-secondary">ハッシュタグを作り直す</button>
+      <p id="room-tags-note" class="hint"></p>
+    </section>
+    <div id="room-items" class="results"></div>
+
+    <section class="search-box room-collection">
+      <h3 class="compose-sub">ROOMのコレクション</h3>
+      <label class="field">
+        <span class="field-label">コレクション名（Instagramのテーマとそろえています）</span>
+        <input id="room-col-name" class="input" type="text" maxlength="40">
+      </label>
+      <button type="button" id="room-col-copy" class="btn btn-secondary">コレクション名をコピー</button>
+      <p class="hint">ROOMアプリの「コレクション」で、この名前のコレクションを作り、上の商品を追加してください。</p>
+      <label class="pick"><input type="checkbox" id="room-col-done"> コレクションに入れた</label>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="js/store.js?v=2026-11-17.13"></script>
+  <script src="js/history.js?v=2026-11-17.13"></script>
+  <script src="js/search-jobs.js?v=2026-11-17.13"></script>
+  <script src="js/buyer-store.js?v=2026-11-17.13"></script>
+  <script src="js/pitch-store.js?v=2026-11-17.13"></script>
+  <script src="js/thief-store.js?v=2026-11-17.13"></script>
+  <script src="js/hidden-products.js?v=2026-11-17.13"></script>
+  <script src="js/radar-store.js?v=2026-11-17.13"></script>
+  <script src="js/brand-follow.js?v=2026-11-17.13"></script>
+  <script src="js/zip.js?v=2026-11-17.13"></script>
+  <script src="js/carousel-layout.js?v=2026-11-17.13"></script>
+  <script src="js/ig-render.js?v=2026-11-17.13"></script>
+  <script src="js/ig-covers.js?v=2026-11-17.13"></script>
+  <script src="js/ig-coord.js?v=2026-11-17.13"></script>
+  <script src="js/ig-multi.js?v=2026-11-17.13"></script>
+  <script src="js/reel-story.js?v=2026-11-17.13"></script>
+  <script src="js/coord-store.js?v=2026-11-17.13"></script>
+  <script src="js/coord-collage.js?v=2026-11-17.13"></script>
+  <script src="js/image-store.js?v=2026-11-17.13"></script>
+  <script src="js/fold.js?v=2026-11-17.13"></script>
+  <script src="js/backup.js?v=2026-11-17.13"></script>
+  <script src="js/creative-check.js?v=2026-11-17.13"></script>
+  <script src="js/app.js?v=2026-11-17.13"></script>
+  <script src="js/delivery-store.js?v=2026-11-17.13"></script>
+  <script src="js/room-text-store.js?v=2026-11-17.13"></script>
+  <script src="js/delivery.js?v=2026-11-17.13"></script>
+  <script src="js/explore-store.js?v=2026-11-17.13"></script>
+  <script src="js/explore.js?v=2026-11-17.13"></script>
+  <script src="js/agents-store.js?v=2026-11-17.13"></script>
+  <script src="js/agents.js?v=2026-11-17.13"></script>
+  <script src="js/server-sync.js?v=2026-11-17.13"></script>
+  <script src="js/work.js?v=2026-11-17.13"></script>
+  <script src="js/company-store.js?v=2026-11-17.13"></script>
+  <script src="js/company.js?v=2026-11-17.13"></script>
+  <script src="js/perf-store.js?v=2026-11-17.13"></script>
+  <script src="js/perf.js?v=2026-11-17.13"></script>
+  <script src="js/pr-store.js?v=2026-11-17.13"></script>
+  <script src="js/kuma-master.js?v=2026-11-17.13"></script>
+  <script src="js/pr.js?v=2026-11-17.13"></script>
+  <script src="js/owner-tasks.js?v=2026-11-17.13"></script>
+  <script src="js/todo.js?v=2026-11-17.13"></script>
+  <script src="js/pitch.js?v=2026-11-17.13"></script>
+  <script src="js/thief.js?v=2026-11-17.13"></script>
+</body>
+</html>

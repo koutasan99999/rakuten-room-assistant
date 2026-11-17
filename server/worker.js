@@ -6,6 +6,7 @@ import { send, readBody, requestReferer } from '../lib/http.js';
 import { kvFrom } from '../lib/kv.js';
 import { tick, state, readSnapshot, setPaused, WORKER_KEYS } from '../lib/worker.js';
 import * as V2 from '../lib/v2/company.js';
+import { v1Enabled } from '../lib/v1-retired.js';
 const V = V2;
 const V2_CHAIN_MS = 6000; // 1.0がこの時間までに終わったら、同じ回で2.0を進める（関数の上限60秒の内側）
 import { maskSecrets } from '../lib/ai.js';
@@ -57,7 +58,8 @@ export default async function handler(req, res, env = process.env) {
       if (trigger === 'qstash' && mid && !(await kv.set(`worker:qstash:${mid}`, '1', { nx: true, ex: 3600 }))) return send(res, 200, { ok: true, skipped: '同じ呼び出しの再送のため、何もしません（二重実行の防止）' });
       // サングラスくま株式会社 2.0（2026-11-15）：社長が切り替えた（v2:active）とき、または手動の実行で target=v2 と指定したときだけ2.0を動かす。それ以外は今までどおり1.0
       // 切り替えの前（動作確認中）は、QStash の定期実行を1.0と2.0で交互に使う（2026-11-16：2.0が手動の実行のときしか動かず、オフィスで誰も働いて見えなかったため）
-      let runV2 = (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
+      // 1.0は運用終了（2026-11-17）：定期実行・手動の実行（target=v1）・Vercelの1日1回は、すべて2.0だけを動かす（V1_ENABLED=1 のときだけ今までどおり）
+      let runV2 = !v1Enabled(env) || (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
       if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
       if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger })) });
       const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
@@ -77,7 +79,12 @@ export default async function handler(req, res, env = process.env) {
       await kv.setJson(WORKER_KEYS.snap, snap);
       return send(res, 200, { ok: true, at: snap.at, outreachPosts: snap.outreachPosts.length, themes: snap.themes.length });
     }
-    if (action === 'state') return send(res, 200, await state(kv, env));
+    if (action === 'state') {
+      const st = await state(kv, env);
+      // 1.0は運用終了：途中だった1.0の仕事は保存したまま、「仕事中・途中」とは表示しない（定期実行では進めない）
+      if (!v1Enabled(env)) return send(res, 200, { ...st, job: null, stoppedJob: st.job, retired: true, notice: '1.0は運用を終了しました（2026-11-17）。途中だった仕事は保存したまま止めています' });
+      return send(res, 200, st);
+    }
     // 停止スイッチ：止めている間は定期実行が何もしない（AIを呼ばない）。途中の仕事・成果物・記録は消さない
     if (action === 'pause' || action === 'resume') return send(res, 200, { ok: true, paused: await setPaused(kv, action === 'pause', String(body.reason || '').slice(0, 100)) });
     return send(res, 400, { error: '操作が分かりません' });

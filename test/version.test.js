@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 // 画面（index.html）とプログラムの版がずれると、更新直後にボタンや一覧が出なくなる。必ず同じ値にする
-test('index.html と js/app.js の版がそろっている', () => {
-  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+test('1.0の閲覧用ページ（v1/index.html）と js/app.js の版がそろっている', () => {
+  const html = readFileSync(new URL('../v1/index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   const v = app.match(/var APP_VERSION = '([^']+)'/)[1];
   assert.equal(html.match(/<meta name="app-version" content="([^"]+)">/)[1], v);

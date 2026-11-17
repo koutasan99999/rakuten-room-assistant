@@ -11,11 +11,11 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'v1（今までの会社）か v2（サングラスくま株式会社 2.0 の動作確認）'
+        description: 'v2（サングラスくま株式会社 2.0）。1.0は2026-11-17に運用終了（v1を選んでも2.0が動く）'
         required: false
         type: choice
         options: [v1, v2]
-        default: 'v1'
+        default: 'v2'
 concurrency:
   group: worker
   cancel-in-progress: false

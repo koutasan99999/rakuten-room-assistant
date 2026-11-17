@@ -41,15 +41,5 @@
         }
       ]
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/ig",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/worker",
-      "schedule": "30 21 * * *"
-    }
   ]
 }

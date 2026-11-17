@@ -103,7 +103,7 @@
       s.lanes.forEach(function (x) { lp.appendChild(el('p', 'hint', 'レーン' + x.lane + '　' + x.from + '〜' + x.to + '秒　' + nameOf(x.agent) + '：' + (x.side ? '仕事探し（' + x.step + '）' : x.step) + (x.final ? '・' + ({ deliver: '納品', stop: '停止', wait: '待ち', done: '完了', fail: '失敗' })[x.final] : ''))); });
       box.appendChild(lp);
     }
-    if (!s.active) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
+    if (!s.active && !s.v1Retired) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
     if (s.lastTickAt) box.appendChild(el('p', 'hint', '最後に動いた時刻：' + day(s.lastTickAt) + ' ' + hm(s.lastTickAt)));
   }
   var LABEL = { start: '開始', done: '完成', handoff: '引き継ぎ', wait: '画像待ち', stop: '停止', deliver: '納品', owner: '社長', retry: '再試行', budget: '予算待ち', resume: '再開' };
@@ -269,7 +269,7 @@
       if (it.key === 'pr') c.appendChild(btn('広報を開く', 'btn', function () { switchTab('pr'); }));
       if (it.key === 'switch') {
         var lab = el('label', 'check'); var cb = el('input'); cb.type = 'checkbox'; lab.appendChild(cb); lab.appendChild(document.createTextNode(' 1.0のデータのバックアップを保存した')); c.appendChild(lab);
-        var a = el('a', 'link', '1.0の「社長の対応」を開く（バックアップを保存）'); a.href = '../#todo'; c.appendChild(a);
+        var a = el('a', 'link', '1.0の「社長の対応」を開く（バックアップを保存）'); a.href = '../v1/#todo'; c.appendChild(a);
         c.appendChild(btn('2.0に切り替える', 'btn', function () { if (!cb.checked) { alert('先に1.0のバックアップを保存してください'); return; } if (!confirm('2.0に切り替えますか？（1.0の定期実行は止まります。データは消しません）')) return; api({ action: 'activate', on: true }).then(refresh); }));
       }
       box.appendChild(c);
@@ -283,7 +283,7 @@
     rq.appendChild(btn('指定する', 'btn', function () { api({ action: 'request', text: ti.value, url: ui.value }).then(function (r) { if (r.status !== 200) { alert((r.data && r.data.error) || 'できませんでした'); return; } ti.value = ''; ui.value = ''; refresh(); }); }));
     (state.requests || []).forEach(function (q) { rq.appendChild(el('p', 'hint', '待っている指定：' + (q.text || '') + (q.url ? '（商品の指定）' : ''))); });
     box.appendChild(rq);
-    if (state.active) { var back = el('div', 'card'); back.appendChild(el('p', 'field', '1.0に戻す')); back.appendChild(el('p', 'hint', '定期実行を1.0と交互に戻します（2.0のデータは消しません）')); back.appendChild(btn('1.0に戻す', 'btn ghost', function () { if (confirm('1.0に戻しますか？')) api({ action: 'activate', on: false }).then(refresh); })); box.appendChild(back); }
+    if (state.active && !state.v1Retired) { var back = el('div', 'card'); back.appendChild(el('p', 'field', '1.0に戻す')); back.appendChild(el('p', 'hint', '定期実行を1.0と交互に戻します（2.0のデータは消しません）')); back.appendChild(btn('1.0に戻す', 'btn ghost', function () { if (confirm('1.0に戻しますか？')) api({ action: 'activate', on: false }).then(refresh); })); box.appendChild(back); }
   }
 
   // ---- 成果とお金（完成品・品質・正確性・重複・費用。売上は社長の入力） ----
