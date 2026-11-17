@@ -185,12 +185,24 @@
       if (s.theme || s.aim) { c.appendChild(el('p', 'field', '投稿テーマと狙い')); c.appendChild(el('p', '', (s.theme ? 'テーマ：' + s.theme : '') + (s.target ? '／対象：' + s.target : ''))); if (s.aim) c.appendChild(el('p', '', '狙い：' + s.aim)); }
       if (s.pickReason) c.appendChild(el('p', '', '選定理由：' + s.pickReason + (s.band ? '（' + s.band + '）' : '')));
       if (s.who) c.appendChild(el('p', 'hint', '誰に：' + s.who + (s.problem ? '／悩み：' + s.problem : '') + (s.whyNow ? '／なぜ今：' + s.whyNow : '')));
-      var fig = el('figure', 'cover'); var img = el('img'); img.src = '..' + s.image.url; img.alt = '表紙画像'; fig.appendChild(img); fig.appendChild(el('figcaption', null, s.image.label)); c.appendChild(fig);
+      if (s.image) { var fig = el('figure', 'cover'); var img = el('img'); img.src = '..' + s.image.url; img.alt = '表紙画像'; fig.appendChild(img); fig.appendChild(el('figcaption', null, s.image.label)); c.appendChild(fig); }
+      // 表紙画像は社長がChatGPTで作って追加する（2026-11-17 AIの画像生成を停止）。前の画像は消さずに残る
+      var up = el('div', 'cover-up');
+      up.appendChild(el('p', 'field', s.image ? '表紙画像を差し替える' : '表紙画像はまだありません'));
+      up.appendChild(el('p', 'hint', 'ChatGPTで作ったサングラスくまの画像を選ぶと、表紙に入ります（アプリはAIで画像を作りません・費用0円）'));
+      var fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; up.appendChild(fi);
+      var upMsg = el('p', 'hint');
+      up.appendChild(btn(s.image ? '画像を差し替える' : '表紙画像を追加', 'btn small', function () {
+        var f = fi.files && fi.files[0]; if (!f) { upMsg.textContent = '画像を選んでください'; return; }
+        upMsg.textContent = '送っています…';
+        shrink(f).then(function (dataUrl) { return api({ action: 'setImage', id: s.id, image: dataUrl }); }).then(function (r) { if (r.status !== 200) { upMsg.textContent = (r.data && r.data.error) || '追加できませんでした'; return; } refresh().then(function () { showSet(s.id); }); }, function (e) { upMsg.textContent = e.message; });
+      }));
+      up.appendChild(upMsg); c.appendChild(up);
       box.appendChild(c);
       if (s.order && s.order.length) { var o = el('div', 'card'); o.appendChild(el('p', 'field', '推奨の投稿順')); o.appendChild(list(s.order, true)); box.appendChild(o); }
       var ig = el('div', 'card');
       ig.appendChild(el('p', 'field', 'Instagramに貼る画像'));
-      ig.appendChild(el('p', 'hint', '表紙（サングラスくま・AI生成イメージ）→ 商品カード → 楽天ROOMへの案内の順です。この端末で作ります（費用はかかりません）'));
+      ig.appendChild(el('p', 'hint', (s.image ? '表紙（社長が追加した画像）' : '表紙（商品写真で組み立て。表紙画像を追加すると差し替わります）') + '→ 商品カード → 楽天ROOMへの案内の順です。この端末で作ります（費用はかかりません）'));
       var strip = el('div', 'slides'); ig.appendChild(strip);
       var igStatus = el('p', 'hint', '画像を作っています…'); ig.appendChild(igStatus);
       box.appendChild(ig);
