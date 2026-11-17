@@ -27,7 +27,7 @@ function appOrigin(req, env) {
 //   上限：続けて CHAIN_MAX_DEPTH 回まで（そのあとは定期実行が拾う）・1時間に CHAIN_MAX_PER_HOUR 回まで。本番だけ（Preview から本番を呼ばない）。V2_CHAIN=0 で止められる
 export const CHAIN_MAX_DEPTH = 20;
 export const CHAIN_MAX_PER_HOUR = 60;
-const CHAIN_LIMIT_MS = 50000; // 関数の上限60秒の内側でだけ呼ぶ
+const CHAIN_LIMIT_MS = 56000; // 関数の上限60秒の内側でだけ呼ぶ（2026-11-17 本番：実行は50秒を超えることが多く、50秒では連鎖が途切れた）
 export async function chainNext({ kv, env, req, more, skipped, startedAt, fetchImpl = fetch }) {
   if (!more || skipped) return { next: false, why: skipped ? '重なった実行（何もしていない）' : '進められる仕事が残っていない（待つべき案件だけ）' };
   if (String(env.V2_CHAIN || '').trim() === '0') return { next: false, why: 'V2_CHAIN=0' };
@@ -41,8 +41,7 @@ export async function chainNext({ kv, env, req, more, skipped, startedAt, fetchI
   if (n > CHAIN_MAX_PER_HOUR) return { next: false, why: `連鎖は1時間に${CHAIN_MAX_PER_HOUR}回まで` };
   const url = new URL('api/worker', appOrigin(req, env)).toString();
   // 呼び出しが届けば十分（相手の実行の終わりは待たない。相手は自分で最後まで動く）
-  await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${env.CRON_SECRET}`, 'x-trigger': 'chain', 'x-chain-depth': String(depth) }, body: JSON.stringify({ action: 'tick' }), signal: AbortSignal.timeout(2500) }).catch(() => {});
-  await kv.setJson('v2:chain:last', { at: new Date().toISOString(), depth }).catch(() => {});
+  await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${env.CRON_SECRET}`, 'x-trigger': 'chain', 'x-chain-depth': String(depth) }, body: JSON.stringify({ action: 'tick' }), signal: AbortSignal.timeout(1500) }).catch(() => {});
   return { next: true, depth };
 }
 
@@ -88,6 +87,7 @@ export default async function handler(req, res, env = process.env) {
       if (runV2) {
         const r2 = await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, probeNow: trigger === 'workflow_dispatch' });
         const chain = await chainNext({ kv, env, req, more: !!r2.more, skipped: !!r2.skipped, startedAt });
+        if (!r2.skipped) await kv.setJson('v2:chain:last', { at: new Date().toISOString(), trigger, ms: Date.now() - startedAt, ...chain }).catch(() => {}); // 呼んだか・呼ばなかった理由を残す（確かめられるように）
         return send(res, 200, { company: 'v2', ...r2, chain });
       }
       const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
