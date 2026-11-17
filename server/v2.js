@@ -43,6 +43,7 @@ export default async function handler(req, res, env = process.env) {
       await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が @${e.handle || '不明'} へのコメントを確認した（${withReview(e).reviewLabel}）` });
       return send(res, 200, { entry: withReview(e) });
     }
+    if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });
     return send(res, 400, { error: 'この操作はありません' });
   } catch (e) {

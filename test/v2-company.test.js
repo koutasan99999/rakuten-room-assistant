@@ -520,3 +520,46 @@ test('残高不足：前の実行で「再試行待ち」になった残高不�
   assert.equal(y.data.imageRounds, 2, '画像の描き直しの回数に数えない');
   assert.equal(y.wait && y.wait.kind, 'quota');
 });
+
+// ---- 2026-11-17 有料のAI画像生成を停止：表紙画像なしで完成品まで進め、社長がChatGPTの画像を後から追加する ----
+test('AI画像生成の停止：OpenAIの画像APIを1回も呼ばずに、企画→商品→文章→監査→仕上げまで進めて完成品を届ける。社長が後から表紙画像を追加できる（前の画像は消さない）', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, AI_IMAGE_GEN: '', __kv: kv };
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  const steps = await untilDelivered(kv, env);
+  assert.ok(steps.some((x) => x.endsWith(':deliver')), `完成品が届いた：${steps.join(' / ')}`);
+  assert.ok(!steps.some((x) => /designer:(scene|image)|auditor:checkImage/.test(x)), `画像の工程を通らない：${steps.join(' / ')}`);
+  assert.equal(mock.calls.images.length, 0, 'OpenAIの画像APIを呼ばない');
+  const st = await V.officeState(kv, env);
+  const set = await V.getSet(kv, st.sets[0].id);
+  assert.equal(set.image, null, '表紙画像なしで納品');
+  assert.ok(set.products.length >= 3 && set.caption && set.products.every((p) => p.room), '商品・キャプション・ROOM紹介文はそろっている');
+  assert.ok(set.notes.some((n) => /ChatGPT/.test(n)), '表紙は社長が追加できると案内');
+  // 社長がChatGPTの画像を追加 → 差し替え（前の画像は履歴に残る）
+  const jpg = 'data:image/jpeg;base64,' + Buffer.from('fake-jpeg').toString('base64');
+  const r1 = await call(v2api, { action: 'setImage', id: set.id, image: jpg }, undefined, env);
+  assert.equal(r1.status, 200, JSON.stringify(r1.data));
+  assert.match(r1.data.image.label, /ChatGPT/);
+  const r2 = await call(v2api, { action: 'setImage', id: set.id, image: jpg }, undefined, env);
+  const saved = await kv.getJson(V.V2_KEYS.set(set.id));
+  assert.equal(saved.image.mediaId, r2.data.image.mediaId);
+  assert.equal(saved.imageHistory[0].mediaId, r1.data.image.mediaId, '前の画像は消さない');
+  assert.ok((await kv.getJson(V.V2_KEYS.sets))[0].image, '一覧にも表紙が出る');
+  assert.equal((await call(v2api, { action: 'setImage', id: set.id, image: 'data:text/plain;base64,AAAA' }, undefined, env)).status, 400);
+});
+test('AI画像生成の停止：表紙画像の工程（場面・画像待ち・画像の確認）にいた案件は、消さずに画像なしの仕上げへ進む', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, AI_IMAGE_GEN: '' };
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  const C = await import('../lib/kuma-cover.js');
+  const r = await C.imageStep({ kv, env, origin: APP, scene: {}, item: {} });
+  assert.match(r.skip, /停止中/, '画像の部品そのものも、画像APIを呼ぶ前に止まる');
+  assert.equal(mock.calls.images.length, 0);
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'w', kind: 'make', step: 'image', attempts: 1, runs: [], wait: { kind: 'image', why: '画像の予算待ち' }, data: { set: { title: '待っていた案件' } } }]);
+  await run(kv, env);
+  const ev = (await V.officeState(kv, env)).events;
+  assert.ok(ev.some((e) => e.job === 'w' && /表紙画像なしで仕上げる/.test(e.text)), '画像なしで仕上げへ');
+  assert.equal(mock.calls.images.length, 0);
+});
