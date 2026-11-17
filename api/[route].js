@@ -38,6 +38,7 @@ import data from '../server/data.js';
 import kumaMaster from '../server/kuma-master.js';
 import media from '../server/media.js';
 import v2 from '../server/v2.js';
+import { v1Enabled, V1_ONLY_ROUTES, V1_RETIRED_MESSAGE } from '../lib/v1-retired.js';
 
 export const ROUTES = {
   'agents': agents,
@@ -82,6 +83,12 @@ export default async function handler(req, res) {
     res.statusCode = 404;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.end(JSON.stringify({ error: 'このAPIはありません' }));
+  }
+  // 1.0の運用終了（2026-11-17）：1.0だけが使うAPIは、AI・楽天を呼ぶ前に断る（費用を使わない）
+  if (V1_ONLY_ROUTES.has(name) && !v1Enabled()) {
+    res.statusCode = 410;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.end(JSON.stringify({ error: V1_RETIRED_MESSAGE, retired: true }));
   }
   // このリクエストで呼んだAIの使用量をまとめる（応答に aiUsage として付く）
   // 保存場所があるときは、サーバー側で月の上限を確かめ（超えていればAIを呼ばない）、使った費用（実測）を記録する
