@@ -7,7 +7,7 @@
   var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
   // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
   var ST_LABEL = { work: '担当中', queued: '次の定期実行待ち', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
-  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち' };
+  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）' };
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }

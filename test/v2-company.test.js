@@ -602,3 +602,53 @@ test('AI画像生成の切り替え：未設定・空なら動く（2026-11-17 �
   assert.equal(C.aiImageEnabled({ AI_IMAGE_GEN: '1' }), true);
   assert.equal(C.aiImageEnabled({ AI_IMAGE_GEN: '0' }), false);
 });
+
+// ---- 2026-11-17 確認待ちが上限でも会社を止めない・商品の偏りを直す ----
+test('確認待ちが上限（5件）でも会社は止まらない：企画・商品調査・在庫の確認は進み、文章の前で「完成品の枠待ち」として保存。枠が空いたら続きから', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, __kv: kv };
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  await kv.setJson(V.V2_KEYS.sets, [1, 2, 3, 4, 5, 6].map((n) => ({ id: `w${n}`, title: `確認待ち${n}`, status: 'waiting', deliveredAt: new Date().toISOString() })));
+  for (const n of [1, 2, 3, 4, 5, 6]) await kv.setJson(V.V2_KEYS.set(`w${n}`), { id: `w${n}`, title: `確認待ち${n}`, status: 'waiting', deliveredAt: new Date().toISOString(), products: [] });
+  const steps = [];
+  for (let i = 0; i < 3; i++) steps.push(...((await run(kv, env)).steps || []));
+  assert.ok(steps.some((x) => x.startsWith('planner:propose')) && steps.some((x) => x.startsWith('buyer:')), `企画とバイヤーは仕事をした：${steps}`);
+  assert.ok(!steps.some((x) => /writer:|pack/.test(x)), '完成品の枠が無いので、文章・納品はしない');
+  let cases = await kv.getJson(V.V2_KEYS.cases);
+  assert.ok(cases.length >= 1 && cases.some((c) => c.wait && c.wait.kind === 'slot' && c.step === 'copy'), `企画と商品をそろえて保存：${JSON.stringify(cases.map((c) => [c.step, c.wait && c.wait.kind]))}`);
+  assert.ok(cases.length <= V.MAX_ACTIVE, '保存する企画は上限まで（量産しない）');
+  const st = await V.officeState(kv, env);
+  assert.ok(st.staff.filter((s) => s.status !== 'idle').length >= 2, '全員が「仕事なし」にはならない');
+  assert.ok(st.staff.find((s) => s.id === 'planner').stats.today >= 1 && st.staff.find((s) => s.id === 'buyer').stats.today >= 1, '実際の仕事の数が記録される');
+  // 社長が2件を確認した → 枠が1つ空く → 1件だけ文章から続ける
+  await call(v2api, { action: 'decide', id: 'w1', decision: 'adopt' }, undefined, env);
+  await call(v2api, { action: 'decide', id: 'w2', decision: 'reject', note: 'メガネばかり' }, undefined, env);
+  const r = await run(kv, env);
+  assert.ok((r.steps || []).some((x) => x.startsWith('writer:copy')), `枠が空いたら文章から：${r.steps}`);
+  cases = await kv.getJson(V.V2_KEYS.cases);
+  assert.ok(cases.filter((c) => !c.wait || c.wait.kind !== 'slot').length <= 1 + cases.filter((c) => FLOW_BEFORE(c)).length);
+});
+const FLOW_BEFORE = (c) => V.FLOW.indexOf(c.step) < V.FLOW.indexOf('copy');
+
+test('商品の偏り：直近に眼鏡関連があれば眼鏡関連の企画は弾いて考え直す。ジャンルの候補と、社長の却下コメントを企画とバイヤーに渡す', async () => {
+  mock = fetchMock({ themes: ['偏光サングラス ギフト', 'キッチン 時短', 'デスク 収納'] });
+  const kv = memoryKv();
+  await kv.setJson(V.V2_KEYS.themes, [{ theme: '通勤の眩しさ対策ギフト', keyword: 'サングラス 偏光', at: new Date().toISOString() }]);
+  await kv.setJson(V.V2_KEYS.sets, [{ id: 'r1', title: 'メガネ拭きセット', status: 'rejected', deliveredAt: new Date().toISOString() }]);
+  await kv.setJson(V.V2_KEYS.set('r1'), { id: 'r1', title: 'メガネ拭きセット', status: 'rejected', ownerNote: 'メガネ関連ばかりで飽きた。生活用品が見たい' });
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'p', kind: 'make', step: 'propose', createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: null, data: {} }]);
+  await run(kv);
+  const ev = (await V.officeState(kv, ENV)).events;
+  assert.ok(ev.some((e) => /眼鏡関連の企画が続いている/.test(e.text)), '眼鏡関連を弾いた');
+  const c = (await kv.getJson(V.V2_KEYS.cases)).find((x) => x.id === 'p');
+  assert.ok(!/サングラス|メガネ/.test(c.data.theme || ''), `別のジャンルになった：${c.data.theme}`);
+  const sent = mock.calls.openai.map((b) => `${b.messages[0].content}\n${typeof b.messages[1].content === 'string' ? b.messages[1].content : ''}`);
+  const prop = sent.find((t) => t.includes('はキャラクター（ぬいぐるみ風のくま）の名前') && t.includes('企画担当'));
+  assert.ok(prop, 'キャラクター名であることを企画に伝える');
+  assert.match(prop, /今回のジャンル（この中から1つ）/);
+  assert.match(prop, /社長のコメント：メガネ関連ばかりで飽きた/);
+  const hero = sent.find((t) => t.includes('サングラス株式会社」のバイヤー') || t.includes('サングラスくま株式会社」のバイヤー'));
+  if (hero) assert.match(hero, /社長の却下コメント/);
+  assert.ok(V.heroFilter && V.EYEWEAR_RE.test('偏光 サングラス') && !V.EYEWEAR_RE.test('キッチン タイマー'));
+});
