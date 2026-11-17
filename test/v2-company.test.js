@@ -652,3 +652,16 @@ test('商品の偏り：直近に眼鏡関連があれば眼鏡関連の企画�
   if (hero) assert.match(hero, /社長の却下コメント/);
   assert.ok(V.heroFilter && V.EYEWEAR_RE.test('偏光 サングラス') && !V.EYEWEAR_RE.test('キッチン タイマー'));
 });
+
+test('連鎖の判断：進められる仕事が残っていれば more=true。待つべき案件だけ・何も進まなかったときは false', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  const r1 = await run(kv);
+  assert.ok(r1.steps.length >= 1);
+  if ((await kv.getJson(V.V2_KEYS.cases)).some((c) => !c.wait)) assert.equal(r1.more, true, '仕事が残っている');
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'q', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: { kind: 'retry', until: new Date(Date.now() + 3600000).toISOString(), why: 'x' }, data: {} }]);
+  await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 999.99);
+  const r2 = await run(kv);
+  assert.equal(r2.more, false, '待つべき案件だけなら呼ばない');
+});

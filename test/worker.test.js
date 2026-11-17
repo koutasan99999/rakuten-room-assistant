@@ -411,3 +411,26 @@ test('QStash：1.0の番で1.0に仕事が無くすぐ終わったときは、�
   assert.ok(!r.data.worked, '1.0は仕事をしていない');
   assert.equal(r.data.v2 && r.data.v2.company, 'v2', `同じ回で2.0が動いた：${JSON.stringify(r.data).slice(0, 200)}`);
 });
+
+test('2.0の連鎖：まだ進められる仕事があれば、15分を待たずに次の実行を呼ぶ（本番だけ・続けて20回まで・1時間60回まで）。仕事が無い・重なった実行・予算待ちなら呼ばない', async () => {
+  const { chainNext, CHAIN_MAX_DEPTH } = await import('../server/worker.js');
+  const kv = memoryKv();
+  const sent = [];
+  const fetchImpl = async (url, opts) => { sent.push({ url, opts }); return new Response('{}'); };
+  const env = { CRON_SECRET: 'sec', VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'x.app' };
+  const req = (depth) => ({ headers: depth ? { 'x-chain-depth': String(depth) } : {} });
+  const now = Date.now();
+  let r = await chainNext({ kv, env, req: req(0), more: true, skipped: false, startedAt: now, fetchImpl });
+  assert.equal(r.next, true); assert.equal(sent.length, 1);
+  assert.equal(sent[0].url, 'https://x.app/api/worker');
+  assert.equal(sent[0].opts.headers['x-trigger'], 'chain'); assert.equal(sent[0].opts.headers['x-chain-depth'], '1');
+  assert.equal(sent[0].opts.headers.authorization, 'Bearer sec');
+  for (const [more, skipped] of [[false, false], [true, true]]) assert.equal((await chainNext({ kv, env, req: req(0), more, skipped, startedAt: now, fetchImpl })).next, false);
+  assert.equal((await chainNext({ kv, env: { ...env, VERCEL_ENV: 'preview' }, req: req(0), more: true, startedAt: now, fetchImpl })).next, false, 'Preview から本番を呼ばない');
+  assert.equal((await chainNext({ kv, env: { ...env, V2_CHAIN: '0' }, req: req(0), more: true, startedAt: now, fetchImpl })).next, false);
+  assert.equal((await chainNext({ kv, env, req: req(CHAIN_MAX_DEPTH), more: true, startedAt: now, fetchImpl })).next, false, '続けての回数の上限');
+  assert.equal((await chainNext({ kv, env, req: req(0), more: true, startedAt: now - 55000, fetchImpl })).next, false, '関数の時間の上限の近くでは呼ばない');
+  await kv.set(`v2:chain:${new Date().toISOString().slice(0, 13)}`, '60');
+  assert.equal((await chainNext({ kv, env, req: req(0), more: true, startedAt: now, fetchImpl })).next, false, '1時間の上限');
+  assert.equal(sent.length, 1);
+});
