@@ -61,7 +61,7 @@ export default async function handler(req, res, env = process.env) {
       // 1.0は運用終了（2026-11-17）：定期実行・手動の実行（target=v1）・Vercelの1日1回は、すべて2.0だけを動かす（V1_ENABLED=1 のときだけ今までどおり）
       let runV2 = !v1Enabled(env) || (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
       if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
-      if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger })) });
+      if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, probeNow: trigger === 'workflow_dispatch' })) });
       const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
       // 1.0の番でも、1.0がすぐに終わった（仕事が無い・止まっている）ときは、同じ回で2.0を進める（2026-11-16：1.0の番の15分が空回りしていた）
       if (trigger === 'qstash' && !r1.worked && Date.now() - startedAt < V2_CHAIN_MS) return send(res, 200, { ...r1, v2: { company: 'v2', ...(await V.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt: Date.now(), trigger: 'qstash' })) } });
