@@ -22,6 +22,30 @@ function appOrigin(req, env) {
   return `https://${host}/`;
 }
 
+// 2.0の連鎖（2026-11-17 社長の依頼：仕事が残っているのに15分待たない）：実行の終わりに、まだ進められる仕事があれば、すぐ次の実行を呼ぶ
+//   自分の /api/worker を合言葉（CRON_SECRET）つきで呼ぶ。二重実行は worker:lock で防ぐ（重なった方は何もせずに終わり、連鎖もしない）
+//   上限：続けて CHAIN_MAX_DEPTH 回まで（そのあとは定期実行が拾う）・1時間に CHAIN_MAX_PER_HOUR 回まで。本番だけ（Preview から本番を呼ばない）。V2_CHAIN=0 で止められる
+export const CHAIN_MAX_DEPTH = 20;
+export const CHAIN_MAX_PER_HOUR = 60;
+const CHAIN_LIMIT_MS = 50000; // 関数の上限60秒の内側でだけ呼ぶ
+export async function chainNext({ kv, env, req, more, skipped, startedAt, fetchImpl = fetch }) {
+  if (!more || skipped) return { next: false, why: skipped ? '重なった実行（何もしていない）' : '進められる仕事が残っていない（待つべき案件だけ）' };
+  if (String(env.V2_CHAIN || '').trim() === '0') return { next: false, why: 'V2_CHAIN=0' };
+  if (String(env.VERCEL_ENV || '') !== 'production' && String(env.V2_CHAIN || '') !== '1') return { next: false, why: '本番以外では連鎖しない' };
+  if (!env.CRON_SECRET) return { next: false, why: '合言葉（CRON_SECRET）が無い' };
+  if (Date.now() - startedAt > CHAIN_LIMIT_MS) return { next: false, why: '時間切れ（次の定期実行が続きから進める）' };
+  const depth = Math.max(0, Number(req.headers['x-chain-depth']) || 0) + 1;
+  if (depth > CHAIN_MAX_DEPTH) return { next: false, why: `連鎖は続けて${CHAIN_MAX_DEPTH}回まで（次の定期実行が続きから進める）` };
+  const hour = new Date().toISOString().slice(0, 13);
+  const n = await kv.incr(`v2:chain:${hour}`); await kv.expire(`v2:chain:${hour}`, 7200).catch(() => {});
+  if (n > CHAIN_MAX_PER_HOUR) return { next: false, why: `連鎖は1時間に${CHAIN_MAX_PER_HOUR}回まで` };
+  const url = new URL('api/worker', appOrigin(req, env)).toString();
+  // 呼び出しが届けば十分（相手の実行の終わりは待たない。相手は自分で最後まで動く）
+  await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${env.CRON_SECRET}`, 'x-trigger': 'chain', 'x-chain-depth': String(depth) }, body: JSON.stringify({ action: 'tick' }), signal: AbortSignal.timeout(2500) }).catch(() => {});
+  await kv.setJson('v2:chain:last', { at: new Date().toISOString(), depth }).catch(() => {});
+  return { next: true, depth };
+}
+
 export default async function handler(req, res, env = process.env) {
   const startedAt = Date.now();
   const url = new URL(req.url || '/', 'http://localhost');
@@ -61,7 +85,11 @@ export default async function handler(req, res, env = process.env) {
       // 1.0は運用終了（2026-11-17）：定期実行・手動の実行（target=v1）・Vercelの1日1回は、すべて2.0だけを動かす（V1_ENABLED=1 のときだけ今までどおり）
       let runV2 = !v1Enabled(env) || (await V2.isActive(kv)) || (trigger !== 'qstash' && (body.target === 'v2' || url.searchParams.get('target') === 'v2'));
       if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
-      if (runV2) return send(res, 200, { company: 'v2', ...(await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, probeNow: trigger === 'workflow_dispatch' })) });
+      if (runV2) {
+        const r2 = await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, probeNow: trigger === 'workflow_dispatch' });
+        const chain = await chainNext({ kv, env, req, more: !!r2.more, skipped: !!r2.skipped, startedAt });
+        return send(res, 200, { company: 'v2', ...r2, chain });
+      }
       const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
       // 1.0の番でも、1.0がすぐに終わった（仕事が無い・止まっている）ときは、同じ回で2.0を進める（2026-11-16：1.0の番の15分が空回りしていた）
       if (trigger === 'qstash' && !r1.worked && Date.now() - startedAt < V2_CHAIN_MS) return send(res, 200, { ...r1, v2: { company: 'v2', ...(await V.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt: Date.now(), trigger: 'qstash' })) } });

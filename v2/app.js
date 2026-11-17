@@ -6,7 +6,7 @@
   var state = null, seenAt = '', openSet = null, tab = 'office';
   var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
   // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
-  var ST_LABEL = { work: '担当中', queued: '次の定期実行待ち', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
+  var ST_LABEL = { work: '仕事中', queued: '順番待ち（続けて進めます）', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
   var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）' };
 
   function $(id) { return document.getElementById(id); }
@@ -45,7 +45,7 @@
     var working = s.staff.filter(function (x) { return x.status === 'work'; })[0];
     var active = s.cases.filter(function (c) { return !c.wait; }).length;
     if (s.quota) { $('top-status').textContent = 'OpenAIの残高がないため、AIを使う仕事を止めています。残高が戻ったら自動で続きから再開します（次に確かめる時刻 ' + hm(s.quota.until) + '）'; } else
-    $('top-status').textContent = working ? working.name + 'が担当中（処理中）' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
+    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
     $('badge-pr').textContent = s.pr && s.pr.counts.approval ? String(s.pr.counts.approval) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
@@ -93,7 +93,7 @@
       var who = el('span', 'ev-who', nameOf(c.agent)); who.style.background = COLOR[c.agent] || '#777'; row.appendChild(who);
       var t = el('div', 'case-txt');
       t.appendChild(el('p', 'case-title', c.title + (c.kind === 'fix' ? '（社長の修正依頼）' : '')));
-      t.appendChild(el('p', 'hint', c.working ? '担当中（処理中）：' + c.task : c.wait ? WAIT_LABEL[c.wait.kind] + '：' + c.wait.why : '次の番：' + c.task + (c.next ? ' → 次は' + c.nextAgent + '（' + c.next + '）' : '')));
+      t.appendChild(el('p', 'hint', c.working ? '仕事中：' + c.task : c.wait ? WAIT_LABEL[c.wait.kind] + '：' + c.wait.why : '次の番：' + c.task + (c.next ? ' → 次は' + c.nextAgent + '（' + c.next + '）' : '')));
       row.appendChild(t);
       if (c.wait) row.classList.add('wait-' + c.wait.kind);
       box.appendChild(row);

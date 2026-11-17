@@ -117,7 +117,7 @@
       var side = s.status === 'idle' || s.id === 'pr' ? 0 : (tg[0] < W / 2 ? 27 : -27);
       b.style.left = ((tg[0] + side) / W * 100) + '%'; b.style.top = ((tg[1] + (s.status === 'idle' ? -8 : s.id === 'pr' ? 22 : -6)) / H * 100) + '%';
       b.querySelector('.nm').textContent = s.name;
-      b.querySelector('.st').textContent = ({ work: '担当中', queued: '次の実行待ち', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' })[s.status] || '仕事なし';
+      b.querySelector('.st').textContent = ({ work: '仕事中', queued: '順番待ち', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' })[s.status] || '仕事なし';
       b.className = 'who ' + s.status;
     });
     var lt = document.getElementById('lounge-tag'); var n = staff.filter(function (s) { return s.status === 'idle'; }).length; if (lt) lt.textContent = n ? '休憩スペース（仕事なし ' + n + '人）' : '休憩スペース';
