@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/*.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "assets/{kuma-master,kuma-reference/2026-11-14-owner/direction}/**"
     }
   },
   "headers": [
