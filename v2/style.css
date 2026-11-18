@@ -155,3 +155,9 @@ input[type=file] { width: 100%; margin: 8px 0; }
 textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .tabs button { font-size: 11px; padding-left: 0; padding-right: 0; }
 a.btn { display: inline-flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; box-sizing: border-box; }
+
+.reel-video { width: 100%; max-height: 70vh; border-radius: 12px; background: #000; margin-top: 8px; }
+.perf-form input, .perf-form select { width: 100%; box-sizing: border-box; margin: 4px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.reach-sum { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-link { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; text-decoration: none; color: inherit; }

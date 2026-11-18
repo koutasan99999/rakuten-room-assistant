@@ -8,6 +8,7 @@ import { maskSecrets } from '../lib/ai.js';
 import * as V from '../lib/v2/company.js';
 import * as Post from '../lib/v2/post.js';
 import * as Pr from '../lib/v2/pr.js';
+import * as Reach from '../lib/v2/reach.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
 import { requestReferer } from '../lib/http.js';
 
@@ -43,6 +44,11 @@ export default async function handler(req, res, env = process.env) {
       await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が @${e.handle || '不明'} へのコメントを確認した（${withReview(e).reviewLabel}）` });
       return send(res, 200, { entry: withReview(e) });
     }
+    // 集客（2026-11-18）：投稿の実績の登録・スクショの読み取り（AI 1回）・削除、リールを作った記録
+    if (action === 'perfAdd') { const r = await Reach.addPerf(kv, body.perf || {}); await V.record(kv, { agent: 'owner', type: 'owner', text: `社長がInstagramの実績を登録した（${r.title || r.theme || '題名なし'}・閲覧${r.views ?? '未入力'}）` }); return send(res, 200, { perf: r }); }
+    if (action === 'perfRead') return send(res, 200, await Reach.readInsight(kv, env, { image: body.image }));
+    if (action === 'perfDelete') return send(res, 200, await Reach.removePerf(kv, String(body.id || '')));
+    if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format }); return send(res, 200, { reel: r }); }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });
