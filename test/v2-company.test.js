@@ -580,6 +580,12 @@ test('表紙が必須（2026-11-18 社長の決定）：社長の確認待ちで
   await run(kv); await kv.setJson(V.V2_KEYS.set('g'), mk('g', 'waiting', false)); await kv.setJson(V.V2_KEYS.sets, [...(await kv.getJson(V.V2_KEYS.sets)), { id: 'g', title: '完成品g', status: 'waiting' }]);
   await run(kv);
   const l2 = await kv.getJson(V.V2_KEYS.sets);
+  // 先に社長が手で却下した表紙の無いもの（印なし）にも、一度だけ印を付ける（状態は変えない）
+  const k2 = memoryKv();
+  await k2.setJson(V.V2_KEYS.set('h'), { ...mk('h', 'rejected', false), ownerNote: '' }); await k2.setJson(V.V2_KEYS.set('i'), mk('i', 'rejected', true));
+  await k2.setJson(V.V2_KEYS.sets, [{ id: 'h', title: 'h', status: 'rejected' }, { id: 'i', title: 'i', status: 'rejected', image: '/api/media?id=m' }]);
+  assert.deepEqual(await V.tagNoCover(k2), ['h']);
+  assert.equal((await k2.getJson(V.V2_KEYS.set('h'))).status, 'rejected');
   assert.equal(l2.find((x) => x.id === 'f').status, 'rejected'); assert.equal(l2.find((x) => x.id === 'g').status, 'waiting', '移行は一度だけ（その後は社長が判断）');
 });
 
