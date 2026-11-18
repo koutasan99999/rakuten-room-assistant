@@ -60,7 +60,7 @@ export default async function handler(req, res, env = process.env) {
       await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が集客の施策「${t.name}」を${({ doing: '実行中', dropped: 'やめた', ready: '戻した' })[t.status] || t.status}にした` });
       return send(res, 200, { tactic: t });
     }
-    if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format }); return send(res, 200, { reel: r }); }
+    if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format, bytes: body.bytes, seconds: body.seconds, mime: body.mime }); return send(res, 200, { reel: r }); }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });

@@ -103,7 +103,8 @@
       s.lanes.forEach(function (x) { lp.appendChild(el('p', 'hint', 'レーン' + x.lane + '　' + x.from + '〜' + x.to + '秒　' + nameOf(x.agent) + '：' + (x.side ? '仕事探し（' + x.step + '）' : x.step) + (x.final ? '・' + ({ deliver: '納品', stop: '停止', wait: '待ち', done: '完了', fail: '失敗' })[x.final] : ''))); });
       box.appendChild(lp);
     }
-    if (s.reach) { var Rc = s.reach, Sm = Rc.summary; var rc = el('div', 'reach-sum'); rc.appendChild(el('p', 'field', '集客（Instagramから楽天ROOMへ）')); rc.appendChild(el('p', 'hint', 'リール ' + Rc.reels + '本作成・冒頭の一言 ' + Rc.hooks + '件（未作成 ' + Rc.noHooks + '件）・実績の登録 ' + Sm.posts + '件' + (Sm.posts ? '（最高 閲覧' + Sm.topViews + '回' + (Sm.nextTarget ? '・次の目標 ' + Sm.nextTarget + '回' : '') + '）' : '') + '・プロフィールへのアクセス ' + Sm.totals.profileVisits + '・楽天ROOMへの流入 ' + Sm.totals.roomClicks)); if (s.growth) { var Gn = s.growth.counts; rc.appendChild(el('p', 'hint', '集客の施策：実行できる ' + Gn.ready + '・実行中 ' + Gn.doing + '・効果あり ' + Gn.measured + '・見直し ' + Gn.review + '・AIの提案 ' + Gn.proposed + '（広報タブ）')); } box.appendChild(rc); }
+    if (s.reach) { var Rc = s.reach, Sm = Rc.summary; var rc = el('div', 'reach-sum'); rc.appendChild(el('p', 'field', '集客（Instagramから楽天ROOMへ）')); rc.appendChild(el('p', 'hint', 'リールの動画 ' + Rc.reels + '本（実ファイル）・冒頭の一言 ' + Rc.hooks + '件（未作成 ' + Rc.noHooks + '件）・実績の登録 ' + Sm.posts + '件' + (Sm.posts ? '（最高 閲覧' + Sm.topViews + '回' + (Sm.nextTarget ? '・次の目標 ' + Sm.nextTarget + '回' : '') + '）' : '') + '')); if (s.kpi) { var Kc = s.kpi.current; var nv = function (v) { return v == null ? '未取得' : v; }; rc.appendChild(el('p', 'hint', '成果：投稿できる完成品 ' + Kc.postable + '件（確認待ち ' + Kc.postableWaiting + '・採用 ' + Kc.postableAdopted + '）・投稿済み ' + Kc.posted + '件・リールの動画 ' + Kc.reelFiles + '本（実ファイル）・閲覧 ' + nv(Kc.views) + '・プロフィールへのアクセス ' + nv(Kc.profileVisits) + '・楽天ROOMへの流入 ' + nv(Kc.roomClicks) + '・売上 ' + (Kc.sales == null ? '未取得' : Kc.sales + '円') + '（閲覧・アクセス・流入・売上は社長の登録だけ。推測しない）')); }
+    if (s.growth) { var Gn = s.growth.counts; rc.appendChild(el('p', 'hint', '集客の施策：実行できる ' + Gn.ready + '・実行中 ' + Gn.doing + '・効果あり ' + Gn.measured + '・見直し ' + Gn.review + '・AIの提案 ' + Gn.proposed + '（広報タブ）')); } box.appendChild(rc); }
     if (!s.active && !s.v1Retired) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
     if (s.lastTickAt) box.appendChild(el('p', 'hint', '最後に動いた時刻：' + day(s.lastTickAt) + ' ' + hm(s.lastTickAt)));
   }
@@ -183,6 +184,7 @@
       var c = el('div', 'card');
       c.appendChild(el('p', 'set-title big', s.title));
       c.appendChild(el('p', 'hint', (ST[s.status] || s.status) + '・' + day(s.deliveredAt) + ' ' + hm(s.deliveredAt) + ' 納品' + (s.revisions ? '・修正' + s.revisions + '回' : '')));
+      if (s.postable) c.appendChild(el('p', s.postable.ok ? 'hint' : 'hint warn', s.postable.ok ? '投稿できる状態です（表紙・PR表記・商品6点・URL・ROOM紹介文がそろっている）' : '投稿できない：' + s.postable.missing.join('・') + 'が足りない'));
       if (s.theme || s.aim) { c.appendChild(el('p', 'field', '投稿テーマと狙い')); c.appendChild(el('p', '', (s.theme ? 'テーマ：' + s.theme : '') + (s.target ? '／対象：' + s.target : ''))); if (s.aim) c.appendChild(el('p', '', '狙い：' + s.aim)); }
       if (s.pickReason) c.appendChild(el('p', '', '選定理由：' + s.pickReason + (s.band ? '（' + s.band + '）' : '')));
       if (s.who) c.appendChild(el('p', 'hint', '誰に：' + s.who + (s.problem ? '／悩み：' + s.problem : '') + (s.whyNow ? '／なぜ今：' + s.whyNow : '')));
@@ -368,7 +370,7 @@
           rb.appendChild(btn('リール用キャプションをコピー', 'btn ghost', function (e) { var bb = e.currentTarget; bb.textContent = window.V2Ig.copyNow(window.V2Reel.caption(s, f.id)) ? 'コピーしました' : 'コピーできませんでした'; }));
           out.appendChild(rb);
           out.appendChild(el('p', 'hint', '投稿したら、数日後に「成果」タブでインサイトの数字（スクショでも可）を登録してください。次の企画とリールに反映します。'));
-          api({ action: 'reelMade', id: s.id, format: f.id });
+          api({ action: 'reelMade', id: s.id, format: f.id, bytes: r.blob ? r.blob.size : 0, seconds: r.seconds, mime: r.mime }); // 実ファイルの大きさ・長さを記録（作れていなければサーバーが記録しない）
         }, function (e) { msg.textContent = 'リールを作れませんでした：' + e.message; });
       });
       if (!f.ok) b.title = f.why || '';

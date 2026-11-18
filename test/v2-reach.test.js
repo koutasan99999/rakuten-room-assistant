@@ -57,7 +57,9 @@ test('投稿の実績：閲覧かリーチが必要。登録・まとめ（段�
 test('オフィスの集客の数字と、探す場所（完成品のハッシュタグ。自社のタグは除く）', async () => {
   const kv = memoryKv();
   await kv.setJson('v2:sets', [{ id: 's1', title: SET.title, status: 'waiting' }]); await kv.setJson('v2:set:s1', SET);
-  await call(kv, { action: 'reelMade', id: 's1', format: 'top3' });
+  assert.equal((await call(kv, { action: 'reelMade', id: 's1', format: 'top3' })).status, 400, '動画の実ファイルの記録（大きさ・長さ）が無いものは記録しない');
+  assert.equal((await call(kv, { action: 'reelMade', id: 's1', format: 'top3', bytes: 1000, seconds: 16, mime: 'video/mp4' })).status, 400, '小さすぎる（作れていない）');
+  assert.equal((await call(kv, { action: 'reelMade', id: 's1', format: 'top3', bytes: 2400000, seconds: 16.4, mime: 'video/mp4' })).status, 200);
   const st = await V.officeState(kv, ENV);
   assert.equal(st.reach.reels, 1); assert.equal(st.reach.noHooks, 1);
   assert.deepEqual(st.reach.exploreTags, ['デスク周り']);
