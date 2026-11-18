@@ -103,6 +103,7 @@
       s.lanes.forEach(function (x) { lp.appendChild(el('p', 'hint', 'レーン' + x.lane + '　' + x.from + '〜' + x.to + '秒　' + nameOf(x.agent) + '：' + (x.side ? '仕事探し（' + x.step + '）' : x.step) + (x.final ? '・' + ({ deliver: '納品', stop: '停止', wait: '待ち', done: '完了', fail: '失敗' })[x.final] : ''))); });
       box.appendChild(lp);
     }
+    if (s.reach) { var Rc = s.reach, Sm = Rc.summary; var rc = el('div', 'reach-sum'); rc.appendChild(el('p', 'field', '集客（Instagramから楽天ROOMへ）')); rc.appendChild(el('p', 'hint', 'リール ' + Rc.reels + '本作成・冒頭の一言 ' + Rc.hooks + '件（未作成 ' + Rc.noHooks + '件）・実績の登録 ' + Sm.posts + '件' + (Sm.posts ? '（最高 閲覧' + Sm.topViews + '回' + (Sm.nextTarget ? '・次の目標 ' + Sm.nextTarget + '回' : '') + '）' : '') + '・プロフィールへのアクセス ' + Sm.totals.profileVisits + '・楽天ROOMへの流入 ' + Sm.totals.roomClicks)); box.appendChild(rc); }
     if (!s.active && !s.v1Retired) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
     if (s.lastTickAt) box.appendChild(el('p', 'hint', '最後に動いた時刻：' + day(s.lastTickAt) + ' ' + hm(s.lastTickAt)));
   }
@@ -210,6 +211,7 @@
       var strip = el('div', 'slides'); ig.appendChild(strip);
       var igStatus = el('p', 'hint', '画像を作っています…'); ig.appendChild(igStatus);
       box.appendChild(ig);
+      if (window.V2Reel) box.appendChild(reelCard(s));
       if (window.V2Ig) window.V2Ig.buildSlides(s).then(function (out) {
         igStatus.textContent = out.files.length + '枚' + (out.missing ? '（商品写真を読み込めなかった商品が' + out.missing + '点あります）' : '') + (out.cover ? '' : '（表紙画像を読み込めなかったため、表紙は文字だけです）');
         out.urls.forEach(function (u, i) { var im = el('img'); im.src = u; im.alt = out.files[i].name; strip.appendChild(im); });
@@ -303,8 +305,68 @@
   }
 
   // ---- 成果とお金（完成品・品質・正確性・重複・費用。売上は社長の入力） ----
+  // ---- リール（2026-11-18 集客）：完成品の商品写真・価格・特徴から、この端末で縦型の動画を作る（AIなし・費用0円）。投稿は社長がInstagramで手動 ----
+  function reelCard(s) {
+    var c = el('div', 'card');
+    c.appendChild(el('p', 'field', 'リールを作る（10〜20秒・縦型）'));
+    c.appendChild(el('p', 'hint', '商品写真・価格・特徴だけで、この端末の中で動画にします（AIは使いません・費用0円）。最初の2秒で引きつけ、最後に楽天ROOMへ案内します。作ったら「動画を保存」→ Instagramでリールとして投稿してください。'));
+    var msg = el('p', 'hint'); var out = el('div');
+    var row = el('div', 'btns');
+    window.V2Reel.formats(s).forEach(function (f) {
+      var b = btn(f.label, f.ok ? 'btn small' : 'btn ghost', function () {
+        if (!f.ok) { msg.textContent = f.why || 'この完成品では作れません'; return; }
+        msg.textContent = '動画を作っています（実際の長さの時間がかかります）… 0%'; out.textContent = '';
+        window.V2Reel.make(s, f.id, window.V2Ig.loadImage, function (p) { msg.textContent = '動画を作っています… ' + Math.round(p * 100) + '%'; }).then(function (r) {
+          msg.textContent = f.label + '（' + Math.round(r.seconds) + '秒・' + (r.mime === 'video/mp4' ? 'MP4' : 'WebM：iPhoneのSafariで作るとMP4になります') + '）';
+          var v = el('video'); v.src = r.url; v.controls = true; v.setAttribute('playsinline', ''); v.muted = true; v.className = 'reel-video'; out.appendChild(v);
+          var rb = el('div', 'btns');
+          rb.appendChild(btn('動画を保存', 'btn small', function () { var file = new File([r.blob], r.name, { type: r.mime }); if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(function () {}); else { var a = document.createElement('a'); a.href = r.url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); } }));
+          rb.appendChild(btn('リール用キャプションをコピー', 'btn ghost', function (e) { var bb = e.currentTarget; bb.textContent = window.V2Ig.copyNow(window.V2Reel.caption(s, f.id)) ? 'コピーしました' : 'コピーできませんでした'; }));
+          out.appendChild(rb);
+          out.appendChild(el('p', 'hint', '投稿したら、数日後に「成果」タブでインサイトの数字（スクショでも可）を登録してください。次の企画とリールに反映します。'));
+          api({ action: 'reelMade', id: s.id, format: f.id });
+        }, function (e) { msg.textContent = 'リールを作れませんでした：' + e.message; });
+      });
+      if (!f.ok) b.title = f.why || '';
+      row.appendChild(b);
+    });
+    c.appendChild(row); c.appendChild(msg); c.appendChild(out);
+    if (s.hooks) c.appendChild(el('p', 'hint', '冒頭の一言（ライター作）：' + [s.hooks.reveal, s.hooks.top3].filter(Boolean).join('／')));
+    return c;
+  }
+  // ---- Instagramの実績（2026-11-18 集客）：インサイトの数字を登録（スクショから読み取り→社長が確かめて登録）。推測で埋めない ----
+  var PF = [['views', '閲覧数'], ['reach', 'リーチ'], ['nonFollowerPct', 'フォロワー以外の割合（%）'], ['saves', '保存'], ['shares', 'シェア'], ['likes', 'いいね'], ['comments', 'コメント'], ['profileVisits', 'プロフィールへのアクセス'], ['linkClicks', 'リンクのタップ'], ['roomClicks', '楽天ROOMへの流入（楽天アフィリエイトで確認）'], ['sales', '売上（円・確認できたもの）']];
+  function perfCard() {
+    var R = state.reach; var c = el('div', 'card');
+    c.appendChild(el('p', 'field', 'Instagramの実績（集客の成果）'));
+    if (!R) { c.appendChild(el('p', 'hint', '読み込めませんでした')); return c; }
+    var S = R.summary;
+    c.appendChild(el('p', 'hint', '段階の検証目標（保証ではありません）：1投稿あたり閲覧 ' + S.milestones.map(function (m) { return m.target + '回（達成' + m.reached + '件）'; }).join('・') + (S.posts ? '。これまでの最高 ' + S.topViews + '回' + (S.nextTarget ? '・次の目標 ' + S.nextTarget + '回' : '') : '。まだ登録がありません')));
+    if (S.formats.length) { var t = el('div'); S.formats.forEach(function (f) { var p = el('p', 'money-row'); p.appendChild(el('span', null, f.label + '（' + f.posts + '件）')); p.appendChild(el('b', null, '平均閲覧 ' + f.avgViews + (f.avgSaves != null ? '・保存 ' + f.avgSaves : '') + (f.avgProfile != null ? '・プロフィール ' + f.avgProfile : '') + (f.avgNonFollower != null ? '・非フォロワー ' + f.avgNonFollower + '%' : ''))); t.appendChild(p); }); c.appendChild(t); }
+    c.appendChild(el('p', 'hint', '合計：プロフィールへのアクセス ' + S.totals.profileVisits + '・楽天ROOMへの流入 ' + S.totals.roomClicks + '・売上 ' + S.totals.sales + '円（登録した分だけ）'));
+    if (S.best.length) { c.appendChild(el('p', 'field', 'よく見られた投稿')); S.best.forEach(function (b) { c.appendChild(el('p', 'hint', b.title + '（' + b.format + '）閲覧 ' + b.views + (b.saves != null ? '・保存 ' + b.saves : ''))); }); }
+    // 登録フォーム
+    var f = el('details', 'perf-form'); f.appendChild(el('summary', null, '実績を登録する'));
+    f.appendChild(el('p', 'hint', 'インサイトの画面のスクショを選ぶと、数字を読み取って下に入れます（約1円）。確かめて直してから「登録」を押してください。読めない数字は空のままです。'));
+    var shot = el('input'); shot.type = 'file'; shot.accept = 'image/*'; f.appendChild(shot);
+    var rmsg = el('p', 'hint');
+    var inputs = {};
+    f.appendChild(btn('スクショから数字を読む', 'btn small ghost', function () { var file = shot.files && shot.files[0]; if (!file) { rmsg.textContent = 'スクショを選んでください'; return; } rmsg.textContent = '読み取っています…'; shrink(file).then(function (d) { return api({ action: 'perfRead', image: d }); }).then(function (r) { if (r.status !== 200) { rmsg.textContent = (r.data && r.data.error) || '読めませんでした'; return; } var x = r.data.read || {}; PF.forEach(function (k) { if (x[k[0]] != null) inputs[k[0]].value = x[k[0]]; }); if (x.format) fmt.value = x.format; if (x.postedAt) dt.value = x.postedAt; rmsg.textContent = '読み取りました。確かめてから登録してください' + (r.data.note ? '（' + r.data.note + '）' : ''); }, function (e) { rmsg.textContent = e.message; }); }));
+    f.appendChild(rmsg);
+    var setSel = el('select'); setSel.appendChild(new Option('完成品（任意）', '')); (state.sets || []).forEach(function (x) { setSel.appendChild(new Option(x.title, x.id)); }); f.appendChild(setSel);
+    var fmt = el('select'); Object.keys(R.formats).forEach(function (k) { fmt.appendChild(new Option(R.formats[k], k)); }); f.appendChild(fmt);
+    var dt = el('input'); dt.type = 'date'; f.appendChild(dt);
+    var url = el('input'); url.type = 'url'; url.placeholder = '投稿のURL（任意）'; f.appendChild(url);
+    PF.forEach(function (k) { var i = el('input'); i.type = 'number'; i.inputMode = 'decimal'; i.placeholder = k[1]; inputs[k[0]] = i; f.appendChild(i); });
+    var note = el('input'); note.type = 'text'; note.placeholder = 'メモ（任意）：例）冒頭を問いかけにした'; f.appendChild(note);
+    f.appendChild(btn('登録', 'btn', function () { var p = { setId: setSel.value, format: fmt.value, postedAt: dt.value, url: url.value, note: note.value, source: shot.files && shot.files[0] ? 'screenshot' : 'owner' }; PF.forEach(function (k) { p[k[0]] = inputs[k[0]].value; }); api({ action: 'perfAdd', perf: p }).then(function (r) { if (r.status !== 200) { rmsg.textContent = (r.data && r.data.error) || '登録できませんでした'; return; } refresh().then(renderMoney); }); }));
+    c.appendChild(f);
+    if (R.perf.length) { var l = el('details'); l.appendChild(el('summary', null, '登録した実績（' + R.perf.length + '件）')); R.perf.forEach(function (r) { var p = el('p', 'hint', (r.postedAt || '日付なし') + '　' + (r.title || r.theme || '題名なし') + '（' + (R.formats[r.format] || r.format) + '）閲覧 ' + (r.views ?? '-') + '・リーチ ' + (r.reach ?? '-') + '・保存 ' + (r.saves ?? '-') + '・プロフィール ' + (r.profileVisits ?? '-') + '・ROOM ' + (r.roomClicks ?? '-') + (r.source === 'screenshot' ? '（スクショから）' : '')); var d = btn('消す', 'btn ghost small-ghost', function () { if (confirm('この実績を消しますか？')) api({ action: 'perfDelete', id: r.id }).then(function () { refresh().then(renderMoney); }); }); p.appendChild(d); l.appendChild(p); }); c.appendChild(l); }
+    return c;
+  }
   function renderMoney() {
     var m = state.money, R = state.results, box = $('money'); box.textContent = '';
+    box.appendChild(perfCard());
     var T = state.trial;
     if (T) {
       var t = el('div', 'card');
@@ -430,6 +492,9 @@
     info.appendChild(el('p', 'hint', '決まり：1日' + P.access.limits.dayDrafts + '件まで／同じアカウントには' + P.access.limits.handleDays + '日に1件まで／投稿の文章に無いことは書かない／宣伝・定型の褒め言葉・絵文字は監査とコードで落とす'));
     info.appendChild(el('p', 'hint ' + (P.access.fb ? '' : 'warn'), P.access.fb ? '公式API（Facebookログイン方式）：設定済み。関連アカウントの直近の投稿を1日1回集めます' : '公式API（Facebookログイン方式）：未設定。投稿を自動では集められないため、交流候補は社長が追加した投稿だけです'));
     box.appendChild(info);
+    // 人気投稿を探す場所（完成品のハッシュタグのページ。開くのは社長・自動では集めない）
+    var tags = (state.reach && state.reach.exploreTags) || [];
+    if (tags.length) { var ex = el('div', 'card'); ex.appendChild(el('p', 'field', '今日、交流先を探す場所（完成品のハッシュタグ）')); ex.appendChild(el('p', 'hint', 'タップするとInstagramのハッシュタグのページが開きます。買ってくれそうな人が見ている人気の投稿を選び、URLと投稿の文章を下の「交流候補の投稿を追加」に入れると、広報がコメント案を作ります（アプリは自動で集めたり、コメントを送ったりしません）。')); var tr = el('div', 'tag-row'); tags.forEach(function (t) { var a = el('a', 'tag-link', '#' + t); a.href = 'https://www.instagram.com/explore/tags/' + encodeURIComponent(t) + '/'; a.target = '_blank'; a.rel = 'noopener'; tr.appendChild(a); }); ex.appendChild(tr); box.appendChild(ex); }
     box.appendChild(prHistory(P));
     box.appendChild(prReach(P));
     box.appendChild(el('h2', 'h2', 'コメント案（まだ送っていない）'));

@@ -58,5 +58,5 @@
     return ok;
   }
   function roomUrl(code) { return 'https://room.rakuten.co.jp/mix?itemcode=' + encodeURIComponent(code).replace(/%3A/gi, ':') + '&scid=we_room_upc60'; }
-  window.V2Ig = { buildSlides: buildSlides, saveFiles: saveFiles, roomUrl: roomUrl, copyNow: copyNow };
+  window.V2Ig = { buildSlides: buildSlides, saveFiles: saveFiles, roomUrl: roomUrl, copyNow: copyNow, loadImage: loadProductImage };
 })();

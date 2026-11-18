@@ -614,7 +614,7 @@ test('確認待ちが上限（5件）でも会社は止まらない：企画・�
   const steps = [];
   for (let i = 0; i < 3; i++) steps.push(...((await run(kv, env)).steps || []));
   assert.ok(steps.some((x) => x.startsWith('planner:propose')) && steps.some((x) => x.startsWith('buyer:')), `企画とバイヤーは仕事をした：${steps}`);
-  assert.ok(!steps.some((x) => /writer:|pack/.test(x)), '完成品の枠が無いので、文章・納品はしない');
+  assert.ok(!steps.some((x) => /writer:(copy|room)|pack/.test(x)), '完成品の枠が無いので、文章・納品はしない（冒頭の一言など集客の仕事は別）');
   let cases = await kv.getJson(V.V2_KEYS.cases);
   assert.ok(cases.length >= 1 && cases.some((c) => c.wait && c.wait.kind === 'slot' && c.step === 'copy'), `企画と商品をそろえて保存：${JSON.stringify(cases.map((c) => [c.step, c.wait && c.wait.kind]))}`);
   assert.ok(cases.length <= V.MAX_ACTIVE, '保存する企画は上限まで（量産しない）');
@@ -755,7 +755,7 @@ test('既存の企画の見直し（一度だけ）：文章の前で保存し�
   assert.ok(s.versions && s.versions[0].caption === '前の文章', '前の版を残す');
   assert.equal(s.roomDone['s:k0'], '2026-11-17T00:00:00Z', 'ROOM登録の記録を残す');
   assert.equal(s.image.mediaId, 'a'.repeat(32), '表紙画像を残す（描き直さない）');
-  assert.equal((await kv.getJson(V.V2_KEYS.sets)).length, 1, '完成品は増えない（同じ完成品を差し替え）');
+  assert.equal((await kv.getJson(V.V2_KEYS.sets)).filter((x) => x.id === 'set-old').length, 1, '見直しで同じ完成品が増えない（同じ完成品を差し替え）');
   const ev = (await V.officeState(kv, env)).events;
   assert.ok(!ev.some((e) => String(e.job || '').startsWith('redo') && e.agent === 'designer'), '見直しでは画像を描かない（今の表紙のまま）');
 });
