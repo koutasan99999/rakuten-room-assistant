@@ -103,7 +103,7 @@
       s.lanes.forEach(function (x) { lp.appendChild(el('p', 'hint', 'レーン' + x.lane + '　' + x.from + '〜' + x.to + '秒　' + nameOf(x.agent) + '：' + (x.side ? '仕事探し（' + x.step + '）' : x.step) + (x.final ? '・' + ({ deliver: '納品', stop: '停止', wait: '待ち', done: '完了', fail: '失敗' })[x.final] : ''))); });
       box.appendChild(lp);
     }
-    if (s.reach) { var Rc = s.reach, Sm = Rc.summary; var rc = el('div', 'reach-sum'); rc.appendChild(el('p', 'field', '集客（Instagramから楽天ROOMへ）')); rc.appendChild(el('p', 'hint', 'リール ' + Rc.reels + '本作成・冒頭の一言 ' + Rc.hooks + '件（未作成 ' + Rc.noHooks + '件）・実績の登録 ' + Sm.posts + '件' + (Sm.posts ? '（最高 閲覧' + Sm.topViews + '回' + (Sm.nextTarget ? '・次の目標 ' + Sm.nextTarget + '回' : '') + '）' : '') + '・プロフィールへのアクセス ' + Sm.totals.profileVisits + '・楽天ROOMへの流入 ' + Sm.totals.roomClicks)); box.appendChild(rc); }
+    if (s.reach) { var Rc = s.reach, Sm = Rc.summary; var rc = el('div', 'reach-sum'); rc.appendChild(el('p', 'field', '集客（Instagramから楽天ROOMへ）')); rc.appendChild(el('p', 'hint', 'リール ' + Rc.reels + '本作成・冒頭の一言 ' + Rc.hooks + '件（未作成 ' + Rc.noHooks + '件）・実績の登録 ' + Sm.posts + '件' + (Sm.posts ? '（最高 閲覧' + Sm.topViews + '回' + (Sm.nextTarget ? '・次の目標 ' + Sm.nextTarget + '回' : '') + '）' : '') + '・プロフィールへのアクセス ' + Sm.totals.profileVisits + '・楽天ROOMへの流入 ' + Sm.totals.roomClicks)); if (s.growth) { var Gn = s.growth.counts; rc.appendChild(el('p', 'hint', '集客の施策：実行できる ' + Gn.ready + '・実行中 ' + Gn.doing + '・効果あり ' + Gn.measured + '・見直し ' + Gn.review + '・AIの提案 ' + Gn.proposed + '（広報タブ）')); } box.appendChild(rc); }
     if (!s.active && !s.v1Retired) box.appendChild(el('p', 'hint note', '動作確認中：15分ごとの定期実行を1.0と交互に使います。1.0の番でも1.0に仕事が無ければ、同じ回で2.0が進みます（切り替えは「対応」タブ）'));
     if (s.lastTickAt) box.appendChild(el('p', 'hint', '最後に動いた時刻：' + day(s.lastTickAt) + ' ' + hm(s.lastTickAt)));
   }
@@ -212,6 +212,7 @@
       var igStatus = el('p', 'hint', '画像を作っています…'); ig.appendChild(igStatus);
       box.appendChild(ig);
       if (window.V2Reel) box.appendChild(reelCard(s));
+      if (s.seo) box.appendChild(seoCard(s));
       if (window.V2Ig) window.V2Ig.buildSlides(s).then(function (out) {
         igStatus.textContent = out.files.length + '枚' + (out.missing ? '（商品写真を読み込めなかった商品が' + out.missing + '点あります）' : '') + (out.cover ? '' : '（表紙画像を読み込めなかったため、表紙は文字だけです）');
         out.urls.forEach(function (u, i) { var im = el('img'); im.src = u; im.alt = out.files[i].name; strip.appendChild(im); });
@@ -306,6 +307,49 @@
 
   // ---- 成果とお金（完成品・品質・正確性・重複・費用。売上は社長の入力） ----
   // ---- リール（2026-11-18 集客）：完成品の商品写真・価格・特徴から、この端末で縦型の動画を作る（AIなし・費用0円）。投稿は社長がInstagramで手動 ----
+  // ---- 検索に出るための文言（2026-11-18 集客・ライター作）：キャプションの2行目・代替テキスト・ハッシュタグ・ストーリーズの文。投稿は社長 ----
+  function seoCard(s) {
+    var o = s.seo, c = el('div', 'card');
+    c.appendChild(el('p', 'field', '検索に出るための文言（ライター作）'));
+    c.appendChild(el('p', 'hint', '探す人が入れそうな言葉：' + o.keywords.join('・')));
+    [['キャプションの2行目に貼る1文', o.line], ['代替テキスト（投稿の「詳細設定」→「代替テキストを書く」）', o.alt], ['ハッシュタグ（3〜5個にしぼる）', o.hashtags.join(' ')], ['ストーリーズの文（リンクスタンプで楽天ROOMへ）', o.story]].forEach(function (x) {
+      var r = el('div', 'copy-row'); r.appendChild(el('p', 'hint', x[0])); r.appendChild(el('p', '', x[1])); r.appendChild(copyBtn('コピー', x[1])); c.appendChild(r);
+    });
+    return c;
+  }
+  // ---- 集客の施策のボード（2026-11-18）：できるか・効果・根拠・状態・手順と文面。実行は社長がInstagramで手で（アプリは送らない・投稿しない） ----
+  function growthBoard() {
+    var G = state.growth, c = el('div', 'card growth');
+    c.appendChild(el('p', 'field', '集客の施策（入口を増やす）'));
+    if (!G) { c.appendChild(el('p', 'hint', '読み込めませんでした')); return c; }
+    var n = G.counts;
+    c.appendChild(el('p', 'hint', '実行できる ' + n.ready + '・実行中 ' + n.doing + '・効果あり ' + n.measured + '・見直し ' + n.review + '・AIの提案 ' + n.proposed + '・準備中 ' + n.preparing + '。効果は、成果タブで実績を登録するときに「使った施策」を付けると、ほかの投稿の平均閲覧と比べて自動で判定します（' + G.effectX + '倍以上で効果あり・3投稿以上で平均以下なら見直し）。'));
+    var order = ['review', 'proposed', 'ready', 'doing', 'measured', 'preparing'];
+    var list = G.tactics.filter(function (t) { return t.status !== 'dropped'; }).sort(function (a, b) { return order.indexOf(a.status) - order.indexOf(b.status); });
+    list.forEach(function (t) { c.appendChild(tacticItem(t)); });
+    var gone = G.tactics.filter(function (t) { return t.status === 'dropped'; });
+    if (gone.length) { var d = el('details'); d.appendChild(el('summary', null, 'しないこと・やめた施策（' + gone.length + '件）')); gone.forEach(function (t) { var p = el('p', 'hint', t.name + '：' + (t.how === 'no' ? t.why : (t.droppedWhy || 'やめた'))); if (t.how !== 'no') p.appendChild(btn('戻す', 'btn ghost small-ghost', function () { growthDo(t.id, 'reopen'); })); d.appendChild(p); }); c.appendChild(d); }
+    return c;
+  }
+  function tacticItem(t) {
+    var d = el('details', 'tactic st-' + t.status);
+    var sm = el('summary'); sm.appendChild(el('span', 'tag', t.statusLabel)); sm.appendChild(document.createTextNode(' ' + t.name)); d.appendChild(sm);
+    d.appendChild(el('p', 'hint', t.channel + '・' + t.howLabel + '・期待できる効果：' + t.effect + (t.source === 'ai' ? '（AIの提案' + (t.replaces ? '：「' + t.replaces + '」の代わり' : '') + '）' : '')));
+    d.appendChild(el('p', 'hint', t.why));
+    d.appendChild(el('p', 'hint', t.basis));
+    if (t.note) d.appendChild(el('p', t.status === 'preparing' ? 'hint warn' : 'hint', t.note));
+    var e = t.eval || {};
+    if (e.posts) d.appendChild(el('p', 'hint', '実績：' + e.posts + '投稿・平均閲覧 ' + e.avg + '（ほかの投稿の平均 ' + (e.base == null ? '未集計' : e.base) + '）' + (e.profile != null ? '・プロフィール平均 ' + e.profile : '') + (e.room ? '・ROOMへの流入 ' + e.room : '') + '　判定：' + ({ effective: '効果あり', review: '見直し', measuring: 'まだ判定できる数がない' })[e.result]));
+    else if (t.status === 'doing') d.appendChild(el('p', 'hint', t.scope === 'post' ? '実績を登録するとき「使った施策」にこの施策を付けると、効果を判定します' : '始めた日（' + (t.doneAt ? day(t.doneAt) : '-') + '）の前後の投稿の閲覧を比べて判定します'));
+    if (t.steps.length) { d.appendChild(el('p', 'field', '社長の手順')); d.appendChild(list(t.steps, true)); }
+    t.texts.forEach(function (x) { var r = el('div', 'copy-row'); r.appendChild(el('p', 'hint', x.label)); r.appendChild(el('p', 'pre', x.text)); r.appendChild(copyBtn('コピー', x.text)); d.appendChild(r); });
+    var row = el('div', 'btns');
+    if (t.status !== 'doing' && t.status !== 'measured') row.appendChild(btn(t.status === 'proposed' ? 'やってみる' : 'やった（始めた）', 'btn small', function () { growthDo(t.id, 'doing'); }));
+    row.appendChild(btn('やめる', 'btn ghost small-ghost', function () { var w = prompt('やめる理由（任意）：例）設定が見つからなかった', ''); if (w === null) return; growthDo(t.id, 'drop', w); }));
+    d.appendChild(row);
+    return d;
+  }
+  function growthDo(id, decision, why) { api({ action: 'growthDecide', id: id, decision: decision, why: why || '' }).then(function (r) { if (r.status !== 200) { alert((r.data && r.data.error) || 'できませんでした'); return; } refresh().then(renderPr); }); }
   function reelCard(s) {
     var c = el('div', 'card');
     c.appendChild(el('p', 'field', 'リールを作る（10〜20秒・縦型）'));
@@ -359,7 +403,9 @@
     var url = el('input'); url.type = 'url'; url.placeholder = '投稿のURL（任意）'; f.appendChild(url);
     PF.forEach(function (k) { var i = el('input'); i.type = 'number'; i.inputMode = 'decimal'; i.placeholder = k[1]; inputs[k[0]] = i; f.appendChild(i); });
     var note = el('input'); note.type = 'text'; note.placeholder = 'メモ（任意）：例）冒頭を問いかけにした'; f.appendChild(note);
-    f.appendChild(btn('登録', 'btn', function () { var p = { setId: setSel.value, format: fmt.value, postedAt: dt.value, url: url.value, note: note.value, source: shot.files && shot.files[0] ? 'screenshot' : 'owner' }; PF.forEach(function (k) { p[k[0]] = inputs[k[0]].value; }); api({ action: 'perfAdd', perf: p }).then(function (r) { if (r.status !== 200) { rmsg.textContent = (r.data && r.data.error) || '登録できませんでした'; return; } refresh().then(renderMoney); }); }));
+    var tks = ((state.growth && state.growth.tactics) || []).filter(function (t) { return t.scope === 'post' && t.status !== 'dropped'; }); var tkBox = {};
+    if (tks.length) { f.appendChild(el('p', 'field', '使った集客の施策（効果の判定に使います）')); tks.forEach(function (t) { var lb = el('label', 'check'); var cb = el('input'); cb.type = 'checkbox'; tkBox[t.id] = cb; lb.appendChild(cb); lb.appendChild(document.createTextNode(' ' + t.name)); f.appendChild(lb); }); }
+    f.appendChild(btn('登録', 'btn', function () { var p = { setId: setSel.value, format: fmt.value, postedAt: dt.value, url: url.value, note: note.value, source: shot.files && shot.files[0] ? 'screenshot' : 'owner' }; PF.forEach(function (k) { p[k[0]] = inputs[k[0]].value; }); p.tactics = Object.keys(tkBox).filter(function (k) { return tkBox[k].checked; }); api({ action: 'perfAdd', perf: p }).then(function (r) { if (r.status !== 200) { rmsg.textContent = (r.data && r.data.error) || '登録できませんでした'; return; } refresh().then(renderMoney); }); }));
     c.appendChild(f);
     if (R.perf.length) { var l = el('details'); l.appendChild(el('summary', null, '登録した実績（' + R.perf.length + '件）')); R.perf.forEach(function (r) { var p = el('p', 'hint', (r.postedAt || '日付なし') + '　' + (r.title || r.theme || '題名なし') + '（' + (R.formats[r.format] || r.format) + '）閲覧 ' + (r.views ?? '-') + '・リーチ ' + (r.reach ?? '-') + '・保存 ' + (r.saves ?? '-') + '・プロフィール ' + (r.profileVisits ?? '-') + '・ROOM ' + (r.roomClicks ?? '-') + (r.source === 'screenshot' ? '（スクショから）' : '')); var d = btn('消す', 'btn ghost small-ghost', function () { if (confirm('この実績を消しますか？')) api({ action: 'perfDelete', id: r.id }).then(function () { refresh().then(renderMoney); }); }); p.appendChild(d); l.appendChild(p); }); c.appendChild(l); }
     return c;
@@ -486,6 +532,7 @@
   function renderPr() {
     var box = $('pr'); box.textContent = '';
     var P = state.pr; if (!P) { box.appendChild(el('p', 'card hint', '読み込めませんでした')); return; }
+    box.appendChild(growthBoard());
     var info = el('div', 'card');
     info.appendChild(el('p', 'field', '広報の交流（常設の仕事）'));
     info.appendChild(el('p', 'hint', '広報は、公式サイトから関連アカウントを自分で探し、投稿の文章を読めたものにだけコメント案を作ります。Instagramの公式APIには、他の人の投稿にコメント・いいね・フォローする機能が無いため、アプリからは送りません（非公式な方法・ブラウザの自動操作でも送りません）。「送った」と表示するのは、Instagramで確認できたものと社長の記録だけです。'));

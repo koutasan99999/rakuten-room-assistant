@@ -65,7 +65,8 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   mock = fetchMock();
   const kv = memoryKv();
   const steps = await untilDelivered(kv);
-  const mine = steps.filter((x) => !x.includes('propose') || steps.indexOf(x) === 0);
+  const firstPropose = steps.indexOf('planner:propose'); // 集客の施策の案（企画の空き時間の仕事）は工程の順番に数えない
+  const mine = steps.filter((x, i) => !x.includes('propose') || i === firstPropose);
   const order = ['planner:propose', 'buyer:find', 'auditor:checkHero', 'planner:plan', 'buyer:gather', 'buyer:pick', 'writer:copy', 'writer:room', 'auditor:auditText', 'editor:edit', 'auditor:auditText', 'editor:review', 'designer:scene', 'designer:image', 'pr:pack:deliver'];
   let k = 0; for (const s of mine) if (s === order[k]) k++;
   assert.equal(k, order.length, `工程の順番：${steps.join(' / ')}`);
