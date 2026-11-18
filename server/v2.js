@@ -9,10 +9,16 @@ import * as V from '../lib/v2/company.js';
 import * as Post from '../lib/v2/post.js';
 import * as Pr from '../lib/v2/pr.js';
 import * as Reach from '../lib/v2/reach.js';
+import * as Growth from '../lib/v2/growth.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
 import { requestReferer } from '../lib/http.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
+
+// 実績の登録・削除で、施策の判定（効果あり・見直し）が変わったら記録に残す（コードの判定・AIは使わない）
+async function noteEval(kv) {
+  for (const c of await Growth.evalChanges(kv).catch(() => [])) await V.record(kv, { agent: 'auditor', type: 'done', side: 'growth-eval', text: c.result === 'effective' ? `集客の施策「${c.name}」は効果あり（${c.posts}投稿の平均閲覧${c.avg}・ほかの投稿の平均${c.base}）` : `集客の施策「${c.name}」は見直し（${c.posts}投稿の平均閲覧${c.avg}が、ほかの投稿の平均${c.base}以下）。企画が代わりの施策を考える` });
+}
 
 export default async function handler(req, res, env = process.env) {
   if (req.method !== 'POST') return send(res, 405, { error: 'POSTで呼び出してください' });
@@ -45,9 +51,15 @@ export default async function handler(req, res, env = process.env) {
       return send(res, 200, { entry: withReview(e) });
     }
     // 集客（2026-11-18）：投稿の実績の登録・スクショの読み取り（AI 1回）・削除、リールを作った記録
-    if (action === 'perfAdd') { const r = await Reach.addPerf(kv, body.perf || {}); await V.record(kv, { agent: 'owner', type: 'owner', text: `社長がInstagramの実績を登録した（${r.title || r.theme || '題名なし'}・閲覧${r.views ?? '未入力'}）` }); return send(res, 200, { perf: r }); }
+    if (action === 'perfAdd') { const r = await Reach.addPerf(kv, body.perf || {}); await V.record(kv, { agent: 'owner', type: 'owner', text: `社長がInstagramの実績を登録した（${r.title || r.theme || '題名なし'}・閲覧${r.views ?? '未入力'}）` }); await noteEval(kv); return send(res, 200, { perf: r }); }
     if (action === 'perfRead') return send(res, 200, await Reach.readInsight(kv, env, { image: body.image }));
-    if (action === 'perfDelete') return send(res, 200, await Reach.removePerf(kv, String(body.id || '')));
+    if (action === 'perfDelete') { const r = await Reach.removePerf(kv, String(body.id || '')); await noteEval(kv); return send(res, 200, r); }
+    // 集客の施策（2026-11-18）：社長が「やった」「やめる」「戻す」を記録する。Instagramへは何もしない
+    if (action === 'growthDecide') {
+      const t = await Growth.decideTactic(kv, { id: String(body.id || ''), decision: String(body.decision || ''), why: body.why });
+      await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が集客の施策「${t.name}」を${({ doing: '実行中', dropped: 'やめた', ready: '戻した' })[t.status] || t.status}にした` });
+      return send(res, 200, { tactic: t });
+    }
     if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format }); return send(res, 200, { reel: r }); }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
