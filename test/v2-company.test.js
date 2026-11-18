@@ -196,8 +196,8 @@ test('社長の修正依頼は、編集→監査→編集（整合性）→広�
   await call(v2api, { action: 'decide', id, decision: 'revise', note: 'もっと短く' }, undefined, E);
   const steps = [];
   for (let i = 0; i < 6; i++) { const r = await run(kv); steps.push(...(r.steps || [])); if (steps.some((x) => x.startsWith('pr:pack'))) break; }
-  const fix = steps.filter((x) => /editor:edit|auditor:auditText|editor:review|pr:pack/.test(x));
-  assert.deepEqual(fix.slice(0, 4), ['editor:edit', 'auditor:auditText', 'editor:review', 'pr:pack:deliver'], steps.join(' / '));
+  const evs = [...(await V.officeState(kv, ENV)).events].reverse().filter((e) => String(e.job || '').startsWith('fix') && e.type === 'done').map((e) => e.agent);
+  assert.deepEqual(evs.slice(0, 4), ['editor', 'auditor', 'editor', 'pr'], `修正の案件だけの順番：${evs.join(' / ')}（全体：${steps.join(' / ')}）`);
   assert.equal((await V.getSet(kv, id)).revisions, 1);
   await call(v2api, { action: 'decide', id, decision: 'adopt' }, undefined, E);
   await call(v2api, { action: 'decide', id, decision: 'posted' }, undefined, E);
@@ -711,4 +711,51 @@ test('最低6点：広げても足りなければ、無関係な商品で埋め�
   assert.ok(c.data.set.items.length < V.V2_MIN_ITEMS);
   const st = await V.officeState(kv, ENV);
   assert.equal(st.cases.find((x) => x.id === 'h').wait.kind, 'hold', '保留として画面に出る（エラーで止まったとは出さない）');
+});
+
+// ---- 2026-11-18 商品の並びの確認（関係の薄い商品・実質的な重複・価格帯の役割名） ----
+test('商品の並び：説明できない商品と比較の意図の無い重複を外す。本命は1つで先頭。高価格帯・低価格帯は同じ用途で価格差があるときだけ', () => {
+  const mk = (n, name, price) => ({ code: `c${n}`, name, price, url: `https://item.rakuten.co.jp/s/c${n}/`, image: 'x', role: '' });
+  const items = [mk(1, '野球 グラブスタンド', 16500), mk(2, 'HARIO V60 オリーブウッドスタンドセット', 13200), mk(3, 'HARIO V60 ドリッパー スタンドセット', 9801), mk(4, 'コーヒースケール', 1998), mk(5, 'ペーパーフィルター', 278), mk(6, 'コーヒー豆 保存缶入り', 4180), mk(7, 'スペシャルティブレンド 200g', 1480)];
+  const v = [
+    { n: 1, keep: false, why: 'コーヒーとつながらない' },
+    { n: 2, keep: true, role: '本命', use: 'ハンドドリップ器具', why: '淹れる時間ごと贈れる' },
+    { n: 3, keep: true, dupOf: 2, use: 'ハンドドリップ器具', role: '比較' },
+    { n: 4, keep: true, role: '関連商品', use: '計量', why: '湯量と時間を合わせる' },
+    { n: 5, keep: true, role: '関連商品', use: 'ろ紙', why: '使い続けるのに必要' },
+    { n: 6, keep: true, role: '比較', use: 'コーヒー豆', why: '贈り物の豆', diff: '保存缶入り' },
+    { n: 7, keep: true, role: '比較', use: 'コーヒー豆', why: '定番の豆', compare: '' }
+  ];
+  const r = V.applyCurate(items, v);
+  assert.deepEqual(r.dropped.map((x) => x.code), ['c1', 'c3'], '関係の薄い本命と、実質同じセットを外した');
+  assert.equal(r.items[0].code, 'c2'); assert.equal(r.items[0].role, '本命');
+  assert.match(r.items.find((x) => x.code === 'c6').role, /高価格帯（コーヒー豆の中で）/);
+  assert.match(r.items.find((x) => x.code === 'c7').role, /低価格帯（コーヒー豆の中で）/);
+  assert.ok(!/価格帯/.test(r.items.find((x) => x.code === 'c4').role), '用途が違う商品は価格だけで比べない');
+  // 比較の意図があれば、同じ用途でも残す
+  const r2 = V.applyCurate(items.slice(1, 3), [{ n: 1, keep: true, role: '本命', use: 'ドリップ' }, { n: 2, keep: true, dupOf: 1, compare: '同じ型の高級版と廉価版を比べる', use: 'ドリップ', role: '比較' }]);
+  assert.equal(r2.items.length, 2);
+  assert.match(r2.items[1].role, /低価格帯/);
+});
+
+test('既存の企画の見直し（一度だけ）：文章の前で保存していた企画は確かめ直しへ。名指しの完成品は、社長の記録（ROOM登録・画像）と前の版を残したまま見直した版で差し替える', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const env = { ...ENV, __kv: kv };
+  await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  const items = [0, 1, 2, 3, 4, 5].map((n) => ({ code: `s:k${n}`, name: `キッチン 道具${n}`, price: 1000 + n * 300, url: `https://item.rakuten.co.jp/s/k${n}/`, image: 'https://thumbnail.image.rakuten.co.jp/x.jpg', role: '中価格帯', caption: '水受けトレー付きで、水滴がたれにくい。', feature: '水受けトレー付き', why: '台所で' }));
+  const raw = { id: 'set-old', title: '絡まらない磁気ケーブル 徹底比較', target: '在宅', items, copy: { caption: 'x #PR', body: 'x', items: items.map(() => ({ shortName: 'x' })) }, roomTexts: items.map(() => ({ intro: 'あ'.repeat(150) })) };
+  await kv.setJson(V.V2_KEYS.sets, [{ id: 'set-old', title: raw.title, status: 'waiting', deliveredAt: new Date().toISOString() }]);
+  await kv.setJson(V.V2_KEYS.set('set-old'), { id: 'set-old', title: raw.title, status: 'waiting', deliveredAt: new Date().toISOString(), products: items.map((it) => ({ name: it.name, price: it.price, url: it.url, role: it.role })), caption: '前の文章', image: { mediaId: 'a'.repeat(32), url: '/api/media?id=' + 'a'.repeat(32), label: 'AI生成イメージ' }, roomDone: { 's:k0': '2026-11-17T00:00:00Z' }, raw });
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'slot1', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: { kind: 'slot', why: '枠待ち' }, data: { set: { title: '失敗しない大人コーヒーギフト', items } } }]);
+  const steps = [];
+  for (let i = 0; i < 8; i++) { steps.push(...((await run(kv, env)).steps || [])); if (steps.some((x) => x === 'pr:pack:deliver')) break; }
+  assert.ok(steps.filter((x) => x.startsWith('auditor:curate')).length >= 2, `2件とも確かめ直した：${steps}`);
+  const s = await kv.getJson(V.V2_KEYS.set('set-old'));
+  assert.ok(s.versions && s.versions[0].caption === '前の文章', '前の版を残す');
+  assert.equal(s.roomDone['s:k0'], '2026-11-17T00:00:00Z', 'ROOM登録の記録を残す');
+  assert.equal(s.image.mediaId, 'a'.repeat(32), '表紙画像を残す（描き直さない）');
+  assert.equal((await kv.getJson(V.V2_KEYS.sets)).length, 1, '完成品は増えない（同じ完成品を差し替え）');
+  const ev = (await V.officeState(kv, env)).events;
+  assert.ok(!ev.some((e) => String(e.job || '').startsWith('redo') && e.agent === 'designer'), '見直しでは画像を描かない（今の表紙のまま）');
 });
