@@ -21,7 +21,7 @@ test('施策のボード：根拠つきの最初の施策が並び、自動の�
   const s = await G.growthState(kv);
   const by = Object.fromEntries(s.tactics.map((t) => [t.id, t]));
   assert.equal(by['no-auto'].status, 'dropped');
-  assert.equal(by.reels.status, 'ready');
+  assert.equal(by.reels.status, 'preparing', '動画の実ファイルを作ったリールが無いうちは「実行できる」にしない');
   assert.equal(by.seo.status, 'preparing', '検索の文言がまだ無い');
   assert.equal(by.profile.status, 'preparing');
   assert.ok(by.collab.texts[0].text.includes('@gla_san_kuma_'));
