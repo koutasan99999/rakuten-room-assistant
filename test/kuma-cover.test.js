@@ -70,7 +70,8 @@ test('画像の生成：マスター画像（指紋を確認）と商品写真�
   assert.equal(r.ok, true, r.error || r.skip);
   const form = calls.images[0];
   assert.equal(form.getAll('image[]').length, 4, 'マスター2枚＋商品写真1枚＋方向性の参考1枚');
-  assert.equal(calls.direction, 1, '方向性の参考画像を自分のサイトから取る');
+  assert.equal(calls.direction, undefined, '方向性の参考画像は同梱のファイルから読む（自分のサイトへ取りに行かない）');
+  assert.equal(calls.masters, 0, 'マスターも同梱のファイルから読む');
   assert.equal(form.get('model'), 'gpt-image-2'); assert.equal(form.get('quality'), 'medium'); assert.equal(form.get('size'), '1024x1536');
   assert.equal(r.cost.measured, true);
   assert.ok(r.cost.yen > 5 && r.cost.yen < 20, `${r.cost.yen}円`);
@@ -99,7 +100,9 @@ test('画像の生成（2026-11-16）：1日の枚数は固定しない。月200
   await kv3.incrFloat(`budget:month:${new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 7)}`, 990);
   assert.match((await imageCheck(kv3, ENV)).reason, /全体の上限（1000円）に近い/);
   globalThis.fetch = original; calls = fake({ tamper: true });
+  C.setOwnReader(async () => Buffer.from('changed')); // 同梱のマスターが差し替えられていた
   const t = await C.imageStep({ kv: memoryKv(), env: ENV, origin: ORIGIN, scene: SCENE, item: ITEM });
+  C.setOwnReader(null);
   assert.match(t.skip, /マスター画像.*問題/);
   assert.equal(calls.images.length, 0, '画像生成APIを呼ばない');
 });
@@ -255,4 +258,14 @@ test('場面の根拠（2026-11-16）：AIが根拠の言葉を言い換えて�
   assert.ok(ok.scene, ok.notes.join('／')); assert.equal(ok.scene.usageQuote, 'ペットボトル給水');
   const ng = C.pickScene([{ usage: '車を丸ごと洗う', usageQuote: '洗車に最適', place: '駐車場', action: '洗車', outfit: 'パーカー' }], item, []);
   assert.equal(ng.scene, null);
+});
+
+test('参考画像（マスター・方向性の見本）は、関数に同梱したファイルから読む（2026-11-18：連続実行の中から自分のサイトを読むと 508 で表紙が描けなかった）。指紋の確認は今までどおり', async () => {
+  const C = await import('../lib/kuma-cover.js');
+  const { MASTERS } = await import('../lib/kuma-master-manifest.js');
+  const ms = await C.loadMasters('http://127.0.0.1:9', MASTERS); // サイトに届かなくても読める
+  assert.equal(ms.length, MASTERS.length);
+  assert.ok(ms.every((m) => m.buf.length > 1000 && m.type === 'image/png'));
+  const d = await C.readOwn(C.DIRECTION_REFS[0], 'http://127.0.0.1:9');
+  assert.equal(d.from, 'file'); assert.equal(d.type, 'image/jpeg');
 });
