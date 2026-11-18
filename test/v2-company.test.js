@@ -93,7 +93,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
   assert.equal(st.results.delivered, 1); assert.ok(st.results.yenPerSet > 0);
 });
 
-test('実証3：画像の予算が足りないときは待たずに、表紙画像なしで完成品を届ける（1企画1枚・投稿セットの完成を止めない）。各社員は1回の実行で決まった工程数まで', async () => {
+test('実証3：画像の予算が足りないときは表紙画像なしで届けず、画像待ちで保存する（描き直しの回数に数えない）。予算が戻ると表紙を描いて届ける（2026-11-18 表紙の無いものは完成品ではない）。各社員は1回の実行で決まった工程数まで', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
@@ -105,13 +105,19 @@ test('実証3：画像の予算が足りないときは待たずに、表紙画�
     all.push(...(r.steps || []));
     const count = {}; (r.steps || []).forEach((x) => { const a = x.split(':')[0]; count[a] = (count[a] || 0) + 1; });
     assert.ok(Object.values(count).every((n) => n <= V.AGENT_PER_TICK), `1人の社員が1回で${V.AGENT_PER_TICK}工程まで：${r.steps}`);
-    if (all.some((x) => x.endsWith(':deliver'))) break;
   }
-  assert.ok(all.some((x) => x.endsWith(':deliver')), `画像なしでも届く：${all.join(' / ')}`);
-  assert.ok(!all.some((x) => x.endsWith(':wait')), '画像待ちにしない');
+  assert.ok(!all.some((x) => x.endsWith(':deliver')), `表紙が無いので届けない：${all.join(' / ')}`);
+  assert.ok(all.some((x) => x === 'designer:image:wait'), '画像待ちにする');
   assert.equal(mock.calls.images.length, 0, '予算が足りないので画像APIは呼ばない');
+  const w = (await kv.getJson(V.V2_KEYS.cases)).find((c) => c.wait && c.wait.kind === 'image');
+  assert.ok(w); assert.equal(w.data.imageRounds || 0, 0, '予算待ちは描き直しの回数に数えない');
+  // 次の日（予算が戻った）：続きを描いて、表紙つきで届ける
+  await kv.del(`budget:image:yen:${today()}`);
+  const steps = await untilDelivered(kv, env);
+  assert.ok(steps.some((x) => x.endsWith(':deliver')), steps.join(' / '));
+  assert.equal(mock.calls.images.length, 1);
   const st = await V.officeState(kv, env);
-  assert.equal((await V.getSet(kv, st.sets[0].id)).image, null);
+  assert.ok((await V.getSet(kv, st.sets[0].id)).image.mediaId, '表紙つきで届く');
 });
 test('実証4：完成したら、社長の操作なしに次の案件が自動で始まる。同じ企画は繰り返さない', async () => {
   mock = fetchMock({ themes: ['キッチン収納', 'キッチン収納', '鍋まわり', 'コンロ掃除'] });
@@ -263,14 +269,12 @@ test('試験運用（14日間・合計1,000円）：開始時点の支出を記�
   assert.ok(st.cases.every((c) => !c.wait || c.wait.kind === 'budget'), '進行中の案件があれば予算待ち');
 });
 
-test('画像の予算がない日も、画像なしで完成品を届ける。選定理由と価格帯が完成品に入る', async () => {
+test('選定理由と価格帯が完成品に入る（表紙つき）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
-  await kv.setJson(V.V2_KEYS.trial, { start: new Date(Date.now() - 20 * 86400000).toISOString(), end: new Date(Date.now() - 6 * 86400000).toISOString(), cap: 1000, base: { month: today().slice(0, 7), spent: 0 } });
-  await kv.incrFloat(`budget:image:yen:${today()}`, 500);
-  for (let i = 0; i < 14; i++) { const r = await run(kv, { ...ENV, IMAGE_DAILY_COUNT: '1' }); if ((r.steps || []).some((x) => x.endsWith(':deliver'))) break; }
+  await untilDelivered(kv);
   const s = await V.getSet(kv, (await V.officeState(kv, ENV)).sets[0].id);
-  assert.equal(s.image, null, '画像なしで届く');
+  assert.ok(s.image && s.image.mediaId, '表紙つきで届く');
   assert.ok(s.caption && s.products.length >= 3);
   assert.ok(s.band && s.products.every((p) => p.band), '価格帯の目安');
   assert.equal(V.bandOf(2500), '手頃な高コスパ'); assert.equal(V.bandOf(25000), '高級・特別なギフト');
@@ -349,6 +353,7 @@ test('仕事探し：工程の無い社員は、本当に必要な仕事だけ�
   slowAndPr(mock, { ms: 5 });
   const kv = memoryKv();
   const old = new Date(Date.now() - 25 * 3600000).toISOString();
+  await kv.set('v2:migrate:nocover-1', '2026-11-18'); // 表紙の無い完成品の一度だけの却下（移行）は済んだことにする
   await kv.setJson(V.V2_KEYS.sets, [{ id: 'set1', title: '台所の工夫', status: 'waiting', deliveredAt: old }]);
   await kv.setJson(V.V2_KEYS.set('set1'), { id: 'set1', title: '台所の工夫', status: 'waiting', deliveredAt: old, jobId: 'j0', products: [{ code: 's:x1', name: '道具1', short: '道具1', price: 2000 }, { code: 's:x2', name: '道具2', short: '道具2', price: 2480 }] });
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 999.5); // 新しい案件は始めない（AIの費用の手前）
@@ -436,6 +441,7 @@ test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys(OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const items = [0, 1, 2].map((n) => ({ name: `キッチン 道具${n}`, caption: '水受けトレー付きで、水滴がたれにくい。', price: 1000 + n, role: n ? '代替・比較' : '本命', code: `c${n}` }));
   const raw = { title: '台所の工夫', items, copy: { items: items.map(() => ({ shortName: '道具', subline: '水滴がたれにくい', memo: 'この一台が変えます', factOnly: true })) } };
+  await kv.set('v2:migrate:nocover-1', '2026-11-18'); // 表紙の無い完成品の一度だけの却下（移行）は済んだことにする
   await kv.setJson(V.V2_KEYS.sets, [{ id: 'm1', title: '台所の工夫', status: 'waiting', deliveredAt: new Date().toISOString() }]);
   await kv.setJson(V.V2_KEYS.set('m1'), { id: 'm1', title: '台所の工夫', status: 'waiting', deliveredAt: new Date().toISOString(), products: items.map((it) => ({ ...it, short: '道具' })), raw });
   const r = await run(kv);
@@ -514,33 +520,29 @@ test('残高不足：前の実行で「再試行待ち」になった残高不�
 });
 
 // ---- 2026-11-17 有料のAI画像生成を停止：表紙画像なしで完成品まで進め、社長がChatGPTの画像を後から追加する ----
-test('AI画像生成の停止：OpenAIの画像APIを1回も呼ばずに、企画→商品→文章→監査→仕上げまで進めて完成品を届ける。社長が後から表紙画像を追加できる（前の画像は消さない）', async () => {
+test('AI画像生成の停止（AI_IMAGE_GEN=0）：表紙の無いものは完成品にしないので、文章までそろえて表紙の工程で画像待ちにする（画像APIは呼ばない・消さない）。社長は完成品の表紙を差し替えられる（前の画像は消さない）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   const env = { ...ENV, AI_IMAGE_GEN: '0', __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
-  const steps = await untilDelivered(kv, env);
-  assert.ok(steps.some((x) => x.endsWith(':deliver')), `完成品が届いた：${steps.join(' / ')}`);
-  assert.ok(!steps.some((x) => /designer:(scene|image)|auditor:checkImage/.test(x)), `画像の工程を通らない：${steps.join(' / ')}`);
+  const steps = await untilDelivered(kv, env, 12);
+  assert.ok(!steps.some((x) => x.endsWith(':deliver')), `表紙が無いので届けない：${steps.join(' / ')}`);
   assert.equal(mock.calls.images.length, 0, 'OpenAIの画像APIを呼ばない');
-  const st = await V.officeState(kv, env);
-  const set = await V.getSet(kv, st.sets[0].id);
-  assert.equal(set.image, null, '表紙画像なしで納品');
-  assert.ok(set.products.length >= 3 && set.caption && set.products.every((p) => p.room), '商品・キャプション・ROOM紹介文はそろっている');
-  assert.ok(set.notes.some((n) => /ChatGPT/.test(n)), '表紙は社長が追加できると案内');
-  // 社長がChatGPTの画像を追加 → 差し替え（前の画像は履歴に残る）
+  const w = (await kv.getJson(V.V2_KEYS.cases)).find((c) => c.wait && c.wait.kind === 'image');
+  assert.ok(w && ['scene', 'image'].includes(w.step), '表紙の工程で画像待ち');
+  assert.match(w.wait.why, /完成品にしない/);
+  // 社長の画像の差し替え（完成品）
+  const set0 = { id: 'set1', title: '既存の完成品', status: 'adopted', products: [], image: { mediaId: 'm0', url: '/api/media?id=m0' } };
+  await kv.setJson(V.V2_KEYS.set('set1'), set0); await kv.setJson(V.V2_KEYS.sets, [{ id: 'set1', title: set0.title, status: 'adopted', image: '/api/media?id=m0' }]);
   const jpg = 'data:image/jpeg;base64,' + Buffer.from('fake-jpeg').toString('base64');
-  const r1 = await call(v2api, { action: 'setImage', id: set.id, image: jpg }, undefined, env);
+  const r1 = await call(v2api, { action: 'setImage', id: 'set1', image: jpg }, undefined, env);
   assert.equal(r1.status, 200, JSON.stringify(r1.data));
-  assert.match(r1.data.image.label, /ChatGPT/);
-  const r2 = await call(v2api, { action: 'setImage', id: set.id, image: jpg }, undefined, env);
-  const saved = await kv.getJson(V.V2_KEYS.set(set.id));
-  assert.equal(saved.image.mediaId, r2.data.image.mediaId);
-  assert.equal(saved.imageHistory[0].mediaId, r1.data.image.mediaId, '前の画像は消さない');
-  assert.ok((await kv.getJson(V.V2_KEYS.sets))[0].image, '一覧にも表紙が出る');
-  assert.equal((await call(v2api, { action: 'setImage', id: set.id, image: 'data:text/plain;base64,AAAA' }, undefined, env)).status, 400);
+  const saved = await kv.getJson(V.V2_KEYS.set('set1'));
+  assert.equal(saved.image.mediaId, r1.data.image.mediaId);
+  assert.equal(saved.imageHistory[0].mediaId, 'm0', '前の画像は消さない');
+  assert.equal((await call(v2api, { action: 'setImage', id: 'set1', image: 'data:text/plain;base64,AAAA' }, undefined, env)).status, 400);
 });
-test('AI画像生成の停止：表紙画像の工程（場面・画像待ち・画像の確認）にいた案件は、消さずに画像なしの仕上げへ進む', async () => {
+test('AI画像生成の停止：表紙画像の工程にいた案件は、消さずに画像待ちで保存する（仕上げへは進めない）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
   const env = { ...ENV, AI_IMAGE_GEN: '0' };
@@ -548,14 +550,49 @@ test('AI画像生成の停止：表紙画像の工程（場面・画像待ち・
   const C = await import('../lib/kuma-cover.js');
   const r = await C.imageStep({ kv, env, origin: APP, scene: {}, item: {} });
   assert.match(r.skip, /停止中/, '画像の部品そのものも、画像APIを呼ぶ前に止まる');
-  assert.equal(mock.calls.images.length, 0);
-  await kv.setJson(V.V2_KEYS.cases, [{ id: 'w', kind: 'make', step: 'image', attempts: 1, runs: [], wait: { kind: 'image', why: '画像の予算待ち' }, data: { set: { title: '待っていた案件' } } }]);
-  await run(kv, env);
-  const ev = (await V.officeState(kv, env)).events;
-  assert.ok(ev.some((e) => e.job === 'w' && /表紙画像なしで仕上げる/.test(e.text)), '画像なしで仕上げへ');
+  await kv.setJson(V.V2_KEYS.cases, [{ id: 'w', kind: 'make', step: 'image', attempts: 1, runs: [], wait: null, data: { set: { title: '待っていた案件' }, cover: { scene: { place: '机' }, item: {}, tries: 0 } } }]);
+  await run(kv, env); await run(kv, env);
+  const c = (await kv.getJson(V.V2_KEYS.cases)).find((x) => x.id === 'w');
+  assert.ok(c, '消さない'); assert.equal(c.step, 'image'); assert.equal(c.wait.kind, 'image');
+  assert.equal((await V.officeState(kv, env)).events.filter((e) => e.job === 'w' && e.type === 'wait').length, 1, '同じ待ちを何度も記録しない');
   assert.equal(mock.calls.images.length, 0);
 });
 
+test('表紙が必須（2026-11-18 社長の決定）：社長の確認待ちで表紙の無い完成品は一度だけ却下にし（消さない）、企画の学び（却下の理由）には使わない。表紙のある完成品・採用済みはそのまま', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const mk = (id, status, image) => ({ id, title: `完成品${id}`, status, products: [], ...(image ? { image: { mediaId: 'm', url: '/api/media?id=m' } } : {}) });
+  const sets = [mk('a', 'waiting', false), mk('b', 'waiting', true), mk('c', 'adopted', false), mk('d', 'waiting', false)];
+  for (const x of sets) await kv.setJson(V.V2_KEYS.set(x.id), x);
+  await kv.setJson(V.V2_KEYS.sets, sets.map((x) => ({ id: x.id, title: x.title, status: x.status, image: x.image ? x.image.url : '' })));
+  const hit = await V.rejectNoCover(kv);
+  assert.deepEqual(hit, ['a', 'd']);
+  const list = await kv.getJson(V.V2_KEYS.sets);
+  assert.deepEqual(list.map((x) => x.status), ['rejected', 'waiting', 'adopted', 'rejected']);
+  assert.equal((await kv.getJson(V.V2_KEYS.set('a'))).ownerNote, V.NO_COVER_NOTE);
+  assert.ok(await kv.getJson(V.V2_KEYS.set('d')), '消さない');
+  // 社長が自分で、表紙の無い完成品を却下しても、企画の学びには使わない
+  await kv.setJson(V.V2_KEYS.set('e'), mk('e', 'waiting', false)); await kv.setJson(V.V2_KEYS.sets, [...list, { id: 'e', title: '完成品e', status: 'waiting' }]);
+  await V.decide(kv, { id: 'e', action: 'reject', note: '表紙なし' });
+  assert.ok((await kv.getJson(V.V2_KEYS.sets)).filter((x) => x.status === 'rejected').every((x) => x.noCover));
+  // 定期実行では一度だけ動く
+  await kv.setJson(V.V2_KEYS.set('f'), mk('f', 'waiting', false)); await kv.setJson(V.V2_KEYS.sets, [...(await kv.getJson(V.V2_KEYS.sets)), { id: 'f', title: '完成品f', status: 'waiting' }]);
+  await run(kv); await kv.setJson(V.V2_KEYS.set('g'), mk('g', 'waiting', false)); await kv.setJson(V.V2_KEYS.sets, [...(await kv.getJson(V.V2_KEYS.sets)), { id: 'g', title: '完成品g', status: 'waiting' }]);
+  await run(kv);
+  const l2 = await kv.getJson(V.V2_KEYS.sets);
+  assert.equal(l2.find((x) => x.id === 'f').status, 'rejected'); assert.equal(l2.find((x) => x.id === 'g').status, 'waiting', '移行は一度だけ（その後は社長が判断）');
+});
+
+test('表紙が必須：描けなかったら時間を空けてもう1回だけ描き、それでも描けなければ表紙なしで納品せず止める。仕上げに表紙が無ければデザイナーに戻す', async () => {
+  mock = fetchMock();
+  const kv = memoryKv();
+  const job = { id: 'x', kind: 'make', step: 'pack', attempts: 0, runs: [], wait: null, data: { set: { title: 'T', copy: { caption: 'PR' }, items: [] }, cover: { scene: { place: '机' }, item: {}, tries: 0 } } };
+  await kv.setJson(V.V2_KEYS.cases, [job]);
+  await run(kv);
+  let c = (await kv.getJson(V.V2_KEYS.cases)).find((x) => x.id === 'x');
+  assert.ok(!c || c.step !== 'pack' || c.data.packBack === 1, '表紙が無いので仕上げで納品しない');
+  assert.ok(!((await kv.getJson(V.V2_KEYS.sets)) || []).length, '完成品にならない');
+});
 test('残高待ち：手動の実行では時刻を待たずに1件だけ試し、通れば全部を続きから再開する（定期実行は時刻まで待つ）', async () => {
   mock = fetchMock();
   const kv = memoryKv();
@@ -610,6 +647,7 @@ test('確認待ちが上限（5件）でも会社は止まらない：企画・�
   const kv = memoryKv();
   const env = { ...ENV, __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
+  await kv.set('v2:migrate:nocover-1', '2026-11-18'); // 表紙の無い完成品の一度だけの却下（移行）は済んだことにする
   await kv.setJson(V.V2_KEYS.sets, [1, 2, 3, 4, 5, 6].map((n) => ({ id: `w${n}`, title: `確認待ち${n}`, status: 'waiting', deliveredAt: new Date().toISOString() })));
   for (const n of [1, 2, 3, 4, 5, 6]) await kv.setJson(V.V2_KEYS.set(`w${n}`), { id: `w${n}`, title: `確認待ち${n}`, status: 'waiting', deliveredAt: new Date().toISOString(), products: [] });
   const steps = [];

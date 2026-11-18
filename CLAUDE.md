@@ -12,6 +12,7 @@
 ## 構成
 - 2026-11-17：1.0は運用終了（docs/v1-retired.md）。1.0の定期実行・1.0だけのAPIは止めてある（lib/v1-retired.js・V1_ENABLED=1 で戻せる）。新しい仕事は2.0だけ。テストは V1_ENABLED=1 AI_IMAGE_GEN=1 で動かす（npm test）
 - 2026-11-17：表紙画像はデザイナーAIが1企画1枚だけ描く（監査の自動の描き直しなし・社長が作り直しを頼める・止めるときは AI_IMAGE_GEN=0）。docs/v2/design.md 18章
+- 2026-11-18：表紙の無いものは完成品ではない（表紙が無ければ納品しない。描けるまで画像待ち。docs/v2/design.md 25章）
 - 2026-11-15 から「サングラスくま株式会社 2.0」（docs/v2/design.md）が新しい基本設計。新しい仕事は /v2/・lib/v2/・server/v2.js に作る。1.0の細かな仕様で2.0と矛盾するものは廃止。1.0のデータと画面は切り替えまで残す（消さない）
 - 静的な画面（index.html・js/・css/）＋ Vercel の1つの関数（api/[route].js が server/*.js に振り分け。Hobby は関数12個まで）。
 - 外部API：楽天市場の商品検索（1秒1回）、OpenAI（lib/ai.js の runWithModels）、Instagram 公式API（lib/ig-graph.js。トークン未設定）。
