@@ -89,4 +89,13 @@ jobs:
 
           - 自動ではマージしません（人が確認してから取り込む）
           - テストの結果は Issue のコメントを見てください"
-          gh pr create --base main --head "$BRANCH" --title "Claude: ${TITLE:-作業}" --body "$body"
+          if ! out=$(gh pr create --base main --head "$BRANCH" --title "Claude: ${TITLE:-作業}" --body "$body" 2>&1); then
+            echo "$out"
+            if echo "$out" | grep -q "not permitted to create or approve pull requests"; then
+              # リポジトリの設定「Allow GitHub Actions to create and approve pull requests」がオフ。作業とテストは終わっているので失敗にしない
+              echo "::warning::リポジトリの設定で、GitHub Actions からの PR 作成が許可されていません（Settings → Actions → General → Workflow permissions）。Issue のコメントの「Create PR」から作れます"
+              exit 0
+            fi
+            exit 1
+          fi
+          echo "$out"
