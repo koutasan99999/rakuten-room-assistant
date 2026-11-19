@@ -60,6 +60,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      # 鍵が読めないときの切り分け（値は表示しない。あり/なしと起動のきっかけだけ）
+      - name: 設定の確認
+        env:
+          HAS_LINEAR: ${{ secrets.LINEAR_API_KEY != '' }}
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: echo "::notice::LINEAR_API_KEY=${HAS_LINEAR} CLAUDE_CODE_OAUTH_TOKEN=${HAS_CLAUDE} event=${EVENT} actor=${ACTOR}"
       - name: 承認済みのチケットを1件選び、受付の印を付ける
         id: pick
         env:
