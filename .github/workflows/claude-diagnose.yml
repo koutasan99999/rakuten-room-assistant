@@ -47,3 +47,20 @@ jobs:
             python3 -I scripts/claude-diag.py "out-$m.json" "$m"
             if [ -s "err-$m.txt" ]; then python3 -I -c "import sys,re;s=open(sys.argv[1],errors='replace').read();s=re.sub(r'sk-ant-[A-Za-z0-9_\-]+|[A-Za-z0-9_\-]{40,}','[伏せ字]',s);print('stderr：',s[:600])" "err-$m.txt"; fi
           done
+      - name: Direct API check (status and error type only)
+        env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set +x
+          code=$(curl -s -o resp.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "Authorization: Bearer $T" -H 'anthropic-version: 2023-06-01' -H 'anthropic-beta: oauth-2025-04-20' -H 'content-type: application/json' \
+            -d '{"model":"claude-haiku-5-5","max_tokens":1,"system":"You are Claude Code, Anthropic'"'"'s official CLI for Claude.","messages":[{"role":"user","content":"hi"}]}' || echo 000)
+          echo "HTTP $code"
+          python3 -I -c "import json,re,sys
+          try: d=json.load(open('resp.json'))
+          except Exception: print('本文を読めない'); sys.exit()
+          e=d.get('error') or {}
+          msg=re.sub(r'sk-ant-[A-Za-z0-9_\-]+|[A-Za-z0-9_\-]{40,}','[伏せ字]',str(e.get('message','')))
+          print('種類：', e.get('type') or ('成功（'+str(d.get('type'))+'）'))
+          print('内容：', msg[:300])"
+
