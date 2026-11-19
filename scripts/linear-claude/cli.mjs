@@ -90,7 +90,7 @@ export async function prompt({ client, cfg, issueId }) {
   return { text: buildPrompt(issue), meta: { id: issue.id, identifier: issue.identifier, title: issue.title, url: issue.url } };
 }
 
-export async function finish({ client, cfg, issueId, result, prUrl, testText, reason, runUrl }) {
+export async function finish({ client, cfg, issueId, result, prUrl, testText, reason, runUrl, waitMs = 5000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const meta = await client.teamMeta(cfg.team);
   const running = labelId(meta, cfg.runningLabel);
   const done = labelId(meta, cfg.doneLabel);
@@ -102,8 +102,16 @@ export async function finish({ client, cfg, issueId, result, prUrl, testText, re
   await client.addLabel(issueId, ok ? done : failed);
   if (prUrl) await client.linkUrl(issueId, prUrl, 'GitHub のPR（Claude Code）');
   if (ok) {
+    // PRのリンクを付けると、Linear の GitHub 連携の自動化が少し遅れて状態を In Progress に戻すことがある（KOT-7 の E2E で確認）。
+    // 待ってから In Review にし、読み直して戻っていればもう一度だけ直す
     const review = stateId(meta, 'In Review', 'started');
-    if (review) await client.setState(issueId, review);
+    if (review) {
+      if (prUrl) await sleep(waitMs);
+      await client.setState(issueId, review);
+      await sleep(waitMs);
+      const now = await client.getIssue(issueId);
+      if (now.state?.id !== review) await client.setState(issueId, review);
+    }
   }
   const lines = ok
     ? ['🤖 Claude Code がPRを作りました（自動ではマージしません）。', '', `- PR：${prUrl}`, `- ${testText || 'npm test：結果なし'}`, `- 実行の記録：${runUrl}`]
