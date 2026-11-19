@@ -135,13 +135,25 @@ test('Claude への指示：安全の決まりが依頼より先。本文の中�
 
 test('結果の書き戻し：成功＝処理中を外して完了・In Review・PRのリンク／失敗＝失敗の印と理由', async () => {
   const L = fakeLinear([issue(1, { labels: { nodes: [LABELS[0], LABELS[1]] } }), issue(2, { labels: { nodes: [LABELS[0], LABELS[1]] } })]);
-  await finish({ client: L, cfg, issueId: 'uuid-1', result: 'success', prUrl: 'https://github.com/x/pull/1', testText: 'npm test：成功', runUrl: 'R' });
+  await finish({ client: L, cfg, issueId: 'uuid-1', result: 'success', prUrl: 'https://github.com/x/pull/1', testText: 'npm test：成功', runUrl: 'R', sleep: async () => {} });
   assert.deepEqual(names(L.db.get('uuid-1')), ['Claude完了', 'Claude開発依頼']);
   assert.equal(L.db.get('uuid-1').state.name, 'In Review');
   assert.ok(L.calls.some((c) => c[0] === 'link' && c[1] === 'uuid-1'));
-  await finish({ client: L, cfg, issueId: 'uuid-2', result: 'failure', reason: 'npm test が失敗した', runUrl: 'R' });
+  await finish({ client: L, cfg, issueId: 'uuid-2', result: 'failure', reason: 'npm test が失敗した', runUrl: 'R', sleep: async () => {} });
   assert.deepEqual(names(L.db.get('uuid-2')), ['Claude失敗', 'Claude開発依頼']);
   assert.ok(L.calls.some((c) => c[0] === 'comment' && c[1] === 'uuid-2' && /npm test が失敗した/.test(c[2])));
+});
+
+test('PRのリンクのあとで Linear の自動化が状態を In Progress に戻しても、In Review に直す', async () => {
+  const L = fakeLinear([issue(1, { labels: { nodes: [LABELS[0], LABELS[1]] } })]);
+  const link = L.linkUrl;
+  let revertPending = false;
+  L.linkUrl = async (...a) => { revertPending = true; return link(...a); };
+  const setState = L.setState;
+  L.setState = async (...a) => { await setState(...a); if (revertPending) { revertPending = false; L.db.get('uuid-1').state = STATES[2]; } };
+  await finish({ client: L, cfg, issueId: 'uuid-1', result: 'success', prUrl: 'https://github.com/x/pull/1', testText: 'ok', runUrl: 'R', sleep: async () => {} });
+  assert.equal(L.db.get('uuid-1').state.name, 'In Review');
+  assert.equal(L.calls.filter((c) => c[0] === 'state').length, 2);
 });
 
 test('ブランチ名はチケット番号と実行番号だけ（タイトルの文字は入れない）', () => {
