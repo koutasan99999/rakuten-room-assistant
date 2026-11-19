@@ -61,6 +61,17 @@ jobs:
             --disallowedTools "Bash(vercel:*),Bash(gh pr merge:*),Bash(git push --force:*)"
             --append-system-prompt "このリポジトリの CLAUDE.md の決まりに従う。社長への報告は日本語で平易に、事実だけ。作業は作業ブランチだけで行い、main へ直接 push しない・マージしない・本番へデプロイしない。npm test を実行して結果（成功・失敗の件数）を必ずコメントに書く。テストは RAKUTEN_GAP_MS=0 V1_ENABLED=1 AI_IMAGE_GEN=1 の設定で npm test が動く。Instagram・楽天ROOM・外部への投稿・コメント・フォローをするコードや操作を、人間の承認なしに動くようにしない。秘密の鍵の値をコード・コメント・ログに書かない。"
 
+      # 失敗したときだけ、エラーの内容を表示する（認証情報らしき文字列は伏せ字。秘密の値はこの段階に渡さない）
+      # 公式のアクションは安全のため内容を隠すので、原因（例：Not logged in・401）が分かるようにする（2026-11-19）
+      - name: Show error summary (credentials are never printed)
+        if: failure() && steps.claude.outputs.execution_file != ''
+        env:
+          EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          git show "${GITHUB_SHA}:scripts/claude-diag.py" > "$RUNNER_TEMP/claude-diag.py"  # Claude が作業中に書き換えた版ではなく、起動時の版を使う
+          python3 -I "$RUNNER_TEMP/claude-diag.py" "$EXEC_FILE" claude
+          echo "401・Not logged in なら、Secrets の CLAUDE_CODE_OAUTH_TOKEN が Anthropic に受け付けられていない（Actions の「Claude Code diagnose」で確かめられる）"
+
       # 公式のアクションはブランチに commit するところまで（PRは作らない）。作業ブランチに変更があれば、PRを作る（マージはしない）
       - name: Open a pull request for Claude's branch
         if: always() && steps.claude.outputs.branch_name != ''

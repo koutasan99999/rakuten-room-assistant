@@ -1,0 +1,67 @@
+# Claude Code の認証の診断（2026-11-19）：トークンの値は表示しない。形式（長さ・種類・前後の空白）と、エラーの内容（伏せ字つき）だけを出す
+# 使い方：GitHub の Actions →「Claude Code diagnose」→ Run workflow（トークンを登録し直したあとの確認に使う）。main の Issue 連携には影響しない
+# 費用：APIへの呼び出しは最小（1語の応答を数回）。定額プランのトークンなので従量課金は発生しない
+name: Claude Code diagnose
+on:
+  push:
+    branches: ['claude/diag-claude-auth']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Token format (value is never printed)
+        env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          t = os.environ.get('T', '')
+          print('登録あり' if t else '登録なし')
+          if t:
+              s = t.strip()
+              print('前後の空白・改行：', 'あり（値の前後に余計な文字が入っている）' if s != t else 'なし')
+              print('長さ：', len(s))
+              kind = '定額プランのトークン（sk-ant-oat）' if s.startswith('sk-ant-oat') else 'APIキー（sk-ant-api）' if s.startswith('sk-ant-api') else 'どちらの形式でもない'
+              print('種類：', kind)
+              print('途中の空白・改行：', 'あり' if re.search(r'\s', s) else 'なし')
+              print('引用符：', 'あり' if re.search(r'["\']', s) else 'なし')
+          PY
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Minimal call (default model, then explicit models)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          claude --version
+          for m in default claude-sonnet-5-5 claude-haiku-5-5; do
+            if [ "$m" = default ]; then args=(); else args=(--model "$m"); fi
+            claude -p "OKとだけ返してください" --output-format json --max-turns 1 "${args[@]}" > "out-$m.json" 2> "err-$m.txt" || true
+            python3 -I scripts/claude-diag.py "out-$m.json" "$m"
+            if [ -s "err-$m.txt" ]; then python3 -I -c "import sys,re;s=open(sys.argv[1],errors='replace').read();s=re.sub(r'sk-ant-[A-Za-z0-9_\-]+|[A-Za-z0-9_\-]{40,}','[伏せ字]',s);print('stderr：',s[:600])" "err-$m.txt"; fi
+          done
+      - name: Direct API check (status and error type only)
+        env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set +x
+          code=$(curl -s -o resp.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "Authorization: Bearer $T" -H 'anthropic-version: 2023-06-01' -H 'anthropic-beta: oauth-2025-04-20' -H 'content-type: application/json' \
+            -d '{"model":"claude-haiku-5-5","max_tokens":1,"system":"You are Claude Code, Anthropic'"'"'s official CLI for Claude.","messages":[{"role":"user","content":"hi"}]}' || echo 000)
+          echo "HTTP $code"
+          python3 -I -c "import json,re,sys
+          try: d=json.load(open('resp.json'))
+          except Exception: print('本文を読めない'); sys.exit()
+          e=d.get('error') or {}
+          msg=re.sub(r'sk-ant-[A-Za-z0-9_\-]+|[A-Za-z0-9_\-]{40,}','[伏せ字]',str(e.get('message','')))
+          print('種類：', e.get('type') or ('成功（'+str(d.get('type'))+'）'))
+          print('内容：', msg[:300])"
+
