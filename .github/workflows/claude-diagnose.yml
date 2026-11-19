@@ -1,5 +1,6 @@
 # Claude Code の認証の診断（2026-11-19）：トークンの値は表示しない。形式（長さ・種類・前後の空白）と、エラーの内容（伏せ字つき）だけを出す
-# 作業ブランチへの push と手動の実行で動く（main の Issue 連携には影響しない）
+# 使い方：GitHub の Actions →「Claude Code diagnose」→ Run workflow（トークンを登録し直したあとの確認に使う）。main の Issue 連携には影響しない
+# 費用：APIへの呼び出しは最小（1語の応答を数回）。定額プランのトークンなので従量課金は発生しない
 name: Claude Code diagnose
 on:
   push:
