@@ -13,6 +13,8 @@ export const DEFAULTS = Object.freeze({
   failedLabel: 'Claude失敗',
   maxTitle: 200,
   maxDescription: 12000,
+  maxOpenPrs: 5,   // Claude が作ったPRが、人の確認待ちでこの数だけ開いていたら、新しく受け付けない
+  maxPerDay: 10,   // 直近24時間に作ったPRの数の上限（暴走・利用枠の使い切りを防ぐ）
 });
 
 export function config(env = {}) {
@@ -21,7 +23,24 @@ export function config(env = {}) {
     ...DEFAULTS,
     team: env.LINEAR_TEAM_KEY || DEFAULTS.team,
     allowedCreators: list(env.LINEAR_ALLOWED_CREATOR_IDS),
+    maxOpenPrs: posInt(env.LINEAR_CLAUDE_MAX_OPEN_PRS, DEFAULTS.maxOpenPrs),
+    maxPerDay: posInt(env.LINEAR_CLAUDE_MAX_PER_DAY, DEFAULTS.maxPerDay),
   };
+}
+
+function posInt(v, d) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 && n <= 100 ? n : d;
+}
+
+// 上限の確認：linear/ で始まるブランチのPR（自動連携が作ったもの）を数える
+export function limitReason(prs, cfg, now = Date.now()) {
+  const ours = (prs || []).filter((p) => String(p.head?.ref || '').startsWith('linear/'));
+  const open = ours.filter((p) => p.state === 'open').length;
+  if (open >= cfg.maxOpenPrs) return `確認待ちのPRが ${open} 件ある（上限 ${cfg.maxOpenPrs} 件）。PRを確認・クローズすると再開する`;
+  const day = ours.filter((p) => now - Date.parse(p.created_at) < 24 * 3600 * 1000).length;
+  if (day >= cfg.maxPerDay) return `直近24時間に ${day} 件のPRを作った（上限 ${cfg.maxPerDay} 件）。時間がたつと再開する`;
+  return null;
 }
 
 export function labelNames(issue) {

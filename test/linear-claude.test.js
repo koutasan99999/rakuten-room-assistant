@@ -5,10 +5,11 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import {
   config, eligibility, pickCandidate, checkLength, branchName, buildPrompt,
-  safeText, redact, parseTestSummary, testLine, forbiddenPaths, prTitle, prBody,
+  safeText, redact, parseTestSummary, testLine, forbiddenPaths, prTitle, prBody, limitReason,
 } from '../scripts/linear-claude/lib.mjs';
 import { createClient } from '../scripts/linear-claude/linear-api.mjs';
-import { pick, prompt, finish } from '../scripts/linear-claude/cli.mjs';
+import { pick as pickRaw, prompt, finish } from '../scripts/linear-claude/cli.mjs';
+const pick = (o) => pickRaw({ recent: async () => [], ...o });
 import { readClaudeResult, commitMessage } from '../scripts/linear-claude/steps.mjs';
 
 const OWNER = '1e4107b1-8c02-4ef6-b5db-c03c2be1de9e';
@@ -154,6 +155,25 @@ test('PRのリンクのあとで Linear の自動化が状態を In Progress に
   await finish({ client: L, cfg, issueId: 'uuid-1', result: 'success', prUrl: 'https://github.com/x/pull/1', testText: 'ok', runUrl: 'R', sleep: async () => {} });
   assert.equal(L.db.get('uuid-1').state.name, 'In Review');
   assert.equal(L.calls.filter((c) => c[0] === 'state').length, 2);
+});
+
+test('上限：確認待ちのPRが5件、または直近24時間に10件なら、チケットに触らずに今回は受け付けない', async () => {
+  const now = Date.parse('2026-11-20T00:00:00Z');
+  const pr = (i, state, hoursAgo, ref = `linear/kot-${i}-1`) => ({ head: { ref }, state, created_at: new Date(now - hoursAgo * 3600e3).toISOString() });
+  assert.equal(limitReason([pr(1, 'open', 1), pr(2, 'closed', 2)], cfg, now), null);
+  assert.match(limitReason([1, 2, 3, 4, 5].map((i) => pr(i, 'open', 30)), cfg, now), /確認待ちのPRが 5 件/);
+  assert.match(limitReason(Array.from({ length: 10 }, (_, i) => pr(i, 'closed', 3)), cfg, now), /直近24時間に 10 件/);
+  assert.equal(limitReason(Array.from({ length: 10 }, (_, i) => pr(i, 'closed', 25)), cfg, now), null);
+  // 自動連携以外のPR（claude/ など）は数えない
+  assert.equal(limitReason([1, 2, 3, 4, 5].map((i) => pr(i, 'open', 1, `claude/x-${i}`)), cfg, now), null);
+  // 上限の値は Variables で変えられる（1〜100 以外は既定のまま）
+  assert.equal(config({ LINEAR_CLAUDE_MAX_OPEN_PRS: '2', LINEAR_CLAUDE_MAX_PER_DAY: '999' }).maxOpenPrs, 2);
+  assert.equal(config({ LINEAR_CLAUDE_MAX_PER_DAY: '999' }).maxPerDay, 10);
+  const L = fakeLinear([issue(1)]);
+  const r = await pickRaw({ client: L, cfg, runUrl: 'R', runId: '1', prs: noPrs, recent: async () => [1, 2, 3, 4, 5].map((i) => pr(i, 'open', 1)) });
+  assert.equal(r, null);
+  assert.equal(L.calls.length, 0);
+  assert.deepEqual(names(L.db.get('uuid-1')), ['Claude開発依頼']);
 });
 
 test('ブランチ名はチケット番号と実行番号だけ（タイトルの文字は入れない）', () => {

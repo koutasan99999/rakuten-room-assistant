@@ -37,6 +37,9 @@ env:
   LINEAR_TEAM_KEY: ${{ vars.LINEAR_TEAM_KEY || 'KOT' }}
   # 許可する作成者（Linear のユーザーID。秘密ではない）。既定は社長のアカウント（ChatGPT の Linear 連携もこのアカウントで書く）
   LINEAR_ALLOWED_CREATOR_IDS: ${{ vars.LINEAR_ALLOWED_CREATOR_IDS || '1e4107b1-8c02-4ef6-b5db-c03c2be1de9e' }}
+  # 暴走の防止：確認待ちのPRの上限・直近24時間のPRの上限（scripts/linear-claude/lib.mjs の limitReason）
+  LINEAR_CLAUDE_MAX_OPEN_PRS: ${{ vars.LINEAR_CLAUDE_MAX_OPEN_PRS || '5' }}
+  LINEAR_CLAUDE_MAX_PER_DAY: ${{ vars.LINEAR_CLAUDE_MAX_PER_DAY || '10' }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:

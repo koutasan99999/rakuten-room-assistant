@@ -36,6 +36,20 @@ GitHub の Issue を書いたり、Mac の Claude Code に貼り付けたりし�
 - 途中で止まって「Claude処理中」が残ったとき（まれ）：実行の記録を確かめてから、手で外す
 - Actions が作る PR・Linear への書き込みは、ほかのワークフローを起動しない。PR・コメントの「@」は全角にして、claude.yml（@claude）が反応しないようにしている
 
+## 暴走の防止（上限）
+
+- 1回の実行で1件だけ。同時に動くのは1つだけ。Claude は1件あたり最大80回のやりとり・40分まで（ジョブ全体は50分）
+- 自動連携が作ったPRが、確認待ちで **5件** 開いていたら、新しいチケットを受け付けない（PRを確認・クローズすると再開）
+- 直近24時間に作ったPRが **10件** に達したら、時間がたつまで受け付けない
+- 上限に当たったときは、チケットに印を付けずに待つ（失敗にしない）。値は Variables の LINEAR_CLAUDE_MAX_OPEN_PRS・LINEAR_CLAUDE_MAX_PER_DAY で変えられる
+- Claude は定額プランのトークンで動く（API の従量課金キー ANTHROPIC_API_KEY は使わない）ので、使った分の請求は発生しない。上限は利用枠の使い切りと、確認しきれないPRの山を防ぐため
+
+## 止まる条件（失敗のとき）
+
+- 失敗したチケットは「Claude失敗」になり、人がラベルを外すまで二度と実行しない（自動の再試行なし）
+- Linear や GitHub に接続できないときは、何も受け付けずにその回を終える（次の5分後にまた確かめるだけ。Claude は動かない）
+- 止めたいとき：Actions の「Linear → Claude Code」→ … → Disable workflow。または Secrets の LINEAR_API_KEY を消す（何もしなくなる）
+
 ## 安全
 
 - 秘密の値は GitHub の Secrets にだけ置く：`LINEAR_API_KEY`（Linear の個人のAPIキー）・`CLAUDE_CODE_OAUTH_TOKEN`（既存）

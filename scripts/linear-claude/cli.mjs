@@ -5,7 +5,7 @@
 //   node cli.mjs finish               … 結果（RESULT=success|failure）を Linear に書く（ラベル・状態・コメント・PRのリンク）
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { createClient } from './linear-api.mjs';
-import { config, eligibility, pickCandidate, checkLength, branchName, buildPrompt, labelNames, safeText } from './lib.mjs';
+import { config, eligibility, pickCandidate, checkLength, branchName, buildPrompt, labelNames, safeText, limitReason } from './lib.mjs';
 
 const env = process.env;
 const log = (...a) => console.log(...a);
@@ -38,7 +38,17 @@ export async function openPrsFor(identifier, { repo = env.GITHUB_REPOSITORY, tok
   return list.filter((p) => String(p.head?.ref || '').startsWith(prefix)).map((p) => p.html_url);
 }
 
-export async function pick({ client, cfg, runUrl, runId, only, prs = openPrsFor }) {
+// 自動連携が作った最近のPR（開いている・閉じた両方）。上限の確認に使う
+export async function recentPrs({ repo = env.GITHUB_REPOSITORY, token = env.GH_TOKEN, fetchImpl = globalThis.fetch } = {}) {
+  if (!repo || !token) throw new Error('GitHub のPRを数えられない（GITHUB_REPOSITORY・GH_TOKEN が無い）');
+  const res = await fetchImpl(`https://api.github.com/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=100`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+  });
+  if (!res.ok) throw new Error(`GitHub のPR一覧を読めない（HTTP ${res.status}）`);
+  return res.json();
+}
+
+export async function pick({ client, cfg, runUrl, runId, only, prs = openPrsFor, recent = recentPrs }) {
   const meta = await client.teamMeta(cfg.team);
   const ids = {
     running: labelId(meta, cfg.runningLabel),
@@ -51,6 +61,9 @@ export async function pick({ client, cfg, runUrl, runId, only, prs = openPrsFor 
   for (const i of skipped) log(`対象外 ${i.identifier}：${eligibility(i, cfg).reason}`);
   const issue = pickCandidate(issues, cfg);
   if (!issue) { log('処理するチケットは無い'); return null; }
+  // 上限（受付の印を付ける前に確かめる。超えていればチケットには触らず、次の実行で改めて確かめる）
+  const limit = limitReason(await recent(), cfg);
+  if (limit) { log(`::warning::上限のため今回は受け付けない：${limit}`); return null; }
   log(`選んだチケット：${issue.identifier}`);
 
   // 先に受付の印を付ける（これ以降、ほかの実行は選ばない）
