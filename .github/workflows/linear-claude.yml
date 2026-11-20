@@ -1,0 +1,228 @@
+# Linear → Claude Code → PR の自動連携（KOT-6・2026-11-19）
+# ChatGPT（かみさま）が Linear にチケットを作る → この定期実行が承認済みのチケットを見つける → Claude Code が作業ブランチで実装 → npm test → PR（自動マージなし）
+#
+# 既存の claude.yml（Issue・コメントの @claude）はそのまま。bot・GitHub App からの依頼を受けない設定（allowed_bots なし）も変えない。
+# このワークフローは「信頼できる起動（定期実行・リポジトリの管理者の手動実行）」の中で Linear の内容を確かめ、Claude Code を直接動かす。
+# 処理するチケットの条件（scripts/linear-claude/lib.mjs の eligibility）：
+#   - チーム KOT・ラベル「Claude開発依頼」付き・作成者が許可リスト（LINEAR_ALLOWED_CREATOR_IDS）にある・完了/取消でない
+#   - 「Claude処理中」「Claude完了」「Claude失敗」が付いていない（二重に実行しない。失敗は人がラベルを外すまで再実行しない）
+#   - 同じチケットのPRが開いていない
+# 秘密の値：LINEAR_API_KEY（Linear の個人のAPIキー・KOTチームだけ・読み書き）と CLAUDE_CODE_OAUTH_TOKEN は Secrets にだけ置く。
+#   Claude Code の段階には CLAUDE_CODE_OAUTH_TOKEN しか渡さない（Linear の鍵・GitHub の書き込みの鍵は渡さない）。
+# しないこと：main への直接の push・マージ・本番へのデプロイ・Instagram や楽天ROOMへの投稿。.github/ の変更は受け付けない。
+# 費用：公開リポジトリの GitHub Actions は無料。Claude は CLAUDE_CODE_OAUTH_TOKEN（定額プラン）。Linear API は1回の確認で数回だけ呼ぶ（上限に余裕がある）
+# 定期実行の注意：GitHub の schedule は数分〜それ以上遅れることがある。main にあるこのファイルだけが定期実行される（docs/linear-claude.md）
+name: Linear → Claude Code
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Linear のチケット番号（例：KOT-7）。空なら、承認済みでいちばん古いもの。条件を満たさないチケットは処理しない'
+        required: false
+        type: string
+  # 動作確認（E2E）用：このブランチへの push で1回動く（main に取り込む前に、同じ処理を確かめるため）
+  push:
+    branches: ['linear-claude-e2e']
+
+concurrency:
+  group: linear-claude
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  LINEAR_TEAM_KEY: ${{ vars.LINEAR_TEAM_KEY || 'KOT' }}
+  # 許可する作成者（Linear のユーザーID。秘密ではない）。既定は社長のアカウント（ChatGPT の Linear 連携もこのアカウントで書く）
+  LINEAR_ALLOWED_CREATOR_IDS: ${{ vars.LINEAR_ALLOWED_CREATOR_IDS || '1e4107b1-8c02-4ef6-b5db-c03c2be1de9e' }}
+  # 暴走の防止：確認待ちのPRの上限・直近24時間のPRの上限（scripts/linear-claude/lib.mjs の limitReason）
+  LINEAR_CLAUDE_MAX_OPEN_PRS: ${{ vars.LINEAR_CLAUDE_MAX_OPEN_PRS || '5' }}
+  LINEAR_CLAUDE_MAX_PER_DAY: ${{ vars.LINEAR_CLAUDE_MAX_PER_DAY || '10' }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      found: ${{ steps.pick.outputs.found }}
+      issue_id: ${{ steps.pick.outputs.issue_id }}
+      identifier: ${{ steps.pick.outputs.identifier }}
+      branch: ${{ steps.pick.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/linear-claude
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # 鍵が読めないときの切り分け（値は表示しない。あり/なしと起動のきっかけだけ）
+      - name: 設定の確認
+        env:
+          HAS_LINEAR: ${{ secrets.LINEAR_API_KEY != '' }}
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: echo "::notice::LINEAR_API_KEY=${HAS_LINEAR} CLAUDE_CODE_OAUTH_TOKEN=${HAS_CLAUDE} event=${EVENT} actor=${ACTOR}"
+      - name: 承認済みのチケットを1件選び、受付の印を付ける
+        id: pick
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ONLY_ISSUE: ${{ inputs.issue }}
+        run: node scripts/linear-claude/cli.mjs pick
+
+  work:
+    needs: pick
+    if: needs.pick.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      ISSUE_ID: ${{ needs.pick.outputs.issue_id }}
+      IDENTIFIER: ${{ needs.pick.outputs.identifier }}
+      BRANCH: ${{ needs.pick.outputs.branch }}
+    steps:
+      # 起動したときの版の道具を、作業場所の外に置く（Claude が作業中に書き換えても、このあとの段階は元の版で動く）
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .trusted
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/linear-claude
+      - name: 道具を作業場所の外へ
+        run: |
+          LC="$RUNNER_TEMP/linear-claude"; echo "LC=$LC" >> "$GITHUB_ENV"
+          mkdir -p "$LC" && cp -R .trusted/scripts/linear-claude/. "$LC/" && rm -rf .trusted
+          ls "$LC"
+      # 作業は main から（push の鍵は残さない＝Claude は push できない）
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: 作業ブランチを作る
+        run: |
+          if ! [[ "$BRANCH" =~ ^linear/[a-z]+-[0-9]+-[0-9]+$ ]]; then echo "::error::ブランチ名が不正"; exit 1; fi
+          git switch -c "$BRANCH"
+          echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Claude への指示を作る（Linear から読み直して条件を確かめる）
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: node "$LC/cli.mjs" prompt "$RUNNER_TEMP/prompt.md" "$RUNNER_TEMP/issue.json"
+
+      - name: 認証の確認
+        env:
+          HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then echo "REASON=Secrets に CLAUDE_CODE_OAUTH_TOKEN が未設定" >> "$GITHUB_ENV"; echo "::error::CLAUDE_CODE_OAUTH_TOKEN が未設定"; exit 1; fi
+          echo "認証の設定あり（値は表示しない）"
+
+      - name: Claude Code を入れる
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Claude Code が実装する
+        id: claude
+        timeout-minutes: 40
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # npm test は約5分かかる。Claude のコマンドの待ち時間（既定2分）を延ばす
+          BASH_DEFAULT_TIMEOUT_MS: '600000'
+          BASH_MAX_TIMEOUT_MS: '900000'
+        run: |
+          claude --version
+          set +e
+          claude -p --output-format json --max-turns 80 \
+            --allowedTools "Read,Edit,Write,Glob,Grep,TodoWrite,Bash(npm test),Bash(node --test:*),Bash(node --check:*),Bash(git status),Bash(git diff:*),Bash(git log:*),Bash(ls:*)" \
+            --disallowedTools "WebFetch,WebSearch,Bash(curl:*),Bash(wget:*),Bash(git push:*),Bash(git commit:*),Bash(git checkout:*),Bash(git switch:*),Bash(gh:*),Bash(vercel:*)" \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/claude.json" 2> "$RUNNER_TEMP/claude.err"
+          code=$?
+          set -e
+          echo "Claude Code の終了コード：$code"
+          node "$LC/steps.mjs" claude-result "$RUNNER_TEMP/claude.json" "$RUNNER_TEMP/summary.md" >> "$GITHUB_ENV"
+          if [ "$code" != "0" ]; then echo "CLAUDE_OK=false" >> "$GITHUB_ENV"; fi
+          if [ -s "$RUNNER_TEMP/claude.err" ]; then node "$LC/steps.mjs" redact-file "$RUNNER_TEMP/claude.err" || true; fi
+
+      - name: 変更を確かめる
+        run: |
+          if [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]; then echo "REASON=作業ブランチが切り替わっていた" >> "$GITHUB_ENV"; echo "::error::作業ブランチが切り替わっていた"; exit 1; fi
+          if [ "$(git rev-parse HEAD)" != "$BASE_SHA" ]; then echo "REASON=Claude が commit していた（ワークフローだけが commit する決まり）" >> "$GITHUB_ENV"; echo "::error::想定外の commit"; exit 1; fi
+          git add -A
+          git diff --cached --name-only > "$RUNNER_TEMP/changed.txt"
+          echo "変わったファイル："; cat "$RUNNER_TEMP/changed.txt"
+          if [ ! -s "$RUNNER_TEMP/changed.txt" ]; then echo "REASON=ファイルの変更が無かった（Claude の報告を見てください）" >> "$GITHUB_ENV"; echo "::error::変更なし"; exit 1; fi
+          node "$LC/steps.mjs" check-changes "$RUNNER_TEMP/changed.txt" || { echo "REASON=変更してはいけないファイル（.github/ や .env）が変わっていた" >> "$GITHUB_ENV"; exit 1; }
+
+      - name: npm test（ワークフローでもう一度）
+        run: |
+          set +e
+          npm test > "$RUNNER_TEMP/test.log" 2>&1
+          code=$?
+          set -e
+          tail -n 15 "$RUNNER_TEMP/test.log"
+          node "$LC/steps.mjs" test-result "$RUNNER_TEMP/test.log" "$code" >> "$GITHUB_ENV"
+
+      - name: commit と push（作業ブランチだけ）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$BRANCH" in main|master|"") echo "::error::main には push しない"; exit 1;; esac
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node "$LC/steps.mjs" commit-message "$RUNNER_TEMP/issue.json" > "$RUNNER_TEMP/commit.txt"
+          git commit -q -F "$RUNNER_TEMP/commit.txt"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$BRANCH"
+
+      - name: PRを作る（マージはしない）
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node "$LC/steps.mjs" pr-text "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/summary.md" "$RUNNER_TEMP/pr-title.txt" "$RUNNER_TEMP/pr-body.md"
+          draft=""
+          if [ "$TEST_OK" != "true" ] || [ "$CLAUDE_OK" != "true" ]; then draft="--draft"; fi
+          url=$(gh pr create --base main --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md" $draft)
+          echo "PR：$url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # どこで止まっても Linear に結果を書く（「Claude処理中」のまま放置しない）
+      - name: Linear に結果を書く
+        if: always()
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -n "$PR_URL" ] && [ "$TEST_OK" = "true" ] && [ "$CLAUDE_OK" = "true" ] && [ "$JOB_STATUS" = "success" ]; then
+            export RESULT=success
+          else
+            export RESULT=failure
+            if [ -z "${REASON:-}" ]; then
+              if [ "$JOB_STATUS" = "cancelled" ]; then REASON="実行が止められた（時間切れ・取り消し）";
+              elif [ "${CLAUDE_OK:-}" != "true" ]; then REASON="Claude Code が最後まで終わらなかった（${CLAUDE_ERROR:-詳細は実行の記録}）";
+              elif [ "${TEST_OK:-}" != "true" ]; then REASON="npm test が失敗した";
+              else REASON="途中の段階で失敗した（実行の記録を見てください）"; fi
+            fi
+            export REASON
+          fi
+          echo "結果：$RESULT ${REASON:-}"
+          node "$LC/cli.mjs" finish
+          if [ "$RESULT" != "success" ]; then echo "::error::${REASON}"; exit 1; fi
