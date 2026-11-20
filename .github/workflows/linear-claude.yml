@@ -11,7 +11,9 @@
 #   Claude Code の段階には CLAUDE_CODE_OAUTH_TOKEN しか渡さない（Linear の鍵・GitHub の書き込みの鍵は渡さない）。
 # しないこと：main への直接の push・マージ・本番へのデプロイ・Instagram や楽天ROOMへの投稿。.github/ の変更は受け付けない。
 # 費用：公開リポジトリの GitHub Actions は無料。Claude は CLAUDE_CODE_OAUTH_TOKEN（定額プラン）。Linear API は1回の確認で数回だけ呼ぶ（上限に余裕がある）
-# 定期実行の注意：GitHub の schedule は数分〜それ以上遅れることがある。main にあるこのファイルだけが定期実行される（docs/linear-claude.md）
+# 定期実行の注意：GitHub の schedule は数分〜それ以上遅れ、飛ばされることもある（11/20 は取り込み後の定期実行が1回だけ）。main にあるこのファイルだけが定期実行される（docs/linear-claude.md）
+# 2026-11-20：QStash が5分ごとに /api/linear-kick を呼び、workflow_dispatch で起動する（主）。GitHub の schedule は予備。
+#   二重起動の防止：schedule の実行は、直前4分以内に別の実行が始まっていれば何もしない（下の「二重起動の確認」）。/api/linear-kick も同じ確認をする。concurrency で同時に動くのは1つだけ
 name: Linear → Claude Code
 
 on:
@@ -49,6 +51,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
       found: ${{ steps.pick.outputs.found }}
       issue_id: ${{ steps.pick.outputs.issue_id }}
@@ -71,8 +74,21 @@ jobs:
           EVENT: ${{ github.event_name }}
           ACTOR: ${{ github.actor }}
         run: echo "::notice::LINEAR_API_KEY=${HAS_LINEAR} CLAUDE_CODE_OAUTH_TOKEN=${HAS_CLAUDE} event=${EVENT} actor=${ACTOR}"
+      # GitHub の schedule と QStash（/api/linear-kick）の二重起動を防ぐ：schedule の実行は、直前4分以内に始まった別の実行があれば何もしない
+      - name: 二重起動の確認
+        id: dedupe
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          since=$(date -u -d '-4 minutes' +%Y-%m-%dT%H:%M:%SZ)
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/linear-claude.yml/runs?per_page=10" --jq "[.workflow_runs[] | select(.id != ${RUN_ID} and .created_at >= \"${since}\")] | length" || echo 0)
+          echo "直前4分以内の別の実行：${n}件"
+          if [ "${n:-0}" != "0" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; echo "::notice::直前に別の実行があるため、この定期実行は何もしない（二重起動の防止）"; fi
       - name: 承認済みのチケットを1件選び、受付の印を付ける
         id: pick
+        if: steps.dedupe.outputs.skip != 'true'
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           GH_TOKEN: ${{ github.token }}

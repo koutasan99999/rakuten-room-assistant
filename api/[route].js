@@ -38,6 +38,7 @@ import data from '../server/data.js';
 import kumaMaster from '../server/kuma-master.js';
 import media from '../server/media.js';
 import v2 from '../server/v2.js';
+import linearKick from '../server/linear-kick.js';
 import { v1Enabled, V1_ONLY_ROUTES, V1_RETIRED_MESSAGE } from '../lib/v1-retired.js';
 
 export const ROUTES = {
@@ -73,7 +74,8 @@ export const ROUTES = {
   'data': data,
   'kuma-master': kumaMaster,
   'media': media,
-  'v2': v2
+  'v2': v2,
+  'linear-kick': linearKick
 };
 
 export default async function handler(req, res) {

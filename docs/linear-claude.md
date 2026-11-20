@@ -6,7 +6,10 @@ GitHub の Issue を書いたり、Mac の Claude Code に貼り付けたりし�
 ## 仕組み
 
 - ワークフロー：`.github/workflows/linear-claude.yml`（道具は `scripts/linear-claude/`）
-- 起動：5分ごとの定期実行（GitHub の schedule）。急ぐときは Actions の「Linear → Claude Code」→ Run workflow（チケット番号も指定できる）
+- 起動：5分ごと。主は QStash（Upstash の無料枠）が `/api/linear-kick` を呼び、GitHub Actions を workflow_dispatch で起動する（2026-11-20）。GitHub の schedule（5分ごと）は予備
+  - 理由：GitHub の schedule は遅れたり飛ばされたりする。11/20 は 09:01 に取り込んでから 19:43 までに、定期実行は 15:57 の1回だけだった（16:06 に作られた KOT-9 が受け付けられなかった）
+  - 二重起動の防止：`/api/linear-kick` は、実行中・待ちの実行があるとき、直近4分以内に実行があったとき（schedule を含む）、同じ呼び出しの再送のときは起動しない。schedule の実行も、直前4分以内に別の実行があれば何もしない。concurrency で同時に動くのは1つだけ。チケットの二重処理はラベルで防ぐ（下）
+  - 急ぐときは Actions の「Linear → Claude Code」→ Run workflow（チケット番号も指定できる）
 - 1回の実行で1件だけ処理する（いちばん古いもの）。同時に動くのは1つだけ（concurrency: linear-claude）
 - 流れ：
   1. Linear から承認済みのチケットを探す（下の条件）
@@ -87,3 +90,19 @@ ChatGPT に、次のように伝えておく（カスタム指示やメモリに
 - GitHub の定期実行は混んでいると遅れる（数分〜数十分）。11/13 に worker.yml の定期実行が長い時間起動しなかったことがある。遅れが続くときは、Actions の Run workflow で手動でも動かせる
 - 公開リポジトリの定期実行は、60日間リポジトリに動きが無いと GitHub が止める（Actions の画面から再開できる）
 - 定期実行は main にあるファイルだけが動く。このPRを取り込むまでは、`linear-claude-e2e` ブランチへの push で同じ処理を確かめる
+
+## QStash による5分ごとの起動（2026-11-20・社長が一度だけ行う設定）
+
+鍵（GH_DISPATCH_TOKEN）が未設定のあいだ、`/api/linear-kick` は何もしない（予備の GitHub の schedule だけで動く）。
+
+1. GitHub の fine-grained token を作る：GitHub の右上のアイコン → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token
+   - Repository access：Only select repositories → rakuten-room-assistant だけ
+   - Permissions：Actions を Read and write（ほかは付けない。Metadata の読み取りは自動で付く）
+   - 有効期限：任意（切れたら作り直す）
+2. Vercel に登録する：プロジェクト → Settings → Environment Variables → `GH_DISPATCH_TOKEN`（Production）に 1. の値 → 保存後、Deployments から最新の本番を Redeploy
+3. QStash の定期実行を作る：Upstash のコンソール → QStash → Schedules → Create Schedule
+   - Destination：`https://rakuten-room-assistant-psi.vercel.app/api/linear-kick`
+   - Cron：`*/5 * * * *`・Method：POST・本文なし・Retries：0（再送で無料枠を使わない）
+   - 費用：無料枠（1日1,000件）の中。既存の /api/worker（15分ごと＝1日96件）と合わせて1日約384件
+4. 確かめ方：Actions の「Linear → Claude Code」に、5分ごとに workflow_dispatch の実行が並ぶ（実行中・直前に実行があった回は起動しない）
+
