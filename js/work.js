@@ -327,6 +327,7 @@
       '最後の実行：' + (h.lastTickAt ? stamp(h.lastTickAt) : 'まだ') + (h.lastTrigger ? '（' + (TRIG[h.lastTrigger] || h.lastTrigger) + '）' : ''),
       'きっかけ別の最後の実行：' + ['qstash', 'schedule', 'workflow_dispatch', 'vercel-cron'].map(function (k) { return TRIG[k] + ' ' + (h.triggers && h.triggers[k] ? stamp(h.triggers[k]) : 'まだ記録なし'); }).join('／'),
       '今の仕事：' + (sv.job ? (AGENT[sv.job.type] || sv.job.type) + (sv.job.role ? '（' + ROLE_NAME[sv.job.role] + '）' : '') + '・段階「' + sv.job.step + '」（' + stamp(sv.job.startedAt) + ' 開始' + (sv.job.attempts ? '・やり直し' + sv.job.attempts + '回目' : '') + '）' : 'なし'),
+      sv.flow ? '流れの状態（実際の記録から）：' + ({ running: '稼働中（途中の仕事あり）', queued: '実行待ち（次の定期実行で着手）', idle: '仕事なし', stalled: '滞留', error: 'エラー' }[sv.flow.state] || sv.flow.state) + (sv.flow.stall ? '｜滞留の理由：' + sv.flow.stall.reason : '') + '｜人間の確認待ち ' + ((sv.flow.approval && sv.flow.approval.waiting) || 0) + '件（社員の稼働枠は使わない）｜今日の定期実行 ' + sv.flow.throughput.ticks + '回で ' + sv.flow.throughput.steps + '段階' : '',
       '今月のAIの費用（サーバーで実測・画面と自律運営の合計）：' + yen(b.spent.month) + ' ／ 上限 ' + (b.limits.month || 1000) + '円',
       '今日の自律運営の費用：' + yen(b.spent.dayAuto) + ' ／ 上限 ' + (b.limits.dayAuto || 25) + '円'
     ];
@@ -349,7 +350,7 @@
     if (sv.qstashReject) { var qr = sv.qstashReject; lines.push('QStashからの呼び出しを断った最後の記録：' + stamp(qr.at) + '（' + qr.why + '）' + (qr.keyInfo ? '｜鍵：' + qr.keyInfo.map(function (k, i) { return (i ? '次の鍵' : '今の鍵') + (k.set ? '設定あり' + (k.sigPrefix ? '' : '・sig_で始まらない') + (k.hadExtra ? '・前後に余計な文字' : '') : '未設定'); }).join('／') : '') + (qr.subPath ? '｜呼び先 ' + qr.subPath : '') + '｜本文 ' + (qr.bodyLength || 0) + '字'); }
     if (sv.board) lines.push('仕事探し（' + stamp(sv.board.at) + '）：' + (sv.board.items || []).map(function (x) { return (AGENT[x.agent] || x.agent) + '＝' + BOARD[x.status] + '（' + x.reason + '）'; }).join('／'));
     lines.push('投稿セットにまだ使っていない合格候補：' + (sv.backlog || 0) + '件');
-    var ul = el('ul', 'co-facts'); lines.forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);
+    var ul = el('ul', 'co-facts'); lines.filter(Boolean).forEach(function (l) { ul.appendChild(el('li', null, l)); }); box.appendChild(ul);
     // 停止スイッチ（本番で問題があれば、ここで追加の自律実行を止める）
     box.appendChild(btn(sv.paused ? '自律運営を再開する' : '自律運営を止める', sv.paused ? 'btn btn-primary wk-pause' : 'btn btn-secondary wk-pause', function () {
       var on = !sv.paused;

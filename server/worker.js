@@ -90,7 +90,9 @@ export default async function handler(req, res, env = process.env) {
         if (!r2.skipped) await kv.setJson('v2:chain:last', { at: new Date().toISOString(), trigger, ms: Date.now() - startedAt, ...chain }).catch(() => {}); // 呼んだか・呼ばなかった理由を残す（確かめられるように）
         return send(res, 200, { company: 'v2', ...r2, chain });
       }
-      const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger });
+      // 1回に進める段階の数（KOT-10）：環境変数 WORKER_BURST_STEPS（初期3・1〜5・1で従来どおり1段階）
+      const burst = env.WORKER_BURST_STEPS === undefined || env.WORKER_BURST_STEPS === '' ? 3 : Number(env.WORKER_BURST_STEPS);
+      const r1 = await tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, maxSteps: burst });
       // 1.0の番でも、1.0がすぐに終わった（仕事が無い・止まっている）ときは、同じ回で2.0を進める（2026-11-16：1.0の番の15分が空回りしていた）
       if (trigger === 'qstash' && !r1.worked && Date.now() - startedAt < V2_CHAIN_MS) return send(res, 200, { ...r1, v2: { company: 'v2', ...(await V.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt: Date.now(), trigger: 'qstash' })) } });
       return send(res, 200, r1);
