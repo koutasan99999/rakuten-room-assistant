@@ -27,7 +27,7 @@
         topic: sl.topic || s.title, category: sl.category || '', subtitle: sl.sub || '',
         cover: r[2] ? { style: 'kuma_scene', title: s.title, accent: '', sub: sl.sub || '', badge: '', price: '' } : null,
         bear: r[1], coverPhoto: r[2] || null, coverHero: true,
-        items: s.products.map(function (p, i) { return { image: r[0][i], shortName: p.shortName || p.short, subline: p.subline || '', memo: p.memo || '', price: p.price, role: p.role, point: p.subline || '' }; })
+        items: s.products.map(function (p, i) { return { no: p.no || '', image: r[0][i], shortName: p.shortName || p.short, subline: p.subline || '', memo: p.memo || '', price: p.price, role: p.role, point: p.subline || '' }; })
       };
       var slides = window.IgRender.renderPost(post);
       return Promise.all(slides.map(function (x) { return canvasToBlob(x.canvas); })).then(function (blobs) {

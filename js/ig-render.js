@@ -565,6 +565,15 @@
       ctx.fillText(ACCOUNT.handle + ' のプロフィールから', M, y + 110);
       ctx.font = font(32, 500);
       ctx.fillText('保存しておくと、あとで見返せます', M, y + 170);
+      // 紹介番号（KOT-11）：ROOMの紹介文にも同じ番号を載せている。控えめな小さい文字。ROOM内で番号検索できるとは言わない
+      if (d.nos && d.nos.length) {
+        ctx.fillStyle = C.sub;
+        var nl = fitText(ctx, '紹介番号　' + d.nos.slice(0, 8).join('　'), { size: 30, minSize: 22, weight: 600, maxWidth: maxW - 240, maxLines: 2 });
+        ctx.font = font(nl.size, 600);
+        drawLines(ctx, nl.lines, M, y + 250, nl.size * 1.4);
+        ctx.font = font(26, 500);
+        ctx.fillText('楽天ROOMの紹介にも同じ番号を載せています', M, y + 250 + nl.lines.length * nl.size * 1.4 + 14);
+      }
 
       drawBear(ctx, d.bear, SIZE.width - M - 115, SIZE.height - M - 115, 230);
     }
@@ -718,7 +727,7 @@
     });
     slides.push({
       fileName: pad(total) + '_room_cta.png',
-      canvas: render('cta', { page: total, total: total, message: post.ctaMessage || CTA_MESSAGES[0], bear: post.bear, palette: palette })
+      canvas: render('cta', { page: total, total: total, message: post.ctaMessage || CTA_MESSAGES[0], bear: post.bear, palette: palette, nos: (post.items || []).map(function (it) { return it.no; }).filter(Boolean) })
     });
     slides.plan = plan;
     return slides;

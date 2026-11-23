@@ -35,7 +35,9 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'post') return send(res, 200, { post: await Post.submitPost(kv, env, { image: body.image, note: body.note, referer: requestReferer(req, env) }) });
     if (action === 'posts') return send(res, 200, { posts: await Post.listPosts(kv) });
     if (action === 'postDelete') return send(res, 200, await Post.removePost(kv, String(body.id || '')));
-    if (action === 'room') return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
+    if (action === 'productNumbers') return send(res, 200, await V.productNumbers(kv));
+    if (action === 'productNumbersMigrate') return send(res, 200, { ...(await V.migrateProductNumbers(kv)), ...(await V.productNumbers(kv)) });
+    if (action === 'room')return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
     if (action === 'request') return send(res, 200, { requests: await V.addRequest(kv, { text: body.text, url: body.url }) });
     if (action === 'sales') return send(res, 200, { sales: await V.setSales(kv, { month: body.month, yen: body.yen }) });
     if (action === 'prAdd') return send(res, 200, { target: await Pr.addTarget(kv, { url: body.url, caption: body.caption, handle: body.handle, note: body.note }) });

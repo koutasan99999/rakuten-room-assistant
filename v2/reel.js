@@ -52,13 +52,15 @@
     ctx.font = font(22, 700); ctx.fillStyle = C.sub; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText('PR', W - 40, 64);
     ctx.textAlign = 'left'; ctx.fillText('@gla_san_kuma_', 40, 64);
   }
-  function cta(ctx, p, bear) {
+  function cta(ctx, p, bear, nos) {
     ctx.fillStyle = C.ink; ctx.fillRect(0, 0, W, H);
     var y = 380 + (1 - ease(p)) * 60;
     textBlock(ctx, '紹介した商品は', W / 2, y, W - 120, 52, C.white);
     textBlock(ctx, 'プロフィールの楽天ROOMに', W / 2, y + 80, W - 120, 52, C.white);
     textBlock(ctx, 'まとめています', W / 2, y + 160, W - 120, 52, C.white);
     textBlock(ctx, '保存しておくと、あとで見返せます', W / 2, y + 280, W - 120, 30, '#d9cbb3');
+    // 紹介番号（KOT-11）：ROOMの紹介にも同じ番号を載せている（控えめに。番号で検索できるとは言わない）
+    if (nos && nos.length) textBlock(ctx, '紹介番号　' + nos.slice(0, 6).join('　'), W / 2, y + 350, W - 120, 28, '#d9cbb3');
     if (bear) { var s = 260; ctx.save(); ctx.beginPath(); ctx.arc(W / 2, 1010, s / 2, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(bear, W / 2 - s / 2, 1010 - s / 2, s, s); ctx.restore(); }
   }
   // ---- 形式ごとの場面（dur：秒、draw(ctx, p 0〜1)）----
@@ -123,7 +125,7 @@
     return Promise.all([Promise.all((s.products || []).map(function (p) { return loadImage(p.image); })), loadImage('../assets/kuma.png')]).then(function (r) {
       var imgs = r[0], bear = r[1], hooks = s.hooks || null;
       var sc = formatId === 'compare' ? scenesCompare(s, imgs, hooks) : formatId === 'top3' ? scenesTop3(s, imgs, hooks) : scenesReveal(s, imgs[0], hooks);
-      sc.push({ dur: 3, draw: function (c, p) { cta(c, p, bear); } });
+      sc.push({ dur: 3, draw: function (c, p) { cta(c, p, bear, (s.products || []).map(function (x) { return x.no; }).filter(Boolean)); } });
       var total = sc.reduce(function (a, x) { return a + x.dur; }, 0);
       var stream = canvas.captureStream(FPS);
       var rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
