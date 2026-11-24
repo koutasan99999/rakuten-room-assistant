@@ -36,6 +36,7 @@ test('成果の数字：投稿できる完成品・投稿済み・実ファイ�
   let again = await V.findWork('appraiser', { kv, env: {} });
   assert.notEqual(again.kind, 'kpi', '同じ日に数字が変わらなければ仕事にしない');
   if (again.kind === 'profit-review') { await again.run(); again = await V.findWork('appraiser', { kv, env: {} }); } // 次は週ごとの見直し（KOT-13・7日に1回）
+  if (again.kind === 'measure-gap') { await again.run(); again = await V.findWork('appraiser', { kv, env: {} }); } // 次は計測不足の整理（KOT-16・状況が変わったときだけ）
   assert.ok(again.none, '同じ日に数字が変わらず、見直しも済んでいれば仕事にしない');
   const st = await V.officeState(kv, {});
   assert.equal(st.kpi.current.postable, 2);
