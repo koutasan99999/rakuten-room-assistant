@@ -171,3 +171,6 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .copy-row { margin: 6px 0; }
 .copy-row p { margin: 2px 0; word-break: break-word; }
 .pre { white-space: pre-wrap; font-size: 13px; }
+/* 新規ROOM商品紹介の停止（KOT-13） */
+.room-stop { margin: 8px 16px; padding: 10px 12px; border: 1px solid #c0392b; border-radius: 10px; background: rgba(192, 57, 43, .06); }
+.room-stop p { margin: 2px 0; }

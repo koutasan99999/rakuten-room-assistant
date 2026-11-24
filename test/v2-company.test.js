@@ -10,6 +10,8 @@ import * as V from '../lib/v2/company.js';
 import worker from '../server/worker.js';
 import v2api from '../server/v2.js';
 import { spent } from '../lib/budget.js';
+// 新規ROOM商品紹介の停止（KOT-13）は既定で停止。ここは制作の流れそのものの試験なので、社長が再開した状態から始める（停止そのものの試験は test/v2-roomstop.test.js）
+async function resumedKv() { const kv = memoryKv(); await kv.setJson('v2:room:stop', { on: false, by: 'owner', confirm: '再開する', at: new Date().toISOString() }); return kv; }
 import { installFetchMock, json, aiReply, GOOD_INTRO, imageResponse } from './mock.js';
 
 let mock;
@@ -63,7 +65,7 @@ async function untilDelivered(kv, env = ENV, max = 20) { const all = []; for (le
 
 test('実証1・2・5：社長が何も指示しなくても仕事が始まり、7人が工程ごとに自動で引き継ぎ、投稿できる完成品が届く', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const steps = await untilDelivered(kv);
   const firstPropose = steps.indexOf('planner:propose'); // 集客の施策の案（企画の空き時間の仕事）は工程の順番に数えない
   const mine = steps.filter((x, i) => !x.includes('propose') || i === firstPropose);
@@ -95,7 +97,7 @@ test('実証1・2・5：社長が何も指示しなくても仕事が始まり�
 
 test('実証3：画像の予算が足りないときは表紙画像なしで届けず、画像待ちで保存する（描き直しの回数に数えない）。予算が戻ると表紙を描いて届ける（2026-11-18 表紙の無いものは完成品ではない）。各社員は1回の実行で決まった工程数まで', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.incrFloat(`budget:image:yen:${today()}`, 500); // 今日の画像の目安は使い切り
   await kv.setJson(V.V2_KEYS.trial, { start: new Date(Date.now() - 20 * 86400000).toISOString(), end: new Date(Date.now() - 6 * 86400000).toISOString(), cap: 1000, base: { month: today().slice(0, 7), spent: 0 } }); // 試験運用のあと（通常の上限）
   const env = { ...ENV, IMAGE_DAILY_COUNT: '1' };
@@ -121,7 +123,7 @@ test('実証3：画像の予算が足りないときは表紙画像なしで届�
 });
 test('実証4：完成したら、社長の操作なしに次の案件が自動で始まる。同じ企画は繰り返さない', async () => {
   mock = fetchMock({ themes: ['キッチン収納', 'キッチン収納', '鍋まわり', 'コンロ掃除'] });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await untilDelivered(kv);
   const r = await run(kv);
   const st = await V.officeState(kv, ENV);
@@ -137,12 +139,12 @@ test('実証4：完成したら、社長の操作なしに次の案件が自動�
 
 test('実証6：費用の上限を超えない。試験運用中は1日25円で止めず、月1,000円・期間の合計1,000円に届いたら「予算待ち」になり、余地ができたら自動で続ける', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, AUTONOMY_DAILY_YEN: '3' };
   for (let i = 0; i < 6; i++) await run(kv, env);
   assert.ok((await spent(kv)).dayAuto > 3, '試験運用中は1日の上限（ここでは3円）で止めない');
   const month = today().slice(0, 7);
-  const kv2 = memoryKv();
+  const kv2 = await resumedKv();
   await kv2.incrFloat(`budget:month:${month}`, 999.5); // 月の上限の手前
   await kv2.setJson(V.V2_KEYS.cases, [{ id: 'jb', kind: 'make', step: 'propose', attempts: 0, runs: [], wait: null, data: {} }]); // 途中の案件
   for (let i = 0; i < 4; i++) await run(kv2, env);
@@ -157,7 +159,7 @@ test('実証6：費用の上限を超えない。試験運用中は1日25円で�
 
 test('試験運用が終わったら、通常の上限（1日25円）に戻る（自動で増やさない）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, AUTONOMY_DAILY_YEN: '3' };
   await run(kv, env);
   const t = await kv.getJson(V.V2_KEYS.trial); t.end = new Date(Date.now() - 1000).toISOString(); await kv.setJson(V.V2_KEYS.trial, t);
@@ -168,7 +170,7 @@ test('試験運用が終わったら、通常の上限（1日25円）に戻る�
 
 test('失敗は時間を空けて再試行（エラー表示）し、3回目で理由を残して止まる。鍵は記録に出さない', async () => {
   mock = fetchMock({ failAi: true });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await run(kv);
   let st = await V.officeState(kv, ENV);
   assert.equal(st.cases[0].wait.kind, 'retry');
@@ -181,7 +183,7 @@ test('失敗は時間を空けて再試行（エラー表示）し、3回目で�
 
 test('社長の指定（テーマ・商品のURL）は次の新しい案件で優先する', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const E = { ...ENV, __kv: kv };
   assert.equal((await call(v2api, { action: 'request', url: 'https://example.com/x' }, undefined, E)).status, 400);
   await call(v2api, { action: 'request', url: 'https://item.rakuten.co.jp/shopa/item-123/' }, undefined, E);
@@ -195,7 +197,7 @@ test('社長の指定（テーマ・商品のURL）は次の新しい案件で�
 
 test('社長の修正依頼は、編集→監査→編集（整合性）→広報で直して届け直す。採用・投稿したは記録と成果に残る', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const E = { ...ENV, __kv: kv };
   await untilDelivered(kv);
   const id = (await V.officeState(kv, ENV)).sets[0].id;
@@ -215,7 +217,7 @@ test('社長の修正依頼は、編集→監査→編集（整合性）→広�
 
 test('社員の状態は実際の記録どおり：次の定期実行待ち・引き継ぎ中・仕事なし（働いているふりをしない）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson(V.V2_KEYS.cases, [{ id: 'j1', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: null, data: { plan: { title: '企画A' } } }]);
   await V.record(kv, { job: 'j0', agent: 'buyer', to: 'writer', type: 'handoff', text: 'ライターへ引き継ぎ', title: '企画A' });
   const st = await V.officeState(kv, ENV);
@@ -227,7 +229,7 @@ test('社員の状態は実際の記録どおり：次の定期実行待ち・�
 
 test('旧形式（1件の仕事・画像待ち）は消さずに案件へ移す', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson(V.V2_KEYS.job, { id: 'old1', kind: 'make', step: 'copy', attempts: 0, runs: [], data: { plan: { title: '旧A' } } });
   await kv.setJson(V.V2_KEYS.imagewait, [{ id: 'old2', kind: 'make', step: 'image', attempts: 0, runs: [], data: { set: { title: '旧B' } } }]);
   await run(kv, { ...ENV, IMAGE_DAILY_COUNT: '1' });
@@ -238,7 +240,7 @@ test('旧形式（1件の仕事・画像待ち）は消さずに案件へ移す'
 
 test('定期実行：切り替え後は2.0だけ・切り替え前は手動の target=v2 と QStash の交互で2.0が動く。APIは合言葉が必要', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, __kv: kv };
   const tick = (body) => withUsage(() => call(worker, { action: 'tick', ...body }, { authorization: 'Bearer sec', 'x-trigger': 'workflow_dispatch' }, env));
   assert.notEqual((await tick({})).data.company, 'v2');
@@ -252,7 +254,7 @@ test('定期実行：切り替え後は2.0だけ・切り替え前は手動の t
 
 test('試験運用（14日間・合計1,000円）：開始時点の支出を記録し、それ以降の増分だけを数える。上限に届く有料の処理はしない（月の予算と二重に数えない）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const month = today().slice(0, 7);
   await kv.incrFloat(`budget:month:${month}`, 300); // 試験の前にすでに使っていた分
   await run(kv);
@@ -271,7 +273,7 @@ test('試験運用（14日間・合計1,000円）：開始時点の支出を記�
 
 test('選定理由と価格帯が完成品に入る（表紙つき）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await untilDelivered(kv);
   const s = await V.getSet(kv, (await V.officeState(kv, ENV)).sets[0].id);
   assert.ok(s.image && s.image.mediaId, '表紙つきで届く');
@@ -281,7 +283,7 @@ test('選定理由と価格帯が完成品に入る（表紙つき）', async ()
 });
 test('完成品ページ：Instagramの画像の材料（短い名前・商品番号）を渡し、楽天ROOMに登録した記録を残せる（社長の申告）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const E = { ...ENV, __kv: kv };
   await untilDelivered(kv);
   const id = (await V.officeState(kv, ENV)).sets[0].id;
@@ -332,7 +334,7 @@ const lanesOf = (r) => (r.parallel ? r.parallel.lanes : []).map((x) => { const m
 test('並行：違う案件の工程を同時に進める（同じ案件・同じ社員は同時にしない）。同時処理の件数を記録する', async () => {
   mock = fetchMock();
   slowAndPr(mock, { ms: 200 });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const base = (id, step, extra = {}) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic', ...extra } });
   await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find'), base('c', 'find')]);
   const r = await run(kv);
@@ -351,7 +353,7 @@ test('並行：違う案件の工程を同時に進める（同じ案件・同�
 test('仕事探し：工程の無い社員は、本当に必要な仕事だけを見つける（納品から24時間たった完成品の価格・販売の再確認）。無ければ理由つきで「仕事なし」', async () => {
   mock = fetchMock();
   slowAndPr(mock, { ms: 5 });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const old = new Date(Date.now() - 25 * 3600000).toISOString();
   await kv.set('v2:migrate:nocover-1', '2026-11-18'); // 表紙の無い完成品の一度だけの却下（移行）は済んだことにする
   await kv.setJson(V.V2_KEYS.sets, [{ id: 'set1', title: '台所の工夫', status: 'waiting', deliveredAt: old }]);
@@ -378,7 +380,7 @@ test('仕事探し：工程の無い社員は、本当に必要な仕事だけ�
 test('広報（常設）：交流候補の投稿にコメント案→監査が採点→社長の承認待ち。送信はしない。1日の上限・同じアカウントの間隔を守る', async () => {
   mock = fetchMock();
   const seen = slowAndPr(mock, { ms: 10 });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 990); // 案件は始めない（広報だけを見る）
   const E = { ...ENV, __kv: kv };
   const add = (n, handle) => call(v2api, { action: 'prAdd', url: `https://www.instagram.com/p/POST${n}abc/`, caption: `朝の通勤で使っているバッグの中身を紹介します ${n}`, handle }, undefined, E);
@@ -410,7 +412,7 @@ test('広報（常設）：交流候補の投稿にコメント案→監査が�
 test('広報：監査で不合格の案は直し、直しても届かなければ送らない（承認待ちにしない）', async () => {
   mock = fetchMock();
   slowAndPr(mock, { ms: 5, prPass: false });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 900);
   await call(v2api, { action: 'prAdd', url: 'https://www.instagram.com/p/POSTZabc/', caption: '朝の通勤で使っているバッグの中身を紹介します', handle: 'shop_z' }, undefined, { ...ENV, __kv: kv });
   for (let i = 0; i < 6; i++) await run(kv);
@@ -424,7 +426,7 @@ test('広報：監査で不合格の案は直し、直しても届かなけれ�
 test('予算：同時に進めても、月の上限を超えない（同時に進めている工程の見込みを足して確かめる）', async () => {
   mock = fetchMock();
   slowAndPr(mock, { ms: 50 });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 997.2);
   const base = (id, step) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic' } });
   await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find'), base('c', 'find')]);
@@ -436,7 +438,7 @@ test('予算：同時に進めても、月の上限を超えない（同時に�
 test('くまの一言メモ（社長の指摘 2026-11-16）：納品済みの完成品の、説明文の切れ端の一言を、編集が仕事探しで書き直す。体験談・データに無い性能は通さない', async () => {
   mock = fetchMock();
   slowAndPr(mock, { ms: 5 });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 990); // 新しい案件は始めない
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys(OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const items = [0, 1, 2].map((n) => ({ name: `キッチン 道具${n}`, caption: '水受けトレー付きで、水滴がたれにくい。', price: 1000 + n, role: n ? '代替・比較' : '本命', code: `c${n}` }));
@@ -473,7 +475,7 @@ function noCredits(m) {
 test('残高不足：案件を終わらせず「残高待ち」で保存し、失敗の回数に数えない。残高待ちの間はAIを呼ばない。残高が戻ったら1件で確かめて全部を続きから', async () => {
   mock = fetchMock();
   const st = noCredits(mock);
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
   const at0 = new Date().toISOString(); await kv.setJson('v2:ventures', { last: { venture: at0, growth: at0, digital: at0 } }); // 独立した3本の流れ（KOT-12）の新しい案づくりは、この確認の対象外
   const base = (id, step) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 2, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic' } });
@@ -505,7 +507,7 @@ test('残高不足：案件を終わらせず「残高待ち」で保存し、�
 test('残高不足：前の実行で「再試行待ち」になった残高不足の案件は、失敗の回数を戻して残高待ちに移す。画像の描き直しの回数にも数えない', async () => {
   mock = fetchMock();
   noCredits(mock);
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
   await kv.setJson(V.V2_KEYS.cases, [
     { id: 'x', kind: 'make', step: 'scene', attempts: 2, runs: [], wait: { kind: 'retry', until: new Date(Date.now() + 3600000).toISOString(), why: 'gpt-5.4-nano: OpenAI APIエラー 429 You have no credits remaining.' }, data: { set: { items: [], copy: {} } } },
@@ -523,7 +525,7 @@ test('残高不足：前の実行で「再試行待ち」になった残高不�
 // ---- 2026-11-17 有料のAI画像生成を停止：表紙画像なしで完成品まで進め、社長がChatGPTの画像を後から追加する ----
 test('AI画像生成の停止（AI_IMAGE_GEN=0）：表紙の無いものは完成品にしないので、文章までそろえて表紙の工程で画像待ちにする（画像APIは呼ばない・消さない）。社長は完成品の表紙を差し替えられる（前の画像は消さない）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, AI_IMAGE_GEN: '0', __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const steps = await untilDelivered(kv, env, 12);
@@ -545,7 +547,7 @@ test('AI画像生成の停止（AI_IMAGE_GEN=0）：表紙の無いものは完�
 });
 test('AI画像生成の停止：表紙画像の工程にいた案件は、消さずに画像待ちで保存する（仕上げへは進めない）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, AI_IMAGE_GEN: '0' };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const C = await import('../lib/kuma-cover.js');
@@ -561,7 +563,7 @@ test('AI画像生成の停止：表紙画像の工程にいた案件は、消さ
 
 test('表紙が必須（2026-11-18 社長の決定）：社長の確認待ちで表紙の無い完成品は一度だけ却下にし（消さない）、企画の学び（却下の理由）には使わない。表紙のある完成品・採用済みはそのまま', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const mk = (id, status, image) => ({ id, title: `完成品${id}`, status, products: [], ...(image ? { image: { mediaId: 'm', url: '/api/media?id=m' } } : {}) });
   const sets = [mk('a', 'waiting', false), mk('b', 'waiting', true), mk('c', 'adopted', false), mk('d', 'waiting', false)];
   for (const x of sets) await kv.setJson(V.V2_KEYS.set(x.id), x);
@@ -592,7 +594,7 @@ test('表紙が必須（2026-11-18 社長の決定）：社長の確認待ちで
 
 test('表紙が必須：描けなかったら時間を空けてもう1回だけ描き、それでも描けなければ表紙なしで納品せず止める。仕上げに表紙が無ければデザイナーに戻す', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const job = { id: 'x', kind: 'make', step: 'pack', attempts: 0, runs: [], wait: null, data: { set: { title: 'T', copy: { caption: 'PR' }, items: [] }, cover: { scene: { place: '机' }, item: {}, tries: 0 } } };
   await kv.setJson(V.V2_KEYS.cases, [job]);
   await run(kv);
@@ -602,7 +604,7 @@ test('表紙が必須：描けなかったら時間を空けてもう1回だけ�
 });
 test('残高待ち：手動の実行では時刻を待たずに1件だけ試し、通れば全部を続きから再開する（定期実行は時刻まで待つ）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const base = (id) => ({ id, kind: 'make', step: 'propose', createdAt: new Date().toISOString(), attempts: 0, runs: [], wait: { kind: 'quota', why: '残高' }, data: {} });
   await kv.setJson(V.V2_KEYS.cases, [base('a'), base('b')]);
@@ -618,7 +620,7 @@ test('残高待ち：手動の実行では時刻を待たずに1件だけ試し�
 
 test('表紙画像：1企画1枚（監査の自動の描き直しなし）。描けなくても完成品は届く。社長が作り直しを頼むと次の実行で1枚だけ描き、前の画像は残す（1つの完成品につき3回まで）', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, __kv: kv };
   const steps = await untilDelivered(kv, env);
   assert.equal(mock.calls.images.length, 1, `画像は1枚だけ：${steps.join(' / ')}`);
@@ -651,7 +653,7 @@ test('AI画像生成の切り替え：未設定・空なら動く（2026-11-17 �
 // ---- 2026-11-17 確認待ちが上限でも会社を止めない・商品の偏りを直す ----
 test('確認待ちが上限（5件）でも会社は止まらない：企画・商品調査・在庫の確認は進み、文章の前で「完成品の枠待ち」として保存。枠が空いたら続きから', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   await kv.set('v2:migrate:nocover-1', '2026-11-18'); // 表紙の無い完成品の一度だけの却下（移行）は済んだことにする
@@ -679,7 +681,7 @@ const FLOW_BEFORE = (c) => V.FLOW.indexOf(c.step) < V.FLOW.indexOf('copy');
 
 test('商品の偏り：直近に眼鏡関連があれば眼鏡関連の企画は弾いて考え直す。ジャンルの候補と、社長の却下コメントを企画とバイヤーに渡す', async () => {
   mock = fetchMock({ themes: ['偏光サングラス ギフト', 'キッチン 時短', 'デスク 収納'] });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson(V.V2_KEYS.themes, [{ theme: '通勤の眩しさ対策ギフト', keyword: 'サングラス 偏光', at: new Date().toISOString() }]);
   await kv.setJson(V.V2_KEYS.sets, [{ id: 'r1', title: 'メガネ拭きセット', status: 'rejected', deliveredAt: new Date().toISOString() }]);
   await kv.setJson(V.V2_KEYS.set('r1'), { id: 'r1', title: 'メガネ拭きセット', status: 'rejected', ownerNote: 'メガネ関連ばかりで飽きた。生活用品が見たい' });
@@ -701,7 +703,7 @@ test('商品の偏り：直近に眼鏡関連があれば眼鏡関連の企画�
 
 test('連鎖の判断：進められる仕事が残っていれば more=true。待つべき案件だけ・何も進まなかったときは false', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const r1 = await run(kv);
   assert.ok(r1.steps.length >= 1);
@@ -730,7 +732,7 @@ const it6 = (n, kw = 'キッチン 道具') => ({ code: `s:z${n}`, name: `${kw}$
 test('最低6点：選んだ商品が6点に届かなければ、すぐエラーにせず関連・連想・価格帯へ探す範囲を広げて6点以上にする（確認できた商品だけ）', async () => {
   mock = fetchMock();
   widenMock(mock);
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const plan = { title: 'キッチンの工夫', target: '料理する人', adopted: [], slots: [{ role: '本命', keyword: 'キッチン 道具' }] };
   await kv.setJson(V.V2_KEYS.cases, [{ id: 'k', kind: 'make', step: 'pick', attempts: 2, runs: [], wait: null, data: { theme: 'キッチン', plan, source: [], gathered: { fresh: [], missing: [], slotResults: [{ slot: plan.slots[0], candidates: [it6(1), it6(2)] }] } } }]);
   const steps = [];
@@ -746,7 +748,7 @@ test('最低6点：選んだ商品が6点に届かなければ、すぐエラー
 test('最低6点：広げても足りなければ、無関係な商品で埋めずに「保留」（理由と不足数を残す・案件は消さない）', async () => {
   mock = fetchMock();
   widenMock(mock, { empty: true });
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const plan = { title: 'キッチンの工夫', target: '料理する人', adopted: [], slots: [{ role: '本命', keyword: 'キッチン 道具' }] };
   await kv.setJson(V.V2_KEYS.cases, [{ id: 'h', kind: 'make', step: 'pick', attempts: 0, runs: [], wait: null, data: { theme: 'キッチン', plan, source: [], gathered: { fresh: [], missing: [], slotResults: [{ slot: plan.slots[0], candidates: [it6(1), it6(2)] }] } } }]);
   for (let i = 0; i < 5; i++) await run(kv);
@@ -786,7 +788,7 @@ test('商品の並び：説明できない商品と比較の意図の無い重�
 
 test('既存の企画の見直し（一度だけ）：文章の前で保存していた企画は確かめ直しへ。名指しの完成品は、社長の記録（ROOM登録・画像）と前の版を残したまま見直した版で差し替える', async () => {
   mock = fetchMock();
-  const kv = memoryKv();
+  const kv = await resumedKv();
   const env = { ...ENV, __kv: kv };
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString(), siteChecks: Object.fromEntries(Object.keys((await import('../lib/ig-discovery.js')).OFFICIAL_SITES).map((b) => [b, new Date().toISOString()])) });
   const items = [0, 1, 2, 3, 4, 5].map((n) => ({ code: `s:k${n}`, name: `キッチン 道具${n}`, price: 1000 + n * 300, url: `https://item.rakuten.co.jp/s/k${n}/`, image: 'https://thumbnail.image.rakuten.co.jp/x.jpg', role: '中価格帯', caption: '水受けトレー付きで、水滴がたれにくい。', feature: '水受けトレー付き', why: '台所で' }));

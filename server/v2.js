@@ -72,6 +72,9 @@ export default async function handler(req, res, env = process.env) {
     }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
+    // 新規ROOM商品紹介の停止・再開（KOT-13）：再開は社長の明示の操作（確認の言葉）だけ
+    if (action === 'roomStop') return send(res, 200, { roomStop: await V.setRoomStop(kv, { on: true }) });
+    if (action === 'roomResume') return send(res, 200, { roomStop: await V.setRoomStop(kv, { on: false, confirm: body.confirm, by: 'owner' }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });
     return send(res, 400, { error: 'この操作はありません' });
   } catch (e) {

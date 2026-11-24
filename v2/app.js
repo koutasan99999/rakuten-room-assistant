@@ -7,7 +7,7 @@
   var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
   // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
   var ST_LABEL = { work: '仕事中', queued: '順番待ち（続けて進めます）', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
-  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）', hold: '保留（商品が6点に足りない。24時間後にもう一度探す）' };
+  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）', hold: '保留（商品が6点に足りない。24時間後にもう一度探す）', stopped: '停止中（新規ROOM商品紹介の停止・社長の再開待ち）' };
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -50,6 +50,7 @@
     if (m.image) parts.push('画像待ち' + m.image + '件');
     if (m.budget) parts.push('予算・残高待ち' + m.budget + '件');
     if (m.error) parts.push('エラー・保留' + m.error + '件');
+    if (m.stopped) parts.push('停止中（新規紹介の停止）' + m.stopped + '件');
     return '案件' + m.total + '件：' + parts.join('／') + (m.advancing ? '' : '（いま進められる案件は0件。理由は下の案件ごとの表示）');
   }
   function render() {
@@ -61,7 +62,7 @@
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
     $('badge-pr').textContent = s.pr && s.pr.counts.approval ? String(s.pr.counts.approval) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
-    notice();
+    notice(); roomStopBar();
     Office.update(s.staff);
     renderCrew(); renderCases(); renderFlow();
     if (tab === 'sets' && !openSet) renderSets();
@@ -70,6 +71,21 @@
     if (tab === 'pr') renderPr();
     $('badge-biz').textContent = s.ventures && s.ventures.dash.ownerWaiting ? String(s.ventures.dash.ownerWaiting) : '';
     if (tab === 'biz') renderBiz();
+  }
+
+  // 新規ROOM商品紹介の停止（KOT-13）：停止の理由と、社長の明示の再開の操作（確認の言葉つき）
+  function roomStopBar() {
+    var R = state.roomStop, box = $('room-stop'); if (!box) return;
+    box.textContent = '';
+    if (!R || !R.stopped) { box.hidden = true; return; }
+    box.hidden = false;
+    box.appendChild(el('p', 'field', '新規ROOM商品紹介を停止中（' + R.since + ' から）'));
+    box.appendChild(el('p', 'hint', R.reason + '。作りかけの案件と完成品は消さずに残しています。既存の完成品の販売改善と、ROOM以外で稼ぐ仕事は続けています。'));
+    box.appendChild(btn('新規紹介を再開する', 'btn ghost small-ghost', function () {
+      var w = prompt('新規ROOM商品紹介を再開します。よければ「再開する」と入力してください', '');
+      if (w === null) return;
+      api({ action: 'roomResume', confirm: w }).then(function (r) { if (r.status !== 200) { alert((r.data && r.data.error) || '再開できませんでした'); return; } refresh(); });
+    }));
   }
 
   // 事業タブ（KOT-12）：ROOMとは独立した3本の流れ。実際の記録だけを表示（無い数字は「未計測」）
