@@ -10,6 +10,7 @@ import * as Post from '../lib/v2/post.js';
 import * as Pr from '../lib/v2/pr.js';
 import * as Reach from '../lib/v2/reach.js';
 import * as Growth from '../lib/v2/growth.js';
+import * as Ventures from '../lib/v2/ventures.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
 import { requestReferer } from '../lib/http.js';
 
@@ -63,6 +64,12 @@ export default async function handler(req, res, env = process.env) {
       return send(res, 200, { tactic: t });
     }
     if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format, bytes: body.bytes, seconds: body.seconds, mime: body.mime }); return send(res, 200, { reel: r }); }
+    // 新規事業・集客の実験・デジタル商品の案への社長の判断（採用・保留・却下・もう一度）。外部へは何もしない
+    if (action === 'ventureDecide') {
+      const v = await Ventures.decideVenture(kv, { id: String(body.id || ''), decision: String(body.decision || ''), why: body.why });
+      await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が「${v.title}」を${Ventures.STATUS_LABEL[v.status] || v.status}にした` });
+      return send(res, 200, { item: v });
+    }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });

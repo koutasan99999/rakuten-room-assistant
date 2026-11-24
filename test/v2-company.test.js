@@ -475,6 +475,7 @@ test('残高不足：案件を終わらせず「残高待ち」で保存し、�
   const st = noCredits(mock);
   const kv = memoryKv();
   await kv.setJson('v2:pr:state', { sitesAt: new Date().toISOString() });
+  const at0 = new Date().toISOString(); await kv.setJson('v2:ventures', { last: { venture: at0, growth: at0, digital: at0 } }); // 独立した3本の流れ（KOT-12）の新しい案づくりは、この確認の対象外
   const base = (id, step) => ({ id, kind: 'make', step, createdAt: new Date().toISOString(), attempts: 2, runs: [], wait: null, data: { theme: `企画${id}`, keyword: `企画${id}`, angle: 'classic' } });
   await kv.setJson(V.V2_KEYS.cases, [base('a', 'propose'), base('b', 'find')]);
   await run(kv);
