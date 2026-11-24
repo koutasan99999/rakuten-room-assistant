@@ -207,3 +207,9 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .dev-card.st-failed { border-left: 4px solid #c0392b; }
 .dev-card.st-waiting { border-left: 4px solid #b9770e; }
 .dev-card.st-done { border-left: 4px solid #1e8449; }
+/* KOT-20：タップで移動 */
+button.kpi-link { font: inherit; color: inherit; background: none; text-align: left; cursor: pointer; width: 100%; }
+button.jump-link { font: inherit; color: inherit; background: none; border: 0; padding: 4px 0; margin: 2px 0; text-align: left; cursor: pointer; display: block; width: 100%; min-height: 32px; text-decoration: underline; text-decoration-color: var(--line); }
+button.wait-title { font-weight: 700; }
+.jump-hit { animation: jumpHit 2.2s ease-out; }
+@keyframes jumpHit { 0%, 60% { box-shadow: 0 0 0 3px #e6a23c; background-color: rgba(230,162,60,.18); } 100% { box-shadow: 0 0 0 0 transparent; } }
