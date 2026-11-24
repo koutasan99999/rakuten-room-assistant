@@ -68,7 +68,8 @@ export default async function handler(req, res, env = process.env) {
     // 新規事業・集客の実験・デジタル商品の案への社長の判断（採用・保留・却下・もう一度）。外部へは何もしない
     if (action === 'ventureDecide') {
       const v = await Ventures.decideVenture(kv, { id: String(body.id || ''), decision: String(body.decision || ''), why: body.why });
-      await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が「${v.title}」を${Ventures.STATUS_LABEL[v.status] || v.status}にした` });
+      // 判断は保存済み。出来事の記録に失敗しても、判断そのものを失敗にしない
+      try { await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が「${v.title}」を${Ventures.STATUS_LABEL[v.status] || v.status}にした` }); } catch (_) { /* 記録だけ失敗 */ }
       return send(res, 200, { item: v });
     }
     // 収益の手法（KOT-13）：社長が公式で確かめたセールの日付・料率を登録する（楽天の公式URLだけ。外部へは何もしない）
