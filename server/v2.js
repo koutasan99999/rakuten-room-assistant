@@ -11,6 +11,7 @@ import * as Pr from '../lib/v2/pr.js';
 import * as Reach from '../lib/v2/reach.js';
 import * as Growth from '../lib/v2/growth.js';
 import * as Ventures from '../lib/v2/ventures.js';
+import * as Profit from '../lib/v2/profit.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
 import { requestReferer } from '../lib/http.js';
 
@@ -70,6 +71,9 @@ export default async function handler(req, res, env = process.env) {
       await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が「${v.title}」を${Ventures.STATUS_LABEL[v.status] || v.status}にした` });
       return send(res, 200, { item: v });
     }
+    // 収益の手法（KOT-13）：社長が公式で確かめたセールの日付・料率を登録する（楽天の公式URLだけ。外部へは何もしない）
+    if (action === 'calendarAdd') { const e = await Profit.addCalendar(kv, body.event || {}); await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が販促カレンダーに「${e.name}」（${e.start}〜${e.end}・公式で確認）を登録した` }); return send(res, 200, { event: e }); }
+    if (action === 'rateSet') { const e = await Profit.setRate(kv, { rate: body.rate, url: body.url }); await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が楽天アフィリエイトの料率 ${Math.round(e.rate * 1000) / 10}% を公式で確認して登録した` }); return send(res, 200, { rate: e }); }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
     // 新規ROOM商品紹介の停止・再開（KOT-13）：再開は社長の明示の操作（確認の言葉）だけ

@@ -252,3 +252,12 @@ test('ワークフロー：定期実行と手動。Claude の段階に Linear �
   const c = readFileSync(new URL('../.github/workflows/claude.yml', import.meta.url), 'utf8');
   assert.doesNotMatch(c.replace(/^#.*$/gm, ''), /allowed_bots/);
 });
+
+test('PRのリンクが付けられなくても（Linear の GitHub 連携が先に付けた等）、状態と結果のコメントは書く（KOT-15 の通しの試験で見つかった）', async () => {
+  const L = fakeLinear([issue(1, { labels: { nodes: [LABELS.find((l) => l.name === 'Claude開発依頼'), LABELS.find((l) => l.name === 'Claude処理中')] } })]);
+  L.linkUrl = async () => { throw new Error('Linear API エラー: Unable to create issue attachment'); };
+  await finish({ client: L, cfg, issueId: 'uuid-1', result: 'deployed', prUrl: 'https://github.com/x/pull/9', testText: 'ok', runUrl: 'R', mergeSha: 'abcdef1234', prodCommit: 'abcdef1234', sleep: async () => {} });
+  assert.equal(L.db.get('uuid-1').state.type, 'completed');
+  const c = L.calls.find((x) => x[0] === 'comment');
+  assert.ok(c && c[2].includes('https://github.com/x/pull/9'));
+});

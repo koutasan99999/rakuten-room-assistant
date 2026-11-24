@@ -120,7 +120,9 @@ export async function finish({ client, cfg, issueId, result, prUrl, testText, re
   const ok = result === 'success' || result === 'deployed' || result === 'pr' || result === 'prod-failed';
   if (names.includes(cfg.runningLabel)) await client.removeLabel(issueId, running);
   await client.addLabel(issueId, ok ? done : failed);
-  if (prUrl) await client.linkUrl(issueId, prUrl, 'GitHub のPR（Claude Code）');
+  // PRのリンクは補足（2026-11-24 KOT-15：Linear の GitHub 連携が先に同じPRを付けていると「Unable to create issue attachment」になり、
+  //   状態の変更と結果のコメントまで書けなかった）。失敗しても止めず、PRのURLはコメントに必ず書く
+  if (prUrl) await client.linkUrl(issueId, prUrl, 'GitHub のPR（Claude Code）').catch((e) => console.log(`PRのリンクは付けられなかった（コメントにURLを書く）：${String(e && e.message || e).slice(0, 120)}`));
   // PRのリンクを付けると、Linear の GitHub 連携の自動化が少し遅れて状態を変えることがある（KOT-7 の E2E で確認）。待ってから状態を決め、読み直して違えばもう一度だけ直す
   const target = result === 'deployed' ? stateId(meta, 'Done', 'completed') : ok ? stateId(meta, 'In Review', 'started') : null;
   if (target) {
