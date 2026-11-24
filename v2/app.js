@@ -163,9 +163,31 @@
 
   // ---- 完成品 ----
   var ST = { waiting: '確認待ち', adopted: '採用', rejected: '却下', fixing: '修正中', posted: '投稿済み' };
+  // 紹介番号の一覧（KOT-11）：商品と番号を確認・コピーする。番号の無い既存の完成品には「番号を付ける」で割り当てる（消さない・番号は使い回さない）
+  function numbersPanel() {
+    var d = el('details', 'card'); d.appendChild(el('summary', null, '紹介番号の一覧（Instagramと楽天ROOMで同じ番号）'));
+    var body = el('div'); d.appendChild(body);
+    function paintNums(r) {
+      body.textContent = '';
+      body.appendChild(el('p', 'hint', 'Instagramの画像・キャプションと楽天ROOMの紹介文に、同じ番号を載せています。楽天ROOM内で番号を検索できるかは未確認のため、検索できるとは案内していません。'));
+      if (!r.numbers.length) body.appendChild(el('p', 'hint', 'まだ番号を付けた商品はありません。'));
+      r.numbers.forEach(function (n) {
+        var row = el('p', '', n.no + '　' + n.name.slice(0, 40) + (n.sets.length ? '（' + n.sets.map(function (s) { return s.title; }).join('、') + '）' : ''));
+        row.appendChild(copyBtn('番号をコピー', n.no)); body.appendChild(row);
+      });
+      if (r.numbers.length) body.appendChild(copyBtn('一覧をまとめてコピー', r.numbers.map(function (n) { return n.no + ' ' + n.name; }).join('\n')));
+      if (r.unnumbered && r.unnumbered.length) {
+        body.appendChild(el('p', 'hint warn', '番号の無い完成品が' + r.unnumbered.length + '件あります：' + r.unnumbered.map(function (s) { return s.title; }).join('、')));
+        body.appendChild(btn('既存の完成品に番号を付ける（中身は消しません）', 'btn small', function () { api({ action: 'productNumbersMigrate' }).then(function (m) { if (m.status === 200) paintNums(m.data); else body.appendChild(el('p', 'hint warn', (m.data && m.data.error) || '番号を付けられませんでした')); }); }));
+      }
+    }
+    d.addEventListener('toggle', function () { if (d.open && !body.firstChild) api({ action: 'productNumbers' }).then(function (r) { if (r.status === 200 && r.data.numbers) paintNums(r.data); else body.appendChild(el('p', 'hint warn', (r.data && (r.data.error || r.data.notice)) || '一覧を読めませんでした')); }); });
+    return d;
+  }
   function renderSets() {
     openSet = null;
     var box = $('sets'); box.textContent = '';
+    box.appendChild(numbersPanel());
     (state.drafts || []).forEach(function (d) {
       var c = el('details', 'card draft');
       c.appendChild(el('summary', null, '画像待ちの制作物：「' + d.title + '」'));
@@ -238,11 +260,11 @@
       s.products.forEach(function (p, i) {
         var pc = el('div', 'card product');
         var row = el('div', 'p-row'); var pi = el('img'); pi.src = p.image; pi.alt = ''; row.appendChild(pi);
-        var pt = el('div'); pt.appendChild(el('p', 'p-role', p.role || (i ? '代替・比較' : '本命'))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
+        var pt = el('div'); pt.appendChild(el('p', 'p-role', (p.no ? p.no + '　' : '') + (p.role || (i ? '代替・比較' : '本命')))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
         if (p.check) pc.appendChild(el('p', 'hint ' + (p.unverified ? 'warn' : 'ok'), p.check));
         var a = el('a', 'link', '楽天の商品ページを開く'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener'; pc.appendChild(a);
         pc.appendChild(el('p', 'field', '楽天ROOMの紹介文')); pc.appendChild(el('pre', 'text', p.room));
-        var roomText = p.room + (p.tags && p.tags.length ? '\n\n' + p.tags.join(' ') : '');
+        var roomText = (p.no && p.room.indexOf(p.no) < 0 ? '【' + p.no + '】' : '') + p.room +(p.tags && p.tags.length ? '\n\n' + p.tags.join(' ') : '');
         if (p.code && window.V2Ig) {
           pc.appendChild(el('p', 'hint', p.roomDone ? '楽天ROOMに登録済み（社長の記録）' : '① 紹介文をコピー → ② 楽天ROOMで貼り付けて登録 → ③「ROOMに登録した」を押す'));
           var rb = el('div', 'btns');
