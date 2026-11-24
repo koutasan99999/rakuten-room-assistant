@@ -91,6 +91,7 @@
     box.appendChild(el('p', 'hint', '読み込み中…'));
     fetch('../api/dev', { headers: { 'x-app-passcode': pass() } }).then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); }).then(function (r) {
       box.textContent = '';
+      box.appendChild(el('p', 'hint', 'ChatGPT からの依頼が、Linear → Claude Code → テスト → 独立レビュー → 自動マージ → 本番反映 → 本番の確認 と進む様子を、実際の記録だけで表示します。'));
       if (r.status !== 200) { box.appendChild(el('p', 'card hint warn', (r.data && r.data.error) || '読み込めませんでした')); return; }
       var D = r.data;
       var k = el('div', 'card');
