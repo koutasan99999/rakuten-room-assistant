@@ -106,7 +106,7 @@ function main() {
     // 自動マージの判定：node steps.mjs auto-merge-check <changed.txt> <diff.patch> <review.json> <issue-labels.json>
     const changed = read(a[0]).split('\n').map((x) => x.trim()).filter(Boolean);
     const diff = read(a[1]);
-    const lines = diff.split('\n').filter((l) => (l.startsWith('+') || l.startsWith('-')) && !/^(\+\+\+|---)/.test(l)).length;
+    const lines = diff.split('\n').filter((l) => (l.startsWith('+') || l.startsWith('-')) && !/^(\+\+\+ (b\/|\/dev\/null)|--- (a\/|\/dev\/null))/.test(l)).length; // ファイルの見出しの行だけ除く
     let review = null; try { review = JSON.parse(read(a[2])); } catch { review = null; }
     let labels = []; try { const j = JSON.parse(read(a[3]) || '{}'); labels = Array.isArray(j) ? j : (j.labels || []); } catch { labels = []; }
     const d = autoMergeDecision({ claudeOk: process.env.CLAUDE_OK === 'true', testOk: process.env.TEST_OK === 'true', review, changed, lines, diff, labels });

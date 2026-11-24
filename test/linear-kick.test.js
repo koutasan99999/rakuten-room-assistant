@@ -65,7 +65,7 @@ test('QStash の署名が無い・違う呼び出しは断る。鍵が未設定�
   assert.match((await call(env2, { 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm2' })).data.skipped, /4分以内/);
   assert.equal(g.calls.filter((c) => c.method === 'POST').length, 1, '二重に起動しない');
   const st = await kv.getJson('linear-kick:stats');
-  assert.equal(st.started, 1, '起動は1回だけ'); assert.ok(st.calls >= 4, '呼ばれたことは毎回残す（断った・鍵が無い・重複も）'); assert.equal(st.rejected, 3);
+  assert.equal(st.started, 1, '起動は1回だけ'); assert.ok(st.calls >= 4, '署名つきの呼び出しは毎回残す（断った・鍵が無い・重複も）'); assert.equal(st.rejected, 2, '署名の無い呼び出しは記録しない（署名が違う・別の呼び先の2回だけ）');
   assert.match((await kv.getJson('linear-kick:last')).why, /4分以内/);
   assert.ok(!JSON.stringify(await kv.getJson('linear-kick:last')).includes(TOKEN), '記録に鍵の値を残さない');
 });

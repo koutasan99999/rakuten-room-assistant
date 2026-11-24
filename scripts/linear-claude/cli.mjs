@@ -116,7 +116,8 @@ export async function finish({ client, cfg, issueId, result, prUrl, testText, re
   const failed = labelId(meta, cfg.failedLabel);
   const issue = await client.getIssue(issueId);
   const names = labelNames(issue);
-  const ok = result === 'success' || result === 'deployed' || result === 'pr';
+  // prod-failed はマージ済み：「Claude失敗」にすると、ラベルを外したときに同じ依頼をもう一度実装してしまうため「Claude完了」にして、本番の確認と戻し方を書く
+  const ok = result === 'success' || result === 'deployed' || result === 'pr' || result === 'prod-failed';
   if (names.includes(cfg.runningLabel)) await client.removeLabel(issueId, running);
   await client.addLabel(issueId, ok ? done : failed);
   if (prUrl) await client.linkUrl(issueId, prUrl, 'GitHub のPR（Claude Code）');

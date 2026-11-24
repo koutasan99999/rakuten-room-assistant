@@ -45,7 +45,8 @@ async function note(kv, outcome) {
 
 export default async function handler(req, res, env = process.env) {
   const kv = kvFrom(env);
-  if (req.method !== 'POST' || !req.headers['upstash-signature']) { await note(kv, { start: false, rejected: true, why: `QStash の署名が無い呼び出しを断った（${req.method}）` }); return send(res, 401, { error: 'QStash からの呼び出しだけを受け付けます' }); }
+  // 署名の無い呼び出しは記録しない（だれでも呼べるため。保存場所の利用回数を使わせない・本番の確認の呼び出しで記録が上書きされない）
+  if (req.method !== 'POST' || !req.headers['upstash-signature']) return send(res, 401, { error: 'QStash からの呼び出しだけを受け付けます' });
   const raw = await readRawBody(req);
   const v = verifyQstash({ signature: req.headers['upstash-signature'], body: raw, keys: [env.QSTASH_CURRENT_SIGNING_KEY, env.QSTASH_NEXT_SIGNING_KEY], path: '/api/linear-kick' });
   if (!v.ok) { await note(kv, { start: false, rejected: true, why: `QStash の署名を確かめられない：${v.why}` }); return send(res, 401, { error: `QStash の署名を確かめられません：${v.why}` }); }

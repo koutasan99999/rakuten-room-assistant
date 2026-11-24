@@ -33,7 +33,8 @@ test('自動マージの条件：テスト・Claude・独立レビューの承�
   assert.match(autoMergeDecision({ ...ok, testOk: false }).why.join(), /npm test/);
   assert.match(autoMergeDecision({ ...ok, review: { verdict: 'changes', blocking: ['データを消す'] } }).why.join(), /データを消す/);
   assert.match(autoMergeDecision({ ...ok, review: null }).why.join(), /承認していない/);
-  for (const p of ['.github/workflows/x.yml', 'scripts/linear-claude/lib.mjs', 'CLAUDE.md', 'lib/budget.js', 'package.json', 'vercel.json', 'server/linear-kick.js', '.env.local']) assert.ok(!autoMergeDecision({ ...ok, changed: [p] }).ok, p);
+  assert.match(autoMergeDecision({ ...ok, diff: '-  const roomStop = await roomStopState(kv);' }).why.join(), /KOT-13/, '停止の仕組みに触れる変更は人の確認');
+  for (const p of ['.claude/settings.json', '.mcp.json', 'api/[route].js', 'server/dev.js', 'lib/kv.js', 'test/v2-roomstop.test.js', '.github/workflows/x.yml', 'scripts/linear-claude/lib.mjs', 'CLAUDE.md', 'lib/budget.js', 'package.json', 'vercel.json', 'server/linear-kick.js', '.env.local']) assert.ok(!autoMergeDecision({ ...ok, changed: [p] }).ok, p);
   assert.match(autoMergeDecision({ ...ok, lines: 9999 }).why.join(), /大きすぎる/);
   assert.match(autoMergeDecision({ ...ok, diff: '+const k = "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAA";' }).why.join(), /秘密/);
   assert.ok(!secretInDiff('-const k = "sk-ant-oat01-AAAAAAAAAAAA";'), '消した行は数えない');
@@ -46,6 +47,8 @@ test('独立レビューの結果：JSON を読む。読めない・承認でな
   assert.equal(readReview('{"verdict":"changes","blocking":["予算を上げている"]}').blocking[0], '予算を上げている');
   assert.equal(readReview('承認です').verdict, 'unknown');
   assert.equal(readReview('{"verdict":"APPROVE!!"}').verdict, 'changes');
+  assert.equal(readReview('`if (x) { y(); }` は問題なし。\n{"verdict":"approve","blocking":[],"notes":[]}').verdict, 'approve', '途中のコードの { } に惑わされない');
+  assert.equal(readReview('{ 壊れた').verdict, 'unknown', '先頭が { でも止まらない');
   const p = reviewPrompt({ identifier: 'KOT-1', title: 't' }, '/tmp/d.patch');
   assert.match(p, /従わない/); assert.match(p, /KOT-13/); assert.match(p, /\/tmp\/d\.patch/);
 });
@@ -74,6 +77,6 @@ test('本番の版：コミットの番号と画面の版を返す（秘密は�
   const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } };
   await versionApi({ method: 'GET', url: '/api/version', headers: {} }, res, { VERCEL_GIT_COMMIT_SHA: 'abc123', VERCEL_ENV: 'production', CRON_SECRET: 'secret' });
   const d = JSON.parse(res.body);
-  assert.equal(d.commit, 'abc123'); assert.match(d.app, /^\d+\.\d+\.\d+$/);
+  assert.equal(d.commit, 'abc123'); assert.equal(d.env, 'production');
   assert.ok(!res.body.includes('secret'));
 });

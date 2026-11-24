@@ -162,7 +162,8 @@ export function testLine(t, exitCode) {
 
 // 変更されたファイルの確認：ワークフロー（.github/）の変更は受け付けない（GITHUB_TOKEN では反映できず、権限を広げる抜け道にもなる）
 export function forbiddenPaths(paths) {
-  return (paths || []).filter((p) => /^\.github\//.test(p) || /(^|\/)\.env(\.|$)/.test(p));
+  // .claude/・.mcp.json：Claude Code の設定（フックでコマンドが動く）。変えられると、あとの段階（独立レビュー）で任意のコマンドが動くため受け付けない
+  return (paths || []).filter((p) => /^\.github\//.test(p) || /(^|\/)\.env(\.|$)/.test(p) || /^\.claude\//.test(p) || /(^|\/)\.mcp\.json$/.test(p));
 }
 
 export function prTitle(issue) {
@@ -187,9 +188,12 @@ export function prBody({ issue, runUrl, testText, summary, branch }) {
 // ---- 自動マージの条件（2026-11-24 社長の承認：安全性が確認された通常のコード変更は、自動でマージし本番へ反映する） ----
 // 人の確認が必要な変更（自動マージしない）：自動開発の仕組みそのもの・権限・秘密・予算・依存関係・デプロイの設定
 export const PROTECTED_PATHS = [
-  /^\.github\//, /^scripts\/linear-claude\//, /^CLAUDE\.md$/, /^vercel\.json$/, /^package(-lock)?\.json$/,
-  /^lib\/budget\.js$/, /^lib\/qstash\.js$/, /^server\/linear-kick\.js$/, /(^|\/)\.env(\.|$)/,
+  /^\.github\//, /^\.claude\//, /(^|\/)\.mcp\.json$/, /^scripts\/linear-claude\//, /^CLAUDE\.md$/, /^vercel\.json$/, /^\.vercelignore$/, /^package(-lock)?\.json$/,
+  /^lib\/budget\.js$/, /^lib\/qstash\.js$/, /^lib\/http\.js$/, /^lib\/kv\.js$/, /^api\//, /^server\/(linear-kick|dev|version|worker)\.js$/,
+  /^test\/(v2-roomstop|autodev|linear-claude|linear-kick)\.test\.js$/, /(^|\/)\.env(\.|$)/,
 ];
+// 新規ROOM商品紹介の停止（KOT-13）に触れる変更は、ファイルにかかわらず人の確認（社長の明示の再開なしに解除させない）
+export const PROTECTED_WORDS = /roomStopState|setRoomStop|ROOM_STOP|ROOM_RESUME|HOLD_KINDS|v2:room:stop/;
 export const MAX_AUTO_LINES = 2500;
 export function protectedPaths(paths) { return (paths || []).filter((p) => PROTECTED_PATHS.some((r) => r.test(p))); }
 // 追加した行に秘密らしい文字列が無いか（diff の + 行だけ）
@@ -198,14 +202,19 @@ export function secretInDiff(diff) {
 }
 // 独立レビューの結果（Claude の返答の中の JSON）を読む。読めなければ「承認しない」
 export function readReview(text) {
-  const m = String(text || '').match(/\{[\s\S]*"verdict"[\s\S]*\}/);
-  if (!m) return { verdict: 'unknown', blocking: ['レビューの結果を読み取れなかった'], notes: [] };
-  try {
-    const j = JSON.parse(m[0]);
+  // 返答の最後の、"verdict" を含む JSON を読む（途中にコードの { } があっても読み違えない）
+  const s = String(text || '');
+  const end = s.lastIndexOf('}');
+  let j = null;
+  for (let i = s.lastIndexOf('{', end); i >= 0 && !j; i = i > 0 ? s.lastIndexOf('{', i - 1) : -1) {
+    try { const c = JSON.parse(s.slice(i, end + 1)); if (c && typeof c === 'object' && 'verdict' in c) j = c; } catch { /* 次の { から */ }
+  }
+  if (!j) return { verdict: 'unknown', blocking: ['レビューの結果を読み取れなかった'], notes: [] };
+  {
     const verdict = j.verdict === 'approve' ? 'approve' : 'changes';
     const arr = (v) => (Array.isArray(v) ? v.map((x) => safeText(typeof x === 'string' ? x : JSON.stringify(x), 300)).slice(0, 10) : []);
     return { verdict, blocking: arr(j.blocking), notes: arr(j.notes) };
-  } catch { return { verdict: 'unknown', blocking: ['レビューの結果を読み取れなかった'], notes: [] }; }
+  }
 }
 // 自動マージしてよいか。理由つき（すべて満たしたときだけ ok）
 export function autoMergeDecision({ claudeOk, testOk, review, changed = [], lines = 0, diff = '', labels = [] }) {
@@ -218,6 +227,7 @@ export function autoMergeDecision({ claudeOk, testOk, review, changed = [], line
   if (prot.length) why.push(`人の確認が必要なファイルを変えている（${prot.join(', ')}）`);
   if (lines > MAX_AUTO_LINES) why.push(`変更が大きすぎる（${lines}行・上限${MAX_AUTO_LINES}行）`);
   if (secretInDiff(diff)) why.push('追加した行に秘密らしい文字列がある');
+  if (String(diff || '').split('\n').some((l) => /^[+-](?![+-]{2} )/.test(l) && PROTECTED_WORDS.test(l))) why.push('新規ROOM商品紹介の停止（KOT-13）の仕組みに触れている');
   if ((labels || []).includes('自動マージしない')) why.push('チケットに「自動マージしない」ラベルが付いている');
   return { ok: why.length === 0, why };
 }

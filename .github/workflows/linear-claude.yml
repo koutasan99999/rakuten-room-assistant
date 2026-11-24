@@ -247,8 +247,8 @@ jobs:
         timeout-minutes: 15
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
         run: |
+          # GitHub の鍵はこの段階に渡さない（変更後のコードの中で動くため）。.claude/・.mcp.json の変更は前の段階で断っている
           git diff "$BASE_SHA"..HEAD > "$RUNNER_TEMP/diff.patch"
           node "$LC/steps.mjs" review-prompt "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/diff.patch" > "$RUNNER_TEMP/review-prompt.md"
           set +e
@@ -259,8 +259,13 @@ jobs:
           set -e
           node "$LC/steps.mjs" review-result "$RUNNER_TEMP/review-raw.json" "$RUNNER_TEMP/review.json" "$RUNNER_TEMP/review.md" >> "$GITHUB_ENV"
           cat "$RUNNER_TEMP/review.md"
-          gh pr comment "$PR_URL" --body-file "$RUNNER_TEMP/review.md" || true
           git checkout -- . 2>/dev/null || true
+
+      - name: 独立レビューの結果を PR に書く
+        if: steps.review.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "$PR_URL" --body-file "$RUNNER_TEMP/review.md" || true
 
       - name: 自動マージの判定（テスト・レビュー・変更の範囲・大きさ・秘密）
         if: steps.pr.outputs.url != ''
@@ -273,9 +278,8 @@ jobs:
 
       - name: 最新 main との整合（競合の確認。main が進んでいれば取り込んでテストをやり直す）
         if: env.AUTO_MERGE == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          # この段階には GitHub の鍵を渡さない（npm test は Claude が書いたコードを動かすため）。push は次の段階で行う
           git fetch -q --depth=200 origin main
           if git merge-base --is-ancestor origin/main HEAD; then echo "main は進んでいない（そのまま）"; exit 0; fi
           git config user.name "github-actions[bot]"
@@ -287,6 +291,14 @@ jobs:
           set +e; npm test > "$RUNNER_TEMP/test2.log" 2>&1; code=$?; set -e
           tail -n 8 "$RUNNER_TEMP/test2.log"
           if [ "$code" != "0" ]; then { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=最新の main を取り込むと npm test が失敗した"; } >> "$GITHUB_ENV"; exit 0; fi
+          echo "NEED_PUSH=true" >> "$GITHUB_ENV"
+
+      - name: 最新 main を取り込んだ版を push（作業ブランチだけ）
+        if: env.AUTO_MERGE == 'true' && env.NEED_PUSH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$BRANCH" in main|master|"") echo "::error::main には push しない"; exit 1;; esac
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$BRANCH"
 
@@ -297,14 +309,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha=$(git rev-parse HEAD)
-          for i in $(seq 1 70); do
+          for i in $(seq 1 60); do
             st=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | select(.context=="Vercel")][0].state' 2>/dev/null || echo "")
             echo "Preview：${st:-まだ}"
             if [ "$st" = "success" ]; then exit 0; fi
             if [ "$st" = "failure" ] || [ "$st" = "error" ]; then { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=Vercel の Preview が失敗した"; } >> "$GITHUB_ENV"; exit 0; fi
             sleep 15
           done
-          { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=Vercel の Preview の結果が17分以内に出なかった"; } >> "$GITHUB_ENV"
+          { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=Vercel の Preview の結果が15分以内に出なかった"; } >> "$GITHUB_ENV"
 
       - name: マージ（squash・確かめたコミットのときだけ）
         id: merge
@@ -323,19 +335,19 @@ jobs:
       - name: 本番反映の確認（マージしたコミットが本番で動いているか・画面とAPI）
         id: prod
         if: steps.merge.outputs.sha != ''
-        timeout-minutes: 25
+        timeout-minutes: 30
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
         run: |
           base="${WORKER_URL%/}"
           [ -n "$base" ] || { echo "PROD_WHY=本番のURL（WORKER_URL）が未設定" >> "$GITHUB_ENV"; exit 0; }
-          for i in $(seq 1 80); do
+          for i in $(seq 1 60); do
             c=$(curl -s --max-time 10 "$base/api/version" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).commit||'')}catch{console.log('')}})")
             echo "本番のコミット：${c:-読めない}"
             if [ "$c" = "$MERGE_SHA" ]; then break; fi
             sleep 15
           done
-          if [ "$c" != "$MERGE_SHA" ]; then echo "PROD_WHY=本番がマージしたコミットに20分以内に切り替わらなかった（Vercel の本番デプロイを確認）" >> "$GITHUB_ENV"; exit 0; fi
+          if [ "$c" != "$MERGE_SHA" ]; then echo "PROD_WHY=本番がマージしたコミットに15分以内に切り替わらなかった（Vercel の本番デプロイを確認）" >> "$GITHUB_ENV"; exit 0; fi
           echo "PROD_COMMIT=$c" >> "$GITHUB_ENV"
           fail=""
           code=$(curl -s -o "$RUNNER_TEMP/v2.html" -w '%{http_code}' --max-time 15 "$base/v2/index.html?t=$(date +%s)"); [ "$code" = "200" ] && grep -q 'app.js?v=' "$RUNNER_TEMP/v2.html" || fail="$fail 画面（/v2/）が開けない（$code）"
@@ -370,6 +382,8 @@ jobs:
             export RESULT=deployed
           elif [ -n "${MERGE_SHA:-}" ]; then
             export RESULT=prod-failed; export REASON="${PROD_WHY:-本番の確認ができなかった}"
+          elif [ "$JOB_STATUS" != "success" ]; then
+            export RESULT=failure
           elif [ -n "$PR_URL" ] && [ "$TEST_OK" = "true" ] && [ "$CLAUDE_OK" = "true" ]; then
             export RESULT=pr; export REASON="${AUTO_MERGE_WHY:-自動マージの条件を満たさなかった}"
           else
@@ -378,6 +392,7 @@ jobs:
               if [ "$JOB_STATUS" = "cancelled" ]; then REASON="実行が止められた（時間切れ・取り消し）";
               elif [ "${CLAUDE_OK:-}" != "true" ]; then REASON="Claude Code が最後まで終わらなかった（${CLAUDE_ERROR:-詳細は実行の記録}）";
               elif [ "${TEST_OK:-}" != "true" ]; then REASON="npm test が失敗した";
+              elif [ -n "${PR_URL:-}" ]; then REASON="PRのあとの段階（独立レビュー・main との整合・Preview・マージ）の途中で失敗した（実行の記録を見てください）";
               else REASON="途中の段階で失敗した（実行の記録を見てください）"; fi
             fi
             export REASON
