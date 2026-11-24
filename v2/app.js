@@ -231,6 +231,19 @@
   function ventureGo(x, dec) { return function () { var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || ''); api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderBiz); }); }; }
   var NEED_CLS = { free: 'free', ai: 'ai', owner: 'owner', external: 'ext' };
   var NEED_SHORT = { free: '無料で自動', ai: 'AI予算が要る', owner: '社長の操作', external: '外部データが要る' };
+  // タップで該当箇所へ移動（KOT-20）：別タブなら切替→折りたたみを開く→隠れない位置へスクロール→一時強調
+  function jumpTo(id) {
+    if (tab !== 'biz') switchTab('biz');
+    var t = document.getElementById(id); if (!t) return false;
+    for (var p = t; p && p !== document.body; p = p.parentElement) { if (p.tagName === 'DETAILS') p.open = true; }
+    var top = 0; ['.top', '#room-stop', '#notice'].forEach(function (q) { var h = document.querySelector(q); if (!h || h.hidden) return; var cs = getComputedStyle(h); if (cs.position === 'fixed' || cs.position === 'sticky') top += h.getBoundingClientRect().height; });
+    var y = t.getBoundingClientRect().top + (window.pageYOffset || 0) - top - 12;
+    window.scrollTo(0, Math.max(0, y));
+    t.classList.remove('jump-hit'); void t.offsetWidth; t.classList.add('jump-hit');
+    setTimeout(function () { t.classList.remove('jump-hit'); }, 2200);
+    return true;
+  }
+  function jumpBtn(tag, cls, label, id) { var b = el(tag, cls); if (tag === 'button') b.type = 'button'; b.setAttribute('aria-label', label + 'へ移動'); b.addEventListener('click', function () { jumpTo(id); }); return b; }
   // 冒頭：実利益・目標・投稿できる在庫・社長の判断待ち（具体的な案件と次の操作）
   function bizTop(box) {
     var P = state.profit, V = state.ventures;
@@ -242,17 +255,17 @@
     var total = reviews.length + waitSets.length;
     var c = el('div', 'card biz-top');
     var g = el('div', 'kpi-grid');
-    [['実利益', profit == null ? '未計測' : yen(profit), profit == null], ['月の目標', target.toLocaleString('ja-JP') + '円', false], ['投稿できる在庫', postable == null ? '未取得' : postable + '件', postable == null], ['社長の判断待ち', total + '件', false]].forEach(function (x) {
-      var d = el('div', 'kpi' + (x[2] ? ' none' : '')); d.appendChild(el('small', null, x[0])); d.appendChild(el('b', null, x[1])); g.appendChild(d);
+    [['実利益', profit == null ? '未計測' : yen(profit), profit == null, 'biz-sec-results'], ['月の目標', target.toLocaleString('ja-JP') + '円', false, 'biz-sec-goal'], ['投稿できる在庫', postable == null ? '未取得' : postable + '件', postable == null, 'biz-sec-stock'], ['社長の判断待ち', total + '件', false, 'biz-sec-wait']].forEach(function (x) {
+      var d = jumpBtn('button', 'kpi kpi-link' + (x[2] ? ' none' : ''), x[0], x[3]); d.appendChild(el('small', null, x[0])); d.appendChild(el('b', null, x[1])); g.appendChild(d);
     });
     c.appendChild(g);
     c.appendChild(el('p', 'hint', '実利益は社長が登録した確定報酬と費用だけで計算（未登録は未計測）。目標は保証ではありません'));
     box.appendChild(c);
-    var w = el('div', 'card');
+    var w = el('div', 'card'); w.id = 'biz-sec-wait';
     w.appendChild(el('p', 'field', '社長の判断待ち（' + total + '件）'));
     if (!total) w.appendChild(el('p', 'hint', '今、社長の判断が必要な案件はありません'));
     reviews.slice(0, 5).forEach(function (x) {
-      var r = el('div', 'wait-row'); r.appendChild(el('p', 'wait-title', clip(x.title, 40))); r.appendChild(el('p', 'hint', (x.stream === 'venture' ? '新規副業' : x.stream === 'growth' ? '集客・販促' : 'デジタル商品') + 'の案。次の操作：採用・保留・却下を選ぶ（中身は下の各カードで確認）'));
+      var r = el('div', 'wait-row'); r.appendChild(jumpBtn('button', 'wait-title jump-link', clip(x.title, 40), 'biz-item-' + x.id)).textContent = clip(x.title, 40); r.appendChild(jumpBtn('button', 'hint jump-link', '詳細', 'biz-item-' + x.id)).textContent = ((x.stream === 'venture' ? '新規副業' : x.stream === 'growth' ? '集客・販促' : 'デジタル商品') + 'の案。次の操作：採用・保留・却下を選ぶ（タップで詳細へ）');
       var row = el('div', 'row'); row.appendChild(btn('採用', 'btn small', ventureGo(x, 'adopt'))); row.appendChild(btn('保留', 'btn ghost small-ghost', ventureGo(x, 'hold'))); row.appendChild(btn('却下', 'btn ghost small-ghost', ventureGo(x, 'reject')));
       r.appendChild(row); w.appendChild(r);
     });
@@ -261,13 +274,13 @@
       r2.appendChild(el('p', 'hint', '次の操作：「完成品」タブで内容を見て採用・修正依頼'));
       r2.appendChild(btn('完成品タブを開く', 'btn small', function () { switchTab('sets'); })); w.appendChild(r2);
     }
-    if (ownerQ.length) w.appendChild(el('p', 'hint', '社長の操作が要る改善：' + ownerQ.length + '件（下の「改善キュー」）'));
+    if (ownerQ.length) w.appendChild(jumpBtn('button', 'hint jump-link', '改善キュー', 'biz-q-owner')).textContent = '社長の操作が要る改善：' + ownerQ.length + '件（タップで改善キューへ）';
     box.appendChild(w);
   }
   // 4つの流れ（ROOM・新規副業・集客販促・デジタル商品）：件数・状態・次の行動だけ短く。詳細は折りたたみ
   function bizStreams(box) {
     var V = state.ventures, D = V.dash, st = state.roomStop;
-    var rc = el('div', 'card stream-card');
+    var rc = el('div', 'card stream-card'); rc.id = 'biz-sec-stock';
     rc.appendChild(el('p', 'field', 'ROOM（楽天ROOM商品紹介）'));
     rc.appendChild(el('p', 'hint', '状態：' + (st && st.stopped ? '新規紹介は停止中（社長の再開待ち）' : '稼働中') + '／在庫：確認待ち ' + D.inventory.waiting + '・採用済み未投稿 ' + D.inventory.adopted + '・投稿済み ' + D.inventory.posted));
     rc.appendChild(el('p', 'next', '次の行動：' + (D.inventory.waiting ? '完成品の確認' : D.inventory.adopted ? '採用済みをInstagramとROOMに投稿（社長が手で）' : st && st.stopped ? '既存の完成品の販売改善（停止中のまま）' : 'AIが新しい完成品を作る')));
@@ -288,7 +301,7 @@
   // 8部署：部署名・最終実行・成果物・次の行動を短い行で
   function bizDepts(box) {
     var D = state.deptWork || {}, log = D.log || [], q = D.queue || [];
-    var c = el('div', 'card'); c.appendChild(el('p', 'field', '8部署の成果'));
+    var c = el('div', 'card'); c.id = 'biz-sec-results'; c.appendChild(el('p', 'field', '8部署の成果'));
     state.staff.forEach(function (s) {
       var i = s.indep || {}, l = log.filter(function (x) { return x.dept === s.id; })[0], nq = q.filter(function (x) { return x.dept === s.id; })[0];
       var at = l ? l.at : i.last ? i.last.at : null;
@@ -308,11 +321,12 @@
   function bizQueue(box) {
     var D = state.deptWork; if (!D) return;
     var q = D.queue || [];
-    var c = el('div', 'card'); c.appendChild(el('p', 'field', '改善キュー（優先順）'));
+    var c = el('div', 'card'); c.id = 'biz-sec-queue'; c.appendChild(el('p', 'field', '改善キュー（優先順）'));
     var nf = q.filter(function (x) { return x.need === 'free'; }).length, no = q.filter(function (x) { return x.need === 'owner'; }).length;
     c.appendChild(el('p', 'hint', q.length ? '無料で自動処理 ' + nf + '件・社長の操作が要る ' + no + '件・そのほか ' + (q.length - nf - no) + '件' : 'キューは空（成果物がまだ無い、または改善点が見つかっていない）'));
+    var firstOwner = true;
     q.slice(0, 12).forEach(function (x) {
-      var d = el('details', 'q-row'); var sm = el('summary');
+      var d = el('details', 'q-row'); if (x.need === 'owner' && firstOwner) { d.id = 'biz-q-owner'; firstOwner = false; } var sm = el('summary');
       sm.appendChild(el('span', 'rk', String(x.rank))); sm.appendChild(el('span', 'qn', x.deptName));
       sm.appendChild(el('span', 'pill need-' + NEED_CLS[x.need], NEED_SHORT[x.need] || x.need));
       sm.appendChild(el('span', 'qt', clip(x.task, 44))); d.appendChild(sm);
@@ -336,7 +350,7 @@
     f1.body.appendChild(el('p', 'hint', '売上に近い数字：閲覧 ' + nv(D.funnel && D.funnel.views) + '・プロフィール ' + nv(D.funnel && D.funnel.profileVisits) + '・ROOMへの流入 ' + nv(D.funnel && D.funnel.roomClicks) + '・売上 ' + nv(D.funnel && D.funnel.sales) + '（社長の登録だけ。無いものは未計測）'));
     if (V.rank.length) f1.body.appendChild(el('p', 'hint', '新規副業の優先順（低コスト・手間が少ない・再現性。収益の予測は点に使わない）：' + V.rank.map(function (r, i) { return (i + 1) + '. ' + r.title + '（' + r.priority + '点）'; }).join(' ／ ')));
     box.appendChild(f1);
-    var f2 = fold('収益の分析・販促カレンダー・成果登録', '不足条件・月3万円の逆算・投稿ごとの数字・週次・手法'); renderProfit(f2.body); box.appendChild(f2);
+    var f2 = fold('収益の分析・販促カレンダー・成果登録', '不足条件・月3万円の逆算・投稿ごとの数字・週次・手法'); f2.id = 'biz-sec-goal'; renderProfit(f2.body); box.appendChild(f2);
     var f3 = fold('実行ログ・棚卸し・不足条件', '長文。必要なときだけ開く'); renderDeptWork(f3.body); box.appendChild(f3);
     var dc = el('div', 'card'); dc.appendChild(el('p', 'field', '部署ごとの独立した仕事（最後にした仕事・成果物・次に着手できる仕事・待機の理由）'));
     state.staff.forEach(function (s) {
@@ -348,7 +362,7 @@
     if (V.runs.length) { var rc = el('div', 'card'); rc.appendChild(el('p', 'field', '実行ログ（直近）')); V.runs.slice(0, 10).forEach(function (r) { rc.appendChild(el('p', 'hint', day(r.at) + ' ' + hm(r.at) + ' ' + nameOf(r.agent) + '：' + r.text + (r.yen ? '（' + yen(r.yen) + '）' : '（0円）') + (r.ok ? '' : '［失敗］'))); }); f3.body.appendChild(rc); }
   }
   function bizItem(x) {
-    var d = el('details', 'biz-item'); var sm = el('summary', null, x.title + '【' + BIZ_STATUS[x.status] + '】' + (x.priority != null ? '・' + x.priority + '点' : '')); d.appendChild(sm);
+    var d = el('details', 'biz-item'); d.id = 'biz-item-' + x.id; var sm = el('summary', null, x.title + '【' + BIZ_STATUS[x.status] + '】' + (x.priority != null ? '・' + x.priority + '点' : '')); d.appendChild(sm);
     var D = x.data || {}, add = function (t) { d.appendChild(el('p', 'hint', t)); };
     add('出典：' + x.basis);
     (x.sources || []).forEach(function (s) { add('調べた事実（' + day(s.at) + '）：' + s.label + '／' + s.status + (s.pages ? '・' + s.pages + 'ページ分' : '') + (s.priceMin ? '・上位の価格帯 ' + s.priceMin + '〜' + s.priceMax + '円' : '') + (s.why ? '（' + s.why + '）' : '')); });
