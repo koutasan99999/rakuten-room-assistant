@@ -145,8 +145,65 @@
 
   // 事業タブ（KOT-12）：ROOMとは独立した3本の流れ。実際の記録だけを表示（無い数字は「未計測」）
   var BIZ_STATUS = { active: '作成中', review: '社長の判断待ち', adopted: '採用', hold: '保留', rejected: '却下・不合格', stopped: '止まった（失敗）' };
+  // 収益の手法（KOT-13）：不足条件・月3万円の逆算・投稿ごとの数字・販促カレンダー・週ごとの見直し・資料の手法の判断。実績と仮説を分けて表示
+  function pct(v) { return v == null ? '未計測' : (Math.round(v * 10000) / 100) + '%'; }
+  function nv2(v, u) { return v == null ? '未計測' : v + (u || ''); }
+  function renderProfit(box) {
+    var P = state.profit; if (!P) return;
+    var c = el('div', 'card profit');
+    c.appendChild(el('p', 'field', '不足条件（月' + P.target.toLocaleString() + '円の利益に足りないもの）'));
+    P.missing.forEach(function (m) {
+      var d = el('details', 'biz-item'); d.appendChild(el('summary', null, (m.status === 'open' ? '［未解決］' : '［解決済み］') + m.what + '（優先' + m.priority + '）'));
+      [['根拠', m.basis], ['利益への影響', m.impact], ['解決策', m.fix], ['費用', m.cost], ['担当', nameOf(m.owner)], ['社長の操作', m.ownerAction || 'なし（AIが進める）'], ['備考', m.note]].forEach(function (x) { if (x[1]) d.appendChild(el('p', 'hint', x[0] + '：' + x[1])); });
+      c.appendChild(d);
+    });
+    box.appendChild(c);
+    var R = P.reverse, rc = el('div', 'card');
+    rc.appendChild(el('p', 'field', '月' + R.target.toLocaleString() + '円からの逆算' + (R.allActual ? '（すべて実績）' : '（仮説を含む・保証ではない）')));
+    var lab = { price: '単価', rate: '料率', cvr: '成約率（CVR）', ctr: 'クリック率（CTR）' };
+    Object.keys(lab).forEach(function (k) { var x = R.inputs[k]; rc.appendChild(el('p', 'hint', lab[k] + '：' + (k === 'price' ? yen(x.value) : pct(x.value)) + '【' + (x.kind === 'actual' ? '実績' : '仮説') + '】' + x.basis)); });
+    rc.appendChild(el('p', 'hint', '1件あたりの報酬 ' + yen(R.perOrder) + ' → 必要な成約 ' + nv2(R.need.orders, '件') + '・クリック ' + nv2(R.need.clicks, '回') + '・閲覧 ' + nv2(R.need.views, '回') + '（1日 ' + nv2(R.need.viewsPerDay, '回') + '）'));
+    rc.appendChild(el('p', 'hint', '直近30日の閲覧の実績：' + nv2(R.recentViews30, '回') + (R.gap ? '（必要な量の' + R.gap + '分の1）' : '')));
+    box.appendChild(rc);
+    var T = P.totals, pc = el('div', 'card');
+    pc.appendChild(el('p', 'field', '投稿ごとの数字（閲覧→クリック→成約→確定報酬→利益）'));
+    pc.appendChild(el('p', 'hint', '合計：投稿 ' + T.posts + '・閲覧 ' + nv2(T.views) + '・クリック ' + nv2(T.clicks) + '・CTR ' + pct(T.ctr) + '・成約 ' + nv2(T.orders) + '・CVR ' + pct(T.cvr) + '・確定報酬 ' + nv2(T.reward, '円') + '・利益 ' + nv2(T.profit, '円') + '（社長の登録だけ。因果は仮説）'));
+    P.posts.slice(0, 10).forEach(function (r) { pc.appendChild(el('p', 'hint', r.title + '：閲覧 ' + nv2(r.views) + '・クリック ' + nv2(r.clicks) + '・CTR ' + pct(r.ctr) + '・成約 ' + nv2(r.orders) + '・CVR ' + pct(r.cvr) + '・利益 ' + nv2(r.profit, '円'))); });
+    box.appendChild(pc);
+    var cc = el('div', 'card');
+    cc.appendChild(el('p', 'field', '販促カレンダー（' + P.calendar.from + '〜' + P.calendar.until + '・過ぎたものは出さない）'));
+    P.calendar.items.forEach(function (e) { cc.appendChild(el('p', 'hint', e.start + (e.end !== e.start ? '〜' + e.end : '') + '　' + e.name + '（' + e.basis + '）')); });
+    P.calendar.unconfirmed.forEach(function (e) { cc.appendChild(el('p', 'hint', '日付未登録：' + e.name + '（' + e.basis + '）')); });
+    cc.appendChild(btn('公式で確かめたセールを登録', 'btn small', function () {
+      var name = prompt('イベントの名前（例：楽天スーパーSALE）', ''); if (!name) return;
+      var st = prompt('始まりの日（YYYY-MM-DD）', ''); if (!st) return;
+      var en = prompt('終わりの日（YYYY-MM-DD）', st) || st;
+      var u = prompt('確かめた楽天の公式ページのURL', 'https://event.rakuten.co.jp/'); if (!u) return;
+      api({ action: 'calendarAdd', event: { name: name, start: st, end: en, url: u } }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || '登録できませんでした'); refresh().then(renderBiz); });
+    }));
+    cc.appendChild(btn('公式で確かめた料率を登録', 'btn ghost small-ghost', function () {
+      var r0 = prompt('料率（%の数字。例：3）', ''); if (!r0) return;
+      var u = prompt('確かめた楽天の公式ページのURL', 'https://affiliate.rakuten.co.jp/'); if (!u) return;
+      api({ action: 'rateSet', rate: Number(r0) / 100, url: u }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || '登録できませんでした'); refresh().then(renderBiz); });
+    }));
+    box.appendChild(cc);
+    var wc = el('div', 'card');
+    wc.appendChild(el('p', 'field', '週ごとの見直し（7日に1回・鑑定がコードの計算で行う・0円）'));
+    if (!P.reviews.length) wc.appendChild(el('p', 'hint', 'まだ見直していない（次の定期実行で鑑定が行う）'));
+    P.reviews.forEach(function (r) { wc.appendChild(el('p', 'hint', r.week + '：いちばん詰まっている段階「' + r.bottleneck + '」（' + r.evidence + '）→ 次の検証「' + r.nextTest + '」・担当 ' + r.deptName + '・成果物 ' + r.deliverable + '・やめる条件 ' + r.stopCondition)); });
+    box.appendChild(wc);
+    var mc = el('div', 'card');
+    mc.appendChild(el('p', 'field', '参考資料（楽天アフィ攻略 1〜20ページ）の手法の判断'));
+    P.methods.forEach(function (m) {
+      var d = el('details', 'biz-item'); d.appendChild(el('summary', null, '【' + m.decisionLabel + '】' + m.name + (m.working === true ? '（動いている）' : m.working === false ? '（まだ動いていない）' : '')));
+      [['理由', m.why], ['担当', m.ownerName], ['成果物', m.deliverable], ['確かめ方', m.verify]].forEach(function (x) { d.appendChild(el('p', 'hint', x[0] + '：' + x[1])); });
+      mc.appendChild(d);
+    });
+    box.appendChild(mc);
+  }
   function renderBiz() {
     var box = $('biz'); box.textContent = '';
+    renderProfit(box);
     var V = state.ventures; if (!V) { box.appendChild(el('p', 'hint', '事業のデータを読み込めませんでした')); return; }
     var D = V.dash, nv = function (v) { return v == null ? '未計測' : v; };
     var c = el('div', 'card');
@@ -542,7 +599,7 @@
     return c;
   }
   // ---- Instagramの実績（2026-11-18 集客）：インサイトの数字を登録（スクショから読み取り→社長が確かめて登録）。推測で埋めない ----
-  var PF = [['views', '閲覧数'], ['reach', 'リーチ'], ['nonFollowerPct', 'フォロワー以外の割合（%）'], ['saves', '保存'], ['shares', 'シェア'], ['likes', 'いいね'], ['comments', 'コメント'], ['profileVisits', 'プロフィールへのアクセス'], ['linkClicks', 'リンクのタップ'], ['roomClicks', '楽天ROOMへの流入（楽天アフィリエイトで確認）'], ['sales', '売上（円・確認できたもの）']];
+  var PF = [['views', '閲覧数'], ['reach', 'リーチ'], ['nonFollowerPct', 'フォロワー以外の割合（%）'], ['saves', '保存'], ['shares', 'シェア'], ['likes', 'いいね'], ['comments', 'コメント'], ['profileVisits', 'プロフィールへのアクセス'], ['linkClicks', 'リンクのタップ'], ['roomClicks', '楽天ROOMへの流入（楽天アフィリエイトで確認）'], ['sales', '売上（円・確認できたもの）'], ['orders', '成約件数（楽天アフィリエイトのレポート）'], ['reward', '確定報酬（円）'], ['cost', 'この投稿にかけた費用（円）']];
   function perfCard() {
     var R = state.reach; var c = el('div', 'card');
     c.appendChild(el('p', 'field', 'Instagramの実績（集客の成果）'));
