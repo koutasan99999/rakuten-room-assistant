@@ -10,6 +10,7 @@ import * as Post from '../lib/v2/post.js';
 import * as Pr from '../lib/v2/pr.js';
 import * as Reach from '../lib/v2/reach.js';
 import * as Growth from '../lib/v2/growth.js';
+import * as Ventures from '../lib/v2/ventures.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
 import { requestReferer } from '../lib/http.js';
 
@@ -35,7 +36,9 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'post') return send(res, 200, { post: await Post.submitPost(kv, env, { image: body.image, note: body.note, referer: requestReferer(req, env) }) });
     if (action === 'posts') return send(res, 200, { posts: await Post.listPosts(kv) });
     if (action === 'postDelete') return send(res, 200, await Post.removePost(kv, String(body.id || '')));
-    if (action === 'room') return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
+    if (action === 'productNumbers') return send(res, 200, await V.productNumbers(kv));
+    if (action === 'productNumbersMigrate') return send(res, 200, { ...(await V.migrateProductNumbers(kv)), ...(await V.productNumbers(kv)) });
+    if (action === 'room')return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
     if (action === 'request') return send(res, 200, { requests: await V.addRequest(kv, { text: body.text, url: body.url }) });
     if (action === 'sales') return send(res, 200, { sales: await V.setSales(kv, { month: body.month, yen: body.yen }) });
     if (action === 'prAdd') return send(res, 200, { target: await Pr.addTarget(kv, { url: body.url, caption: body.caption, handle: body.handle, note: body.note }) });
@@ -61,8 +64,17 @@ export default async function handler(req, res, env = process.env) {
       return send(res, 200, { tactic: t });
     }
     if (action === 'reelMade') { const r = await Reach.noteReel(kv, { setId: body.id, format: body.format, bytes: body.bytes, seconds: body.seconds, mime: body.mime }); return send(res, 200, { reel: r }); }
+    // 新規事業・集客の実験・デジタル商品の案への社長の判断（採用・保留・却下・もう一度）。外部へは何もしない
+    if (action === 'ventureDecide') {
+      const v = await Ventures.decideVenture(kv, { id: String(body.id || ''), decision: String(body.decision || ''), why: body.why });
+      await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が「${v.title}」を${Ventures.STATUS_LABEL[v.status] || v.status}にした` });
+      return send(res, 200, { item: v });
+    }
     if (action === 'regenImage') return send(res, 200, await V.requestRegen(kv, { id: body.id }));
     if (action === 'setImage') return send(res, 200, { image: await V.setOwnerImage(kv, { id: body.id, image: body.image }) });
+    // 新規ROOM商品紹介の停止・再開（KOT-13）：再開は社長の明示の操作（確認の言葉）だけ
+    if (action === 'roomStop') return send(res, 200, { roomStop: await V.setRoomStop(kv, { on: true }) });
+    if (action === 'roomResume') return send(res, 200, { roomStop: await V.setRoomStop(kv, { on: false, confirm: body.confirm, by: 'owner' }) });
     if (action === 'activate') return send(res, 200, { active: await V.setActive(kv, body.on === true) });
     return send(res, 400, { error: 'この操作はありません' });
   } catch (e) {

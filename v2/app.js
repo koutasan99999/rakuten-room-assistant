@@ -7,7 +7,7 @@
   var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
   // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
   var ST_LABEL = { work: '仕事中', queued: '順番待ち（続けて進めます）', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
-  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）', hold: '保留（商品が6点に足りない。24時間後にもう一度探す）' };
+  var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）', hold: '保留（商品が6点に足りない。24時間後にもう一度探す）', stopped: '停止中（新規ROOM商品紹介の停止・社長の再開待ち）' };
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -40,22 +40,105 @@
     }, function () { $('top-status').textContent = '通信できませんでした（次に自動で読み直します）'; });
   }
 
+  // 案件の内訳（実態どおり：進む／社長の承認待ち／画像待ちなどを分けて出す。承認待ちは「進行中」に数えない）
+  function caseLine(s) {
+    var m = s.summary || { total: s.cases.length, advancing: s.cases.filter(function (c) { return !c.wait; }).length, approval: 0, image: 0, budget: 0, error: 0 };
+    var parts = [];
+    if (m.running) parts.push('実行中' + m.running + '件');
+    if (m.queued) parts.push('次の定期実行で進む' + m.queued + '件');
+    if (m.approval) parts.push('社長の承認待ち（完成品の枠待ち）' + m.approval + '件');
+    if (m.image) parts.push('画像待ち' + m.image + '件');
+    if (m.budget) parts.push('予算・残高待ち' + m.budget + '件');
+    if (m.error) parts.push('エラー・保留' + m.error + '件');
+    if (m.stopped) parts.push('停止中（新規紹介の停止）' + m.stopped + '件');
+    return '案件' + m.total + '件：' + parts.join('／') + (m.advancing ? '' : '（いま進められる案件は0件。理由は下の案件ごとの表示）');
+  }
   function render() {
     var s = state;
     var working = s.staff.filter(function (x) { return x.status === 'work'; })[0];
     var active = s.cases.filter(function (c) { return !c.wait; }).length;
     if (s.quota) { $('top-status').textContent = 'OpenAIの残高がないため、AIを使う仕事を止めています。残高が戻ったら自動で続きから再開します（次に確かめる時刻 ' + hm(s.quota.until) + '）'; } else
-    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
+    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? caseLine(s) : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
     $('badge-pr').textContent = s.pr && s.pr.counts.approval ? String(s.pr.counts.approval) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
-    notice();
+    notice(); roomStopBar();
     Office.update(s.staff);
     renderCrew(); renderCases(); renderFlow();
     if (tab === 'sets' && !openSet) renderSets();
     if (tab === 'todo') renderTodo();
     if (tab === 'money') renderMoney();
     if (tab === 'pr') renderPr();
+    $('badge-biz').textContent = s.ventures && s.ventures.dash.ownerWaiting ? String(s.ventures.dash.ownerWaiting) : '';
+    if (tab === 'biz') renderBiz();
+  }
+
+  // 新規ROOM商品紹介の停止（KOT-13）：停止の理由と、社長の明示の再開の操作（確認の言葉つき）
+  function roomStopBar() {
+    var R = state.roomStop, box = $('room-stop'); if (!box) return;
+    box.textContent = '';
+    if (!R || !R.stopped) { box.hidden = true; return; }
+    box.hidden = false;
+    box.appendChild(el('p', 'field', '新規ROOM商品紹介を停止中（' + R.since + ' から）'));
+    box.appendChild(el('p', 'hint', R.reason + '。作りかけの案件と完成品は消さずに残しています。既存の完成品の販売改善と、ROOM以外で稼ぐ仕事は続けています。'));
+    box.appendChild(btn('新規紹介を再開する', 'btn ghost small-ghost', function () {
+      var w = prompt('新規ROOM商品紹介を再開します。よければ「再開する」と入力してください', '');
+      if (w === null) return;
+      api({ action: 'roomResume', confirm: w }).then(function (r) { if (r.status !== 200) { alert((r.data && r.data.error) || '再開できませんでした'); return; } refresh(); });
+    }));
+  }
+
+  // 事業タブ（KOT-12）：ROOMとは独立した3本の流れ。実際の記録だけを表示（無い数字は「未計測」）
+  var BIZ_STATUS = { active: '作成中', review: '社長の判断待ち', adopted: '採用', hold: '保留', rejected: '却下・不合格', stopped: '止まった（失敗）' };
+  function renderBiz() {
+    var box = $('biz'); box.textContent = '';
+    var V = state.ventures; if (!V) { box.appendChild(el('p', 'hint', '事業のデータを読み込めませんでした')); return; }
+    var D = V.dash, nv = function (v) { return v == null ? '未計測' : v; };
+    var c = el('div', 'card');
+    c.appendChild(el('p', 'field', '経営ダッシュボード（成果物と売上の指標）'));
+    c.appendChild(el('p', 'hint', '成果物 ' + D.artifacts + '件・社長の判断待ち ' + D.ownerWaiting + '件・販売ページの下書き ' + D.salesPageDrafts + '件・note等の原稿の下書き ' + D.noteDrafts + '件・集客の実験案 ' + D.experiments + '件・これらにかけたAI費用 ' + yen(D.spentTotalYen)));
+    c.appendChild(el('p', 'hint', '売上に近い数字：閲覧 ' + nv(D.funnel && D.funnel.views) + '・プロフィール ' + nv(D.funnel && D.funnel.profileVisits) + '・ROOMへの流入 ' + nv(D.funnel && D.funnel.roomClicks) + '・売上 ' + nv(D.funnel && D.funnel.sales) + '（社長の登録だけ。無いものは未計測）'));
+    c.appendChild(el('p', 'hint', 'ROOMの完成品（未投稿の在庫）：確認待ち ' + D.inventory.waiting + '・採用済みで未投稿 ' + D.inventory.adopted + '・投稿済み ' + D.inventory.posted));
+    if (V.rank.length) c.appendChild(el('p', 'hint', '新規副業の優先順（低コスト・手間が少ない・再現性。収益の予測は点に使わない）：' + V.rank.map(function (r, i) { return (i + 1) + '. ' + r.title + '（' + r.priority + '点）'; }).join(' ／ ')));
+    box.appendChild(c);
+    var order = ['venture', 'growth', 'digital'];
+    order.forEach(function (k) {
+      var S = V.streams[k]; var card = el('div', 'card');
+      card.appendChild(el('p', 'field', S.label));
+      var n = S.counts;
+      card.appendChild(el('p', 'hint', '作成中 ' + n.active + '・判断待ち ' + n.review + '・採用 ' + n.adopted + '・保留 ' + n.hold + '・却下 ' + n.rejected + '・止まった ' + n.stopped + '／今日のAI費用 ' + yen(S.spentToday) + '（上限 ' + S.dayCapYen + '円）／新しい案は' + (S.lastDiscoverAt ? '直近 ' + day(S.lastDiscoverAt) + ' ' + hm(S.lastDiscoverAt) : 'まだ作っていない') + '（20時間に1回まで）'));
+      card.appendChild(el('p', 'hint', '流れ：' + S.stages.map(function (s) { return nameOf(s.agent) + '「' + s.task + '」'; }).join(' → ')));
+      V.items.filter(function (x) { return x.stream === k; }).slice(0, 6).forEach(function (x) { card.appendChild(bizItem(x)); });
+      box.appendChild(card);
+    });
+    var dc = el('div', 'card'); dc.appendChild(el('p', 'field', '部署ごとの独立した仕事（最後にした仕事・成果物・次に着手できる仕事・待機の理由）'));
+    state.staff.forEach(function (s) {
+      var i = s.indep || {}; var p = el('p', 'hint');
+      p.textContent = s.name + '：' + (i.last ? '最後の仕事 ' + day(i.last.at) + ' ' + hm(i.last.at) + '「' + (i.last.text || '') + '」（' + i.last.count + '件）' : '独立した仕事はまだしていない') + '／' + (i.next ? '次に着手：' + i.next : '待機の理由：' + (i.wait || '今は担当の仕事がない'));
+      dc.appendChild(p);
+    });
+    box.appendChild(dc);
+    if (V.runs.length) { var rc = el('div', 'card'); rc.appendChild(el('p', 'field', '実行ログ（直近）')); V.runs.slice(0, 10).forEach(function (r) { rc.appendChild(el('p', 'hint', day(r.at) + ' ' + hm(r.at) + ' ' + nameOf(r.agent) + '：' + r.text + (r.yen ? '（' + yen(r.yen) + '）' : '（0円）') + (r.ok ? '' : '［失敗］'))); }); box.appendChild(rc); }
+  }
+  function bizItem(x) {
+    var d = el('details', 'biz-item'); var sm = el('summary', null, x.title + '【' + BIZ_STATUS[x.status] + '】' + (x.priority != null ? '・' + x.priority + '点' : '')); d.appendChild(sm);
+    var D = x.data || {}, add = function (t) { d.appendChild(el('p', 'hint', t)); };
+    add('出典：' + x.basis);
+    (x.sources || []).forEach(function (s) { add('調べた事実（' + day(s.at) + '）：' + s.label + '／' + s.status + (s.pages ? '・' + s.pages + 'ページ分' : '') + (s.priceMin ? '・上位の価格帯 ' + s.priceMin + '〜' + s.priceMax + '円' : '') + (s.why ? '（' + s.why + '）' : '')); });
+    if (x.stream === 'venture') { add('対象：' + D.customer + '／課題：' + D.problem); add('商品：' + D.product + '／販売経路：' + D.channel + '／収益モデル：' + D.revenueModel); add('収益の予測（仮定）：' + D.revenueAssumption); add('費用：初期 ' + D.initialCostYen + '円・維持 ' + D.monthlyCostYen + '円／オーナーの作業 週' + D.ownerHoursPerWeek + '時間／AIが代行：' + (D.aiDoes || []).join('・')); add('競合・需要：' + D.competitorsNote); add('リスク：規約 ' + ((D.risks || {}).terms || '') + '／著作権 ' + ((D.risks || {}).copyright || '') + '／医療 ' + ((D.risks || {}).medical || '')); add('最小の実験：' + D.minExperiment + '／成功：' + D.success + '／撤退：' + D.withdraw); add('なぜこの案か：' + D.whyChosen); }
+    if (x.proto) { add('販売ページの下書き（未公開）：' + x.proto.headline + '／' + x.proto.lead); add('注意：' + x.proto.notes); }
+    if (x.stream === 'growth') { add('仮説：' + D.hypothesis + '（対象：' + D.funnelStage + '）'); if (D.experiment) add('実験：' + D.experiment.what + '／測る数字：' + D.experiment.metric + '／成功：' + D.experiment.success); ((D.drafts || {}).posts || []).forEach(function (p) { add('投稿案：' + p.caption); }); ((D.drafts || {}).replies || []).forEach(function (p) { add('返信案（' + p.situation + '）：' + p.reply); }); if (x.funnel) add('実績の数字：閲覧 ' + (x.funnel.views == null ? '未計測' : x.funnel.views) + '・プロフィール ' + (x.funnel.profileVisits == null ? '未計測' : x.funnel.profileVisits) + '・ROOM流入 ' + (x.funnel.roomClicks == null ? '未計測' : x.funnel.roomClicks) + '・売上 ' + (x.funnel.sales == null ? '未計測' : x.funnel.sales)); add('アプリは投稿・コメントを送りません。実行は社長が手で行います'); }
+    if (x.stream === 'digital') { add('形：' + D.format + '／対象：' + D.target + '／独自性：' + D.originality + '／価格案（仮定）：' + D.priceIdea); if (x.manuscript) { add('無料記事の下書き：' + x.manuscript.freeArticle.slice(0, 200) + '…（' + x.manuscript.chars + '字）'); add('人間の確認が必要：' + x.manuscript.needsReview.join('・')); } }
+    if (x.audit) add('監査：' + (x.audit.ok ? '合格' : '不合格（' + x.audit.problems.join('／') + '）'));
+    add('費用（AI）：' + yen(x.yen) + '／成果物 ' + x.artifacts.length + '件');
+    x.log.forEach(function (l) { add(day(l.at) + ' ' + hm(l.at) + ' ' + nameOf(l.by) + '：' + l.text); });
+    if (x.decision) add('判断：' + x.decision.label + (x.decision.why ? '（' + x.decision.why + '）' : ''));
+    var row = el('div', 'row');
+    var go = function (dec) { return function () { var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || ''); api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderBiz); }); }; };
+    if (x.status === 'review') { row.appendChild(btn('採用', 'btn small', go('adopt'))); row.appendChild(btn('保留', 'btn ghost small-ghost', go('hold'))); row.appendChild(btn('却下', 'btn ghost small-ghost', go('reject'))); }
+    if (x.status === 'stopped') row.appendChild(btn('もう一度', 'btn small', go('retry')));
+    if (row.children.length) d.appendChild(row);
+    return d;
   }
 
   // 完成品のお知らせ（社長に通知：画面のお知らせ・タブの数字・ホーム画面のアイコンの数字（対応している端末））
@@ -131,6 +214,7 @@
     var b = $('sheet-body'); b.textContent = '';
     var h = el('p', 'sheet-name', s.name + '（' + s.job + '）'); h.style.borderColor = COLOR[id]; b.appendChild(h);
     b.appendChild(el('p', 'sheet-st', ST_LABEL[s.status] + (s.doing ? '：' + s.doing.replace(/^仕事なし：?/, '') : '')));
+    if (s.indep) b.appendChild(el('p', 'hint', '独立した仕事（ROOMの案件とは別）：' + (s.indep.last ? '最後に ' + day(s.indep.last.at) + ' ' + hm(s.indep.last.at) + '「' + s.indep.last.text + '」' : 'まだしていない') + '／' + (s.indep.next ? '次に着手：' + s.indep.next : '待機の理由：' + (s.indep.wait || '今は担当の仕事がない'))));
     var k = s.stats || {};
     var sg = el('div', 'stat-grid');
     [['今日の仕事', (k.today || 0) + '件'], ['これまでの工程', (k.steps || 0) + '件'], ['仕事探しで見つけた仕事', (k.side || 0) + '件'], ['完成品への貢献', (k.delivered || 0) + '件'], ['やり直し・停止', (k.retries || 0) + '・' + (k.stops || 0) + '件'], ['使ったAIの費用', yen(k.yen)]].forEach(function (x) { var d = el('div'); d.appendChild(el('small', null, x[0])); d.appendChild(el('b', null, x[1])); sg.appendChild(d); });
@@ -151,9 +235,31 @@
 
   // ---- 完成品 ----
   var ST = { waiting: '確認待ち', adopted: '採用', rejected: '却下', fixing: '修正中', posted: '投稿済み' };
+  // 紹介番号の一覧（KOT-11）：商品と番号を確認・コピーする。番号の無い既存の完成品には「番号を付ける」で割り当てる（消さない・番号は使い回さない）
+  function numbersPanel() {
+    var d = el('details', 'card'); d.appendChild(el('summary', null, '紹介番号の一覧（Instagramと楽天ROOMで同じ番号）'));
+    var body = el('div'); d.appendChild(body);
+    function paintNums(r) {
+      body.textContent = '';
+      body.appendChild(el('p', 'hint', 'Instagramの画像・キャプションと楽天ROOMの紹介文に、同じ番号を載せています。楽天ROOM内で番号を検索できるかは未確認のため、検索できるとは案内していません。'));
+      if (!r.numbers.length) body.appendChild(el('p', 'hint', 'まだ番号を付けた商品はありません。'));
+      r.numbers.forEach(function (n) {
+        var row = el('p', '', n.no + '　' + n.name.slice(0, 40) + (n.sets.length ? '（' + n.sets.map(function (s) { return s.title; }).join('、') + '）' : ''));
+        row.appendChild(copyBtn('番号をコピー', n.no)); body.appendChild(row);
+      });
+      if (r.numbers.length) body.appendChild(copyBtn('一覧をまとめてコピー', r.numbers.map(function (n) { return n.no + ' ' + n.name; }).join('\n')));
+      if (r.unnumbered && r.unnumbered.length) {
+        body.appendChild(el('p', 'hint warn', '番号の無い完成品が' + r.unnumbered.length + '件あります：' + r.unnumbered.map(function (s) { return s.title; }).join('、')));
+        body.appendChild(btn('既存の完成品に番号を付ける（中身は消しません）', 'btn small', function () { api({ action: 'productNumbersMigrate' }).then(function (m) { if (m.status === 200) paintNums(m.data); else body.appendChild(el('p', 'hint warn', (m.data && m.data.error) || '番号を付けられませんでした')); }); }));
+      }
+    }
+    d.addEventListener('toggle', function () { if (d.open && !body.firstChild) api({ action: 'productNumbers' }).then(function (r) { if (r.status === 200 && r.data.numbers) paintNums(r.data); else body.appendChild(el('p', 'hint warn', (r.data && (r.data.error || r.data.notice)) || '一覧を読めませんでした')); }); });
+    return d;
+  }
   function renderSets() {
     openSet = null;
     var box = $('sets'); box.textContent = '';
+    box.appendChild(numbersPanel());
     (state.drafts || []).forEach(function (d) {
       var c = el('details', 'card draft');
       c.appendChild(el('summary', null, '画像待ちの制作物：「' + d.title + '」'));
@@ -226,11 +332,11 @@
       s.products.forEach(function (p, i) {
         var pc = el('div', 'card product');
         var row = el('div', 'p-row'); var pi = el('img'); pi.src = p.image; pi.alt = ''; row.appendChild(pi);
-        var pt = el('div'); pt.appendChild(el('p', 'p-role', p.role || (i ? '代替・比較' : '本命'))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
+        var pt = el('div'); pt.appendChild(el('p', 'p-role', (p.no ? p.no + '　' : '') + (p.role || (i ? '代替・比較' : '本命')))); pt.appendChild(el('p', 'p-name', p.name)); pt.appendChild(el('p', 'hint', Number(p.price).toLocaleString('ja-JP') + '円' + (p.band ? '（' + p.band + '）' : '') + '・' + p.shop)); row.appendChild(pt); pc.appendChild(row);
         if (p.check) pc.appendChild(el('p', 'hint ' + (p.unverified ? 'warn' : 'ok'), p.check));
         var a = el('a', 'link', '楽天の商品ページを開く'); a.href = p.url; a.target = '_blank'; a.rel = 'noopener'; pc.appendChild(a);
         pc.appendChild(el('p', 'field', '楽天ROOMの紹介文')); pc.appendChild(el('pre', 'text', p.room));
-        var roomText = p.room + (p.tags && p.tags.length ? '\n\n' + p.tags.join(' ') : '');
+        var roomText = (p.no && p.room.indexOf(p.no) < 0 ? '【' + p.no + '】' : '') + p.room +(p.tags && p.tags.length ? '\n\n' + p.tags.join(' ') : '');
         if (p.code && window.V2Ig) {
           pc.appendChild(el('p', 'hint', p.roomDone ? '楽天ROOMに登録済み（社長の記録）' : '① 紹介文をコピー → ② 楽天ROOMで貼り付けて登録 → ③「ROOMに登録した」を押す'));
           var rb = el('div', 'btns');
@@ -642,8 +748,9 @@
   function switchTab(t) {
     tab = t;
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
-    ['office', 'sets', 'todo', 'post', 'pr', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
+    ['office', 'sets', 'todo', 'post', 'pr', 'biz', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
+    if (t === 'biz') renderBiz();
     if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost(); if (t === 'pr') renderPr();
     window.scrollTo(0, 0);
   }
