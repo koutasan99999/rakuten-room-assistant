@@ -678,8 +678,8 @@ test('確認待ちが上限（5件）でも会社は止まらない：企画・�
   const r = await run(kv, env);
   assert.ok((r.steps || []).some((x) => x.startsWith('writer:copy')), `枠が空いたら文章から：${r.steps}`);
   cases = await kv.getJson(V.V2_KEYS.cases);
-  // 1回の実行の途中で、枠の数え直しの前に進んでいた案件が1件いることがある（実行の最初に数えた枠の数のため）。0円の部署別の仕事（KOT-17）で実行の順番が変わり、この場面が起きる
-  assert.ok(cases.filter((c) => !c.wait || c.wait.kind !== 'slot').length <= 2 + cases.filter((c) => FLOW_BEFORE(c)).length);
+  // 枠は1つだけ空いた：文章より先へ進むのは1件まで（実行の途中でも枠を数え直す）
+  assert.ok(cases.filter((c) => !c.wait || c.wait.kind !== 'slot').length <= 1 + cases.filter((c) => FLOW_BEFORE(c)).length, `枠を超えて文章へ進んだ：${JSON.stringify(cases.map((c) => [c.step, c.wait && c.wait.kind]))}`);
 });
 const FLOW_BEFORE = (c) => V.FLOW.indexOf(c.step) < V.FLOW.indexOf('copy');
 
