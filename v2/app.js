@@ -201,6 +201,25 @@
       mc.appendChild(d);
     });
     box.appendChild(mc);
+    renderDeptWork(box);
+  }
+  // 部署別の0円の仕事（KOT-17）：実際の成果物・実行ログ・部署別のキュー・棚卸し（無料／外部データ／AI）
+  function renderDeptWork(box) {
+    var D = state.deptWork; if (!D) return;
+    var c = el('div', 'card'); var KL = { free: '無料（コードの計算）', external: '外部データが必要', ai: 'AIの推論が必要' };
+    c.appendChild(el('p', 'field', '部署別の0円の仕事（実行ログと成果物）'));
+    c.appendChild(el('p', 'hint', D.note));
+    var n = (D.log || []).length;
+    c.appendChild(el('p', 'hint', '直近の実行：' + n + '件（費用はすべて0円）' + (n ? '' : '。まだ実行されていない（次の定期実行で、データが変わった部署だけ動く）')));
+    (D.log || []).slice(0, 10).forEach(function (l) { c.appendChild(el('p', 'hint', String(l.at).slice(5, 16).replace('T', ' ') + ' ' + nameOf(l.dept) + '：' + l.title + '（' + l.summary + '）')); });
+    box.appendChild(c);
+    var q = el('div', 'card'); q.appendChild(el('p', 'field', '部署別の改善キュー（優先順）'));
+    if (!(D.queue || []).length) q.appendChild(el('p', 'hint', 'キューは空（成果物がまだ無い、または改善点が見つかっていない）'));
+    (D.queue || []).slice(0, 12).forEach(function (x) { q.appendChild(el('p', 'hint', x.rank + '. ' + x.deptName + '：' + x.task + '（' + x.needLabel + '）' + (x.why ? ' 根拠：' + x.why : ''))); });
+    box.appendChild(q);
+    var i = el('div', 'card'); i.appendChild(el('p', 'field', '全8部署の仕事の棚卸し'));
+    (D.inventory || []).forEach(function (x) { i.appendChild(el('p', 'hint', x.deptName + '：' + x.task + '【' + KL[x.kind] + '】' + (x.impl ? '' : '（未実装）') + (x.note ? ' ' + x.note : ''))); });
+    box.appendChild(i);
   }
   function renderBiz() {
     var box = $('biz'); box.textContent = '';
