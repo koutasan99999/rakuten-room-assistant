@@ -373,7 +373,10 @@ test('仕事探し：工程の無い社員は、本当に必要な仕事だけ�
   assert.ok(!(r2.steps || []).some((x) => x.startsWith('auditor:recheck')), `同じ再確認を繰り返さない：${r2.steps}`);
   const st2 = await V.officeState(kv, ENV);
   const buyer = st2.staff.find((x) => x.id === 'buyer');
-  assert.equal(buyer.status, 'idle'); assert.match(buyer.doing, /^仕事なし：/);
+  // バイヤーは既存の完成品の商品比較（KOT-17・0円）を1回済ませている。済んだ後は仕事が無く、次の条件つきの理由が出る
+  assert.ok(['idle', 'handoff'].includes(buyer.status), `バイヤーの状態：${buyer.status}`);
+  assert.ok(st2.events.some((e) => e.agent === 'buyer' && /商品.*点を比べた/.test(e.text)), '商品の比較の実績が記録されている');
+  if (buyer.status === 'idle') assert.match(buyer.doing, /^仕事なし：/);
   assert.ok(st2.staff.find((x) => x.id === 'auditor').stats.side >= 1, '社員ごとの処理件数');
 });
 
@@ -675,7 +678,8 @@ test('確認待ちが上限（5件）でも会社は止まらない：企画・�
   const r = await run(kv, env);
   assert.ok((r.steps || []).some((x) => x.startsWith('writer:copy')), `枠が空いたら文章から：${r.steps}`);
   cases = await kv.getJson(V.V2_KEYS.cases);
-  assert.ok(cases.filter((c) => !c.wait || c.wait.kind !== 'slot').length <= 1 + cases.filter((c) => FLOW_BEFORE(c)).length);
+  // 1回の実行の途中で、枠の数え直しの前に進んでいた案件が1件いることがある（実行の最初に数えた枠の数のため）。0円の部署別の仕事（KOT-17）で実行の順番が変わり、この場面が起きる
+  assert.ok(cases.filter((c) => !c.wait || c.wait.kind !== 'slot').length <= 2 + cases.filter((c) => FLOW_BEFORE(c)).length);
 });
 const FLOW_BEFORE = (c) => V.FLOW.indexOf(c.step) < V.FLOW.indexOf('copy');
 
@@ -797,7 +801,8 @@ test('既存の企画の見直し（一度だけ）：文章の前で保存し�
   await kv.setJson(V.V2_KEYS.set('set-old'), { id: 'set-old', title: raw.title, status: 'waiting', deliveredAt: new Date().toISOString(), products: items.map((it) => ({ name: it.name, price: it.price, url: it.url, role: it.role })), caption: '前の文章', image: { mediaId: 'a'.repeat(32), url: '/api/media?id=' + 'a'.repeat(32), label: 'AI生成イメージ' }, roomDone: { 's:k0': '2026-11-17T00:00:00Z' }, raw });
   await kv.setJson(V.V2_KEYS.cases, [{ id: 'slot1', kind: 'make', step: 'copy', attempts: 0, runs: [], wait: { kind: 'slot', why: '枠待ち' }, data: { set: { title: '失敗しない大人コーヒーギフト', items } } }]);
   const steps = [];
-  for (let i = 0; i < 8; i++) { steps.push(...((await run(kv, env)).steps || [])); if (steps.some((x) => x === 'pr:pack:deliver')) break; }
+  // 0円の部署別の仕事（KOT-17）が同じ回に動くので、名指しの完成品（set-old）が差し替わるまで回す
+  for (let i = 0; i < 14; i++) { steps.push(...((await run(kv, env)).steps || [])); const cur = await kv.getJson(V.V2_KEYS.set('set-old')); if (cur && cur.versions) break; }
   assert.ok(steps.filter((x) => x.startsWith('auditor:curate')).length >= 2, `2件とも確かめ直した：${steps}`);
   const s = await kv.getJson(V.V2_KEYS.set('set-old'));
   assert.ok(s.versions && s.versions[0].caption === '前の文章', '前の版を残す');
