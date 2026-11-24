@@ -228,7 +228,20 @@
     d.body = body; return d;
   }
   function clip(t, n) { t = String(t == null ? '' : t); return t.length > n ? t.slice(0, n) + '…' : t; }
-  function ventureGo(x, dec) { return function () { var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || ''); api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderBiz); }); }; }
+  var ventureBusy = {};
+  function ventureGo(x, dec) { return function (ev) {
+    if (ventureBusy[x.id]) return;
+    var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || '');
+    ventureBusy[x.id] = true; var b = ev && ev.currentTarget; if (b) { b.disabled = true; b.dataset.label = b.textContent; b.textContent = '保存中…'; }
+    api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) {
+      if (r.status !== 200) { alert('保存できませんでした：' + ((r.data && r.data.error) || '通信または認証の問題'));
+      } else if (r.data && r.data.item && state && state.ventures) {
+        // 返ってきた保存済みの状態をすぐ画面に反映（判断待ちの件数も即座に減る）
+        state.ventures.items = state.ventures.items.map(function (y) { return y.id === x.id ? r.data.item : y; });
+        render();
+      }
+    }, function () { alert('通信できませんでした。判断は保存されていません。もう一度押してください'); }).then(function () { delete ventureBusy[x.id]; return refresh(); }).then(function () { renderBiz(); });
+  }; }
   var NEED_CLS = { free: 'free', ai: 'ai', owner: 'owner', external: 'ext' };
   var NEED_SHORT = { free: '無料で自動', ai: 'AI予算が要る', owner: '社長の操作', external: '外部データが要る' };
   // タップで該当箇所へ移動（KOT-20）：別タブなら切替→折りたたみを開く→隠れない位置へスクロール→一時強調

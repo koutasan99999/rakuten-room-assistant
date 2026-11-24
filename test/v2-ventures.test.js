@@ -150,3 +150,21 @@ test('社長の判断（API）：完成した案だけ採用・保留・却下�
   const bad = await call({ action: 'ventureDecide', id: done.id, decision: 'xxx' });
   assert.equal(bad.status, 400);
 });
+
+test('KOT-21：採用・保留・却下は保存され、読み直しても残り、連打しても壊れない。判断待ちは減る', async () => {
+  const kv = memoryKv();
+  const mk = (id, status) => ({ id, stream: 'venture', title: '案' + id, status, stage: 'done', createdAt: new Date().toISOString(), tries: {}, data: IDEA, sources: [], artifacts: [], log: [] });
+  await kv.setJson('v2:ventures', { items: [mk('a', 'review'), mk('b', 'review'), mk('c', 'review'), mk('d', 'active')] });
+  const n = async () => (await X.venturesState(kv, ENV)).items.filter((x) => x.status === 'review').length;
+  assert.equal(await n(), 3);
+  assert.equal((await X.decideVenture(kv, { id: 'a', decision: 'adopt' })).status, 'adopted');
+  assert.equal((await X.decideVenture(kv, { id: 'a', decision: 'adopt' })).status, 'adopted'); // 連打
+  assert.equal((await X.decideVenture(kv, { id: 'b', decision: 'hold', why: 'あとで' })).status, 'hold');
+  assert.equal((await X.decideVenture(kv, { id: 'c', decision: 'reject', why: '合わない' })).status, 'rejected');
+  assert.equal(await n(), 0);
+  const saved = (await kv.getJson('v2:ventures')).items;
+  assert.deepEqual(saved.map((x) => x.status), ['adopted', 'hold', 'rejected', 'active']);
+  assert.equal(saved[0].log.filter((l) => l.by === 'owner').length, 1, '二重に記録しない');
+  await assert.rejects(() => X.decideVenture(kv, { id: 'd', decision: 'adopt' }), /まだ完成していない/);
+  await assert.rejects(() => X.decideVenture(kv, { id: 'zz', decision: 'adopt' }), /ありません/);
+});
