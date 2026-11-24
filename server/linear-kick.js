@@ -31,7 +31,7 @@ export async function decide({ token, fetchImpl = fetch, now = Date.now(), repo 
 }
 
 // 呼ばれたことと結果を必ず残す（2026-11-24：QStash から呼ばれているか・鍵が無いのか・署名が違うのかを、開発管理画面で見分けられるように。秘密の値は残さない）
-async function note(kv, outcome) {
+export async function note(kv, outcome) {
   if (!kv) return;
   const at = new Date().toISOString();
   await kv.setJson('linear-kick:last', { at, ...outcome }).catch(() => {});
@@ -41,6 +41,20 @@ async function note(kv, outcome) {
   d.calls += 1; if (outcome.start) d.started += 1; else if (outcome.rejected) d.rejected += 1; else d.skipped += 1;
   d.lastStartAt = outcome.start ? at : d.lastStartAt || '';
   await kv.setJson('linear-kick:stats', d).catch(() => {});
+}
+
+// 予備の起動（2026-11-24）：既存の QStash の定期実行（/api/worker・15分ごと）からも、自動開発を起動する。
+//   /api/linear-kick の定期実行が無い・届かないときでも、最低15分ごとに起動できる。鍵（GH_DISPATCH_TOKEN）が無ければ「未設定」と記録する（原因が開発タブで分かる）
+export async function kickFromWorker(kv, env, { decideImpl = decide } = {}) {
+  if (!kv) return { start: false, why: '保存場所が未接続' };
+  const token = String(env.GH_DISPATCH_TOKEN || '').trim();
+  if (!token) { const o = { start: false, why: 'GH_DISPATCH_TOKEN が未設定（Vercel の環境変数）', tokenConfigured: false, via: 'worker' }; await note(kv, o); return o; }
+  if (!(await kv.set('linear-kick:lock', new Date().toISOString(), { nx: true, ex: Math.round(MIN_GAP_MS / 1000) }))) return { start: false, why: '4分以内に起動の確認をした' };
+  let out;
+  try { out = await decideImpl({ token }); } catch (e) { out = { start: false, why: `GitHub に接続できない（${String(e && e.name || 'error')}）` }; }
+  const o = { ...out, tokenConfigured: true, via: 'worker' };
+  await note(kv, o);
+  return o;
 }
 
 export default async function handler(req, res, env = process.env) {

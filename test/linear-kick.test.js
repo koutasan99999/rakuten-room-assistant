@@ -69,3 +69,17 @@ test('QStash の署名が無い・違う呼び出しは断る。鍵が未設定�
   assert.match((await kv.getJson('linear-kick:last')).why, /4分以内/);
   assert.ok(!JSON.stringify(await kv.getJson('linear-kick:last')).includes(TOKEN), '記録に鍵の値を残さない');
 });
+
+test('予備の起動（/api/worker の QStash の定期実行から）：鍵が無ければ「未設定」と記録して起動しない。鍵があれば同じ判断で起動し、4分以内は重ねない', async () => {
+  const { kickFromWorker } = await import('../server/linear-kick.js');
+  const kv = memoryKv();
+  const r0 = await kickFromWorker(kv, {});
+  assert.equal(r0.start, false); assert.equal(r0.tokenConfigured, false);
+  assert.match((await kv.getJson('linear-kick:last')).why, /未設定/);
+  let n = 0;
+  const r1 = await kickFromWorker(kv, { GH_DISPATCH_TOKEN: TOKEN }, { decideImpl: async () => { n += 1; return { start: true, why: '起動した' }; } });
+  assert.equal(r1.start, true); assert.equal(r1.via, 'worker');
+  const r2 = await kickFromWorker(kv, { GH_DISPATCH_TOKEN: TOKEN }, { decideImpl: async () => { n += 1; return { start: true }; } });
+  assert.equal(r2.start, false); assert.equal(n, 1, '4分以内は重ねない');
+  assert.ok(!JSON.stringify(await kv.getJson('linear-kick:last')).includes(TOKEN));
+});
