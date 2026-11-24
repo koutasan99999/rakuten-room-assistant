@@ -10,6 +10,7 @@ import { v1Enabled } from '../lib/v1-retired.js';
 const V = V2;
 const V2_CHAIN_MS = 6000; // 1.0がこの時間までに終わったら、同じ回で2.0を進める（関数の上限60秒の内側）
 import { maskSecrets } from '../lib/ai.js';
+import { kickFromWorker } from './linear-kick.js';
 import { verifyQstash, keyInfo, readRawBody } from '../lib/qstash.js';
 
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
@@ -86,6 +87,8 @@ export default async function handler(req, res, env = process.env) {
       if (!runV2 && trigger === 'qstash') runV2 = (await kv.incr('v2:alt')) % 2 === 0;
       if (runV2) {
         const r2 = await V2.tick({ kv, env, referer: requestReferer(req, env), origin: appOrigin(req, env), startedAt, trigger, probeNow: trigger === 'workflow_dispatch' });
+        // 自動開発の予備の起動（QStash の定期実行と、手動の実行のとき。結果は応答の devKick に出る＝鍵の有無が分かる。失敗しても仕事の結果には影響させない）
+        if (trigger === 'qstash' || trigger === 'workflow_dispatch') r2.devKick = await kickFromWorker(kv, env).catch((e) => ({ start: false, why: String(e && e.name || 'error') }));
         const chain = await chainNext({ kv, env, req, more: !!r2.more, skipped: !!r2.skipped, startedAt });
         if (!r2.skipped) await kv.setJson('v2:chain:last', { at: new Date().toISOString(), trigger, ms: Date.now() - startedAt, ...chain }).catch(() => {}); // 呼んだか・呼ばなかった理由を残す（確かめられるように）
         return send(res, 200, { company: 'v2', ...r2, chain });

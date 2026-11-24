@@ -9,6 +9,7 @@
 ---
 
 - 自動開発の自動マージ・本番の確認（2026-11-24・KOT-14・.github/workflows/linear-claude.yml・scripts/linear-claude/・docs/linear-claude.md）：PR のあと、独立レビュー（別の Claude）→ 自動マージの判定（テスト・レビュー・守るファイル・大きさ・秘密・ラベル）→ 最新 main との整合（競合なら止める・テストのやり直し）→ Preview 成功 → squash マージ → 本番の /api/version が切り替わるのを確かめ、画面と API を確認 → Linear（Done／In Review＋理由／失敗＋戻し方）と開発タブに報告。優先順位は Linear の優先度 → 【緊急】【最優先】→ 古い順
+- 自動開発の予備の起動（2026-11-24・server/linear-kick.js kickFromWorker・server/worker.js）：既存の QStash の定期実行（/api/worker・15分ごと）と手動の実行のたびに、自動開発（linear-claude.yml）を起動する（GH_DISPATCH_TOKEN があるときだけ。無ければ「未設定」と記録し、開発タブと worker の応答の devKick に出る）。/api/linear-kick の5分ごとの定期実行が無くても最低15分ごとに起動できる
 - 開発タブ（2026-11-24・KOT-14・server/dev.js・v2/app.js renderDev）：依頼・着手・段階・テスト・レビュー・マージ・本番反映・本番の確認・停止の理由・次の対応・リンク。待ち行列（処理しない理由つき）と、5分ごとの起動役の記録（最後の呼び出し・今日の回数）。/api/version（本番のコミット）
 - 【停止中】新規ROOM商品紹介（2026-11-24・KOT-13・lib/v2/company.js roomStopState／setRoomStop・v2/app.js の上部の帯）：既定で停止（保存が無い・壊れていても停止）。止めるもの＝新しい案件・作りかけの紹介（make・redo）の続きと再試行・バイヤーの新商品の探索。作りかけは消さずに「停止中」で保存し、再開で元の待ちに戻る。止めないもの＝社長の修正依頼・表紙の作り直し・既存の完成品の販売改善・ROOM以外の収益の仕事（KOT-12）・成果の記録。再開は社長が画面で「再開する」と入力したときだけ（自動では解除しない）
 - 統合（2026-11-24・KOT-14）：PR #156（KOT-9）・#158（KOT-11）・#159（KOT-12）を1つに統合。#157（KOT-10）は運用終了した1.0の worker（lib/worker.js）を変える内容で、2.0には効かないため取り込まない
