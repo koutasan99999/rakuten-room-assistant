@@ -74,7 +74,7 @@ test('企画：空き時間に新しい施策を考える（規約違反・重�
   assert.equal(ai.length, 1, r.done);
   assert.equal(ai[0].status, 'proposed');
   assert.match(ai[0].basis, /AIの知識（未確認）/);
-  const again = await V.findWork('planner', { kv, env: ENV });
+  const again = await G.ideaWork(kv);
   assert.ok(again.none && /1日1回/.test(again.none));
   const g = await kv.getJson('v2:growth');
   g.ideas.push({ id: 'i2', name: 'あ', why: 'x', steps: ['a'] }, { id: 'i3', name: 'い', why: 'x', steps: ['a'] }); delete g.ideasAt;
