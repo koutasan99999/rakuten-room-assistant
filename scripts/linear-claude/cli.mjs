@@ -5,7 +5,8 @@
 //   node cli.mjs finish               … 結果（RESULT=success|failure）を Linear に書く（ラベル・状態・コメント・PRのリンク）
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { createClient } from './linear-api.mjs';
-import { config, eligibility, pickCandidate, checkLength, branchName, buildPrompt, labelNames, safeText, limitReason } from './lib.mjs';
+import { config, eligibility, pickCandidate, checkLength, branchName, buildPrompt, labelNames, safeText, limitReason, urgency } from './lib.mjs';
+import { report } from './report.mjs';
 
 const env = process.env;
 const log = (...a) => console.log(...a);
@@ -59,10 +60,12 @@ export async function pick({ client, cfg, runUrl, runId, only, prs = openPrsFor,
   if (only) issues = issues.filter((i) => i.identifier === only || i.id === only);
   const skipped = issues.filter((i) => !eligibility(i, cfg).ok);
   for (const i of skipped) log(`対象外 ${i.identifier}：${eligibility(i, cfg).reason}`);
+  // 開発管理画面に、待っているチケットと選ばれない理由を送る（失敗しても処理は止めない）
+  await report({ queue: issues.map((i) => ({ id: i.identifier, title: safeText(i.title, 120), url: i.url, priority: i.priority ?? null, createdAt: i.createdAt, ok: eligibility(i, cfg).ok, why: eligibility(i, cfg).reason || '' })).sort((a, b) => urgency(a) - urgency(b)) });
   const issue = pickCandidate(issues, cfg);
   if (!issue) { log('処理するチケットは無い'); return null; }
   // 上限（受付の印を付ける前に確かめる。超えていればチケットには触らず、次の実行で改めて確かめる）
-  const limit = limitReason(await recent(), cfg);
+  const limit = limitReason(await recent(), cfg, Date.now(), { urgent: Number(issue.priority) === 1 });
   if (limit) { log(`::warning::上限のため今回は受け付けない：${limit}`); return null; }
   log(`選んだチケット：${issue.identifier}`);
 
@@ -88,7 +91,8 @@ export async function pick({ client, cfg, runUrl, runId, only, prs = openPrsFor,
 
   const inProgress = stateId(meta, 'In Progress', 'started');
   if (inProgress && again.state?.type !== 'started') await client.setState(issue.id, inProgress);
-  await client.comment(issue.id, `🤖 Claude Code（GitHub Actions）が受け付けました。作業ブランチで実装し、npm test のあとPRを作ります（自動ではマージしません）。\n\n実行の記録：${runUrl}`);
+  await client.comment(issue.id, `🤖 Claude Code（GitHub Actions）が受け付けました。作業ブランチで実装 → npm test → PR → 独立レビュー → 自動マージの条件の確認 → マージ → 本番反映の確認 まで進めます。条件を満たさないときはマージせず、理由をここに書きます。\n\n実行の記録：${runUrl}`);
+  await report({ ticket: { id: issue.identifier, title: safeText(issue.title, 200), url: issue.url, requestedAt: issue.createdAt, priority: issue.priority ?? null }, stage: { name: 'accepted', status: 'done', detail: '受け付けた（Claude処理中）', run: runUrl } });
   return { issue_id: issue.id, identifier: issue.identifier, branch: branchName(issue.identifier, runId) };
 }
 
@@ -100,35 +104,50 @@ export async function prompt({ client, cfg, issueId }) {
   if (!cfg.allowedCreators.includes(issue.creator?.id)) throw new Error('作成者が許可リストに無い');
   const len = checkLength(issue, cfg);
   if (!len.ok) throw new Error(len.reason);
-  return { text: buildPrompt(issue), meta: { id: issue.id, identifier: issue.identifier, title: issue.title, url: issue.url } };
+  return { text: buildPrompt(issue), meta: { id: issue.id, identifier: issue.identifier, title: issue.title, url: issue.url, labels: names, priority: issue.priority ?? null, createdAt: issue.createdAt } };
 }
 
-export async function finish({ client, cfg, issueId, result, prUrl, testText, reason, runUrl, waitMs = 5000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+// 結果を Linear に書く。result：deployed（マージ・本番の確認まで済み）／pr（PRまで。自動マージの条件を満たさず人の確認待ち）
+//   ／prod-failed（マージしたが本番の確認に失敗）／failure（途中で止まった）
+export async function finish({ client, cfg, issueId, result, prUrl, testText, reason, runUrl, review = '', mergeSha = '', prodCommit = '', waitMs = 5000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const meta = await client.teamMeta(cfg.team);
   const running = labelId(meta, cfg.runningLabel);
   const done = labelId(meta, cfg.doneLabel);
   const failed = labelId(meta, cfg.failedLabel);
   const issue = await client.getIssue(issueId);
   const names = labelNames(issue);
-  const ok = result === 'success';
+  // prod-failed はマージ済み：「Claude失敗」にすると、ラベルを外したときに同じ依頼をもう一度実装してしまうため「Claude完了」にして、本番の確認と戻し方を書く
+  const ok = result === 'success' || result === 'deployed' || result === 'pr' || result === 'prod-failed';
   if (names.includes(cfg.runningLabel)) await client.removeLabel(issueId, running);
   await client.addLabel(issueId, ok ? done : failed);
   if (prUrl) await client.linkUrl(issueId, prUrl, 'GitHub のPR（Claude Code）');
-  if (ok) {
-    // PRのリンクを付けると、Linear の GitHub 連携の自動化が少し遅れて状態を In Progress に戻すことがある（KOT-7 の E2E で確認）。
-    // 待ってから In Review にし、読み直して戻っていればもう一度だけ直す
-    const review = stateId(meta, 'In Review', 'started');
-    if (review) {
-      if (prUrl) await sleep(waitMs);
-      await client.setState(issueId, review);
-      await sleep(waitMs);
-      const now = await client.getIssue(issueId);
-      if (now.state?.id !== review) await client.setState(issueId, review);
-    }
+  // PRのリンクを付けると、Linear の GitHub 連携の自動化が少し遅れて状態を変えることがある（KOT-7 の E2E で確認）。待ってから状態を決め、読み直して違えばもう一度だけ直す
+  const target = result === 'deployed' ? stateId(meta, 'Done', 'completed') : ok ? stateId(meta, 'In Review', 'started') : null;
+  if (target) {
+    if (prUrl) await sleep(waitMs);
+    await client.setState(issueId, target);
+    await sleep(waitMs);
+    const now = await client.getIssue(issueId);
+    if (now.state?.id !== target) await client.setState(issueId, target);
   }
-  const lines = ok
-    ? ['🤖 Claude Code がPRを作りました（自動ではマージしません）。', '', `- PR：${prUrl}`, `- ${testText || 'npm test：結果なし'}`, `- 実行の記録：${runUrl}`]
-    : ['🤖 Claude Code の自動処理が完了しませんでした。', '', `- 理由：${safeText(reason || '不明', 800)}`, prUrl ? `- 途中のPR（下書き）：${prUrl}` : null, testText ? `- ${testText}` : null, `- 実行の記録：${runUrl}`, '', '直したら「Claude失敗」ラベルを外すと、もう一度処理します。'];
+  const head = {
+    deployed: '🤖 Claude Code が開発し、独立レビュー・テストのあと自動でマージし、本番への反映を確認しました。',
+    success: '🤖 Claude Code がPRを作りました。',
+    pr: '🤖 Claude Code がPRを作りましたが、自動マージの条件を満たさなかったため、マージしていません（人の確認待ち）。',
+    'prod-failed': '🤖 自動でマージしましたが、本番への反映の確認に失敗しました。',
+    failure: '🤖 Claude Code の自動処理が完了しませんでした。',
+  }[result] || '🤖 Claude Code の自動処理の結果です。';
+  const lines = [head, '',
+    prUrl ? `- PR：${prUrl}` : null,
+    testText ? `- ${testText}` : null,
+    review ? `- 独立レビュー：${safeText(review, 200)}` : null,
+    mergeSha ? `- マージ：${mergeSha.slice(0, 7)}` : null,
+    result === 'deployed' ? `- 本番：反映を確認（本番のコミット ${String(prodCommit).slice(0, 7)}・画面とAPIの確認に成功）` : result === 'pr' || result === 'success' ? '- 本番：未反映（マージしていないため）' : null,
+    reason ? `- ${result === 'pr' ? '自動マージしなかった理由' : '理由'}：${safeText(reason, 800)}` : null,
+    `- 実行の記録：${runUrl}`,
+    result === 'prod-failed' ? '\n戻し方：Vercel の Deployments で、ひとつ前の本番（Ready）を選び「Instant Rollback」。または、このPRの「Revert」でPRを作って取り込む。' : null,
+    result === 'failure' ? '\n直したら「Claude失敗」ラベルを外すと、もう一度処理します。' : null,
+  ];
   await client.comment(issueId, lines.filter((x) => x !== null).join('\n'));
 }
 
@@ -152,7 +171,7 @@ async function main() {
     writeFileSync(metaFile, JSON.stringify(r.meta));
     log('指示を作った');
   } else if (cmd === 'finish') {
-    await finish({ client, cfg, issueId: env.ISSUE_ID, result: env.RESULT, prUrl: env.PR_URL, testText: env.TEST_TEXT, reason: env.REASON, runUrl });
+    await finish({ client, cfg, issueId: env.ISSUE_ID, result: env.RESULT, prUrl: env.PR_URL, testText: env.TEST_TEXT, reason: env.REASON, runUrl, review: env.REVIEW_TEXT, mergeSha: env.MERGE_SHA, prodCommit: env.PROD_COMMIT });
     log(`Linear に結果を書いた（${env.RESULT}）`);
   } else {
     throw new Error(`使い方: cli.mjs pick | prompt <file> | finish`);

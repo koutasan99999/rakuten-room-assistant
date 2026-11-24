@@ -174,3 +174,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 /* 新規ROOM商品紹介の停止（KOT-13） */
 .room-stop { margin: 8px 16px; padding: 10px 12px; border: 1px solid #c0392b; border-radius: 10px; background: rgba(192, 57, 43, .06); }
 .room-stop p { margin: 2px 0; }
+/* 開発管理（KOT-14） */
+.dev-card.st-failed { border-left: 4px solid #c0392b; }
+.dev-card.st-waiting { border-left: 4px solid #b9770e; }
+.dev-card.st-done { border-left: 4px solid #1e8449; }

@@ -73,6 +73,61 @@
     if (tab === 'biz') renderBiz();
   }
 
+  // ---- 開発管理（2026-11-24・KOT-14）：ChatGPT → Linear → Claude Code → PR → 独立レビュー → 自動マージ → 本番反映 → 本番の確認 の進み具合。実際の記録だけ ----
+  var DEV_STATUS = { done: '完了', running: '進行中', failed: '失敗・停止', skipped: '省略', waiting: '人の確認待ち' };
+  function stamp(iso) { return iso ? day(iso) + ' ' + hm(iso) : '—'; }
+  function link(text, href) { var a = el('a', 'link', text); a.href = href; a.target = '_blank'; a.rel = 'noopener'; return a; }
+  function devNext(t) {
+    var last = t.stages && t.stages.length ? t.stages[t.stages.length - 1] : null;
+    if (t.next) return t.next;
+    if (!last) return '受付を待っています';
+    if (last.name === 'finish' && last.status === 'done') return 'なし（本番に反映し、動作を確認済み）';
+    if (last.status === 'waiting') return '人の確認が必要：PRを開き、自動マージしなかった理由を見て、取り込むか決める';
+    if (last.status === 'failed') return '原因を直す。直したら Linear の「Claude失敗」ラベルを外すと、もう一度処理します';
+    return '自動で次の段階へ進みます';
+  }
+  function renderDev() {
+    var box = $('dev'); box.textContent = '';
+    box.appendChild(el('p', 'hint', '読み込み中…'));
+    fetch('../api/dev', { headers: { 'x-app-passcode': pass() } }).then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); }).then(function (r) {
+      box.textContent = '';
+      if (r.status !== 200) { box.appendChild(el('p', 'card hint warn', (r.data && r.data.error) || '読み込めませんでした')); return; }
+      var D = r.data;
+      var k = el('div', 'card');
+      k.appendChild(el('p', 'field', '5分ごとの起動（QStash → /api/linear-kick → GitHub Actions）'));
+      if (!D.kick) k.appendChild(el('p', 'hint warn', 'QStash からの呼び出しの記録がまだありません。Upstash の QStash に、/api/linear-kick を5分ごとに呼ぶ定期実行が無い可能性があります（それまでは GitHub の定期実行だけで、数時間に1回の起動になります）'));
+      else {
+        k.appendChild(el('p', 'hint', '最後の呼び出し：' + stamp(D.kick.at) + '（' + (D.kick.start ? '起動した' : D.kick.why || '起動しなかった') + '）'));
+        if (D.kickStats) k.appendChild(el('p', 'hint', '今日（' + D.kickStats.day + '）：呼び出し ' + D.kickStats.calls + '回・起動 ' + D.kickStats.started + '回・断った ' + D.kickStats.rejected + '回・起動しなかった ' + D.kickStats.skipped + '回（実行中や直前の実行と重ならないように）'));
+        if (D.kick.tokenConfigured === false) k.appendChild(el('p', 'hint warn', 'GitHub を起動する鍵（GH_DISPATCH_TOKEN）が Vercel に未設定のため、起動できません'));
+      }
+      box.appendChild(k);
+      var q = (D.queue && D.queue.items) || [];
+      var qc = el('div', 'card');
+      qc.appendChild(el('p', 'field', '依頼の待ち行列（Linear・優先度の高い順）' + (D.queue ? '　' + stamp(D.queue.at) + ' 時点' : '')));
+      if (!q.length) qc.appendChild(el('p', 'hint', '待っている依頼はありません（または、まだ記録がありません）'));
+      q.forEach(function (x) { var p = el('p', 'hint'); p.appendChild(link(x.id, x.url || '#')); p.appendChild(document.createTextNode('　' + x.title + '（' + (x.ok ? '次に処理できる' : '処理しない理由：' + x.why) + '）')); qc.appendChild(p); });
+      box.appendChild(qc);
+      var ts = D.tickets || [];
+      $('badge-dev').textContent = ts.filter(function (t) { return t.stageStatus === 'failed' || t.stageStatus === 'waiting'; }).length || '';
+      if (!ts.length) box.appendChild(el('p', 'card hint', 'まだ開発の記録がありません。新しい依頼が処理されると、ここに段階ごとに表示されます。'));
+      ts.forEach(function (t) {
+        var c = el('div', 'card dev-card st-' + (t.stageStatus || ''));
+        var h = el('p', 'field'); h.appendChild(link(t.id, t.url || '#')); h.appendChild(document.createTextNode('　' + (t.title || ''))); c.appendChild(h);
+        c.appendChild(el('p', 'hint', '依頼：' + stamp(t.requestedAt) + '　着手：' + stamp(t.startedAt) + '　更新：' + stamp(t.updatedAt)));
+        c.appendChild(el('p', '', '今：' + (t.stage || '—') + '（' + (DEV_STATUS[t.stageStatus] || '—') + '）'));
+        var rows = [['テスト', t.test_text || '未実施'], ['独立レビュー', t.review_verdict ? ({ approve: '承認', changes: '直す必要あり', unknown: '判定できず' })[t.review_verdict] || t.review_verdict : '未実施'], ['マージ', t.merge_sha ? '済み（' + t.merge_sha.slice(0, 7) + '）' : '未マージ'], ['本番反映', t.prod_commit ? '確認済み（本番のコミット ' + t.prod_commit.slice(0, 7) + '）' : '未確認'], ['次の対応', devNext(t)]];
+        rows.forEach(function (x) { var p = el('p', 'money-row'); p.appendChild(el('span', null, x[0])); p.appendChild(el('b', null, x[1])); c.appendChild(p); });
+        if (t.error) c.appendChild(el('p', 'hint warn', '停止・失敗の理由：' + t.error));
+        var lk = el('p', 'hint'); if (t.pr_url) { lk.appendChild(link('PR', t.pr_url)); lk.appendChild(document.createTextNode('　')); } if (t.run) lk.appendChild(link('実行の記録', t.run)); c.appendChild(lk);
+        var d = el('details'); d.appendChild(el('summary', null, '段階の履歴（' + (t.stages || []).length + '件）'));
+        (t.stages || []).forEach(function (s) { d.appendChild(el('p', 'hint', stamp(s.at) + '　' + s.label + '：' + (DEV_STATUS[s.status] || s.status) + (s.detail ? '（' + s.detail + '）' : ''))); });
+        c.appendChild(d);
+        box.appendChild(c);
+      });
+    }, function () { box.textContent = ''; box.appendChild(el('p', 'card hint warn', '通信できませんでした')); });
+  }
+
   // 新規ROOM商品紹介の停止（KOT-13）：停止の理由と、社長の明示の再開の操作（確認の言葉つき）
   function roomStopBar() {
     var R = state.roomStop, box = $('room-stop'); if (!box) return;
@@ -748,9 +803,10 @@
   function switchTab(t) {
     tab = t;
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
-    ['office', 'sets', 'todo', 'post', 'pr', 'biz', 'money'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
+    ['office', 'sets', 'todo', 'post', 'pr', 'biz', 'money', 'dev'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
     if (t === 'biz') renderBiz();
+    if (t === 'dev') renderDev();
     if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost(); if (t === 'pr') renderPr();
     window.scrollTo(0, 0);
   }

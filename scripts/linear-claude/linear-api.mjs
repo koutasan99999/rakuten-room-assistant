@@ -3,7 +3,7 @@
 const ENDPOINT = 'https://api.linear.app/graphql';
 
 const ISSUE_FIELDS = `
-  id identifier title description url createdAt archivedAt
+  id identifier title description url createdAt archivedAt priority
   creator { id name }
   state { id name type }
   team { id key }

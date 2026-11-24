@@ -190,7 +190,7 @@ test('GitHub に出す文：@ を全角にして @claude の起動を防ぎ、�
   assert.equal(t, 'KOT-3: ＠claude 直して 2行目');
   const b = prBody({ issue: issue(3), runUrl: 'R', testText: 'npm test：成功', summary: '@claude done', branch: 'linear/kot-3-1' });
   assert.doesNotMatch(b, /@claude/);
-  assert.match(b, /自動ではマージしません/);
+  assert.match(b, /自動マージの条件/);
 });
 
 test('npm test の件数を読む（TAP と spec の両方）', () => {
