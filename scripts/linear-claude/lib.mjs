@@ -34,10 +34,11 @@ function posInt(v, d) {
 }
 
 // 上限の確認：linear/ で始まるブランチのPR（自動連携が作ったもの）を数える
-export function limitReason(prs, cfg, now = Date.now()) {
+export function limitReason(prs, cfg, now = Date.now(), { urgent = false } = {}) {
   const ours = (prs || []).filter((p) => String(p.head?.ref || '').startsWith('linear/'));
   const open = ours.filter((p) => p.state === 'open').length;
-  if (open >= cfg.maxOpenPrs) return `確認待ちのPRが ${open} 件ある（上限 ${cfg.maxOpenPrs} 件）。PRを確認・クローズすると再開する`;
+  // 緊急（優先度 Urgent）のチケットは、確認待ちのPRの数では止めない（詰まりの解消そのものが緊急の依頼のことが多い）。1日の上限は守る
+  if (open >= cfg.maxOpenPrs && !urgent) return `確認待ちのPRが ${open} 件ある（上限 ${cfg.maxOpenPrs} 件）。PRを確認・クローズすると再開する`;
   const day = ours.filter((p) => now - Date.parse(p.created_at) < 24 * 3600 * 1000).length;
   if (day >= cfg.maxPerDay) return `直近24時間に ${day} 件のPRを作った（上限 ${cfg.maxPerDay} 件）。時間がたつと再開する`;
   return null;
@@ -64,10 +65,18 @@ export function eligibility(issue, cfg) {
   return { ok: true };
 }
 
-// 候補の中から、いちばん古い処理可能なチケットを1件だけ選ぶ（1回の実行で1件。費用と暴走を抑える）
+// 優先順位（2026-11-24 社長の指示：古い順だけでは緊急の修復が後回しになる）
+//   ① Linear の優先度（1 Urgent → 2 High → 3 Medium → 4 Low → 0 なし）② タイトルの【緊急】【最優先】③ 作成の古い順
+export function urgency(issue) {
+  const p = Number(issue && issue.priority);
+  const rank = p >= 1 && p <= 4 ? p : 5; // 0（なし）はいちばん後
+  const tag = /緊急|最優先/.test(String(issue && issue.title || '')) ? 0 : 1;
+  return rank * 2 + tag;
+}
+// 候補の中から、処理可能なチケットを1件だけ選ぶ（1回の実行で1件。費用と暴走を抑える）。優先度の高い順、同じなら古い順
 export function pickCandidate(issues, cfg) {
   const ok = (issues || []).filter((i) => eligibility(i, cfg).ok);
-  ok.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  ok.sort((a, b) => urgency(a) - urgency(b) || String(a.createdAt).localeCompare(String(b.createdAt)));
   return ok[0] || null;
 }
 
@@ -167,10 +176,48 @@ export function prBody({ issue, runUrl, testText, summary, branch }) {
     `- ${testText}`,
     `- 作業ブランチ：\`${branch}\``,
     `- 実行の記録：${runUrl}`,
-    '- 自動ではマージしません（人が確認してから取り込む）。本番へのデプロイ・外部への投稿はしていません',
+    '- このあと、独立レビュー（別の Claude）と自動マージの条件（テスト・変更の範囲・大きさ・秘密・最新 main との整合・Preview）を確かめ、すべて満たせば自動でマージし、本番への反映を確認します。満たさなければマージせず、理由を Linear に書きます。外部への投稿はしません',
     '',
     '## Claude の報告',
     '',
     safeText(summary || '（報告なし）', 4000),
   ].join('\n');
+}
+
+// ---- 自動マージの条件（2026-11-24 社長の承認：安全性が確認された通常のコード変更は、自動でマージし本番へ反映する） ----
+// 人の確認が必要な変更（自動マージしない）：自動開発の仕組みそのもの・権限・秘密・予算・依存関係・デプロイの設定
+export const PROTECTED_PATHS = [
+  /^\.github\//, /^scripts\/linear-claude\//, /^CLAUDE\.md$/, /^vercel\.json$/, /^package(-lock)?\.json$/,
+  /^lib\/budget\.js$/, /^lib\/qstash\.js$/, /^server\/linear-kick\.js$/, /(^|\/)\.env(\.|$)/,
+];
+export const MAX_AUTO_LINES = 2500;
+export function protectedPaths(paths) { return (paths || []).filter((p) => PROTECTED_PATHS.some((r) => r.test(p))); }
+// 追加した行に秘密らしい文字列が無いか（diff の + 行だけ）
+export function secretInDiff(diff) {
+  return String(diff || '').split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).some((l) => SECRET_PATTERNS.some((r) => { r.lastIndex = 0; return r.test(l); }));
+}
+// 独立レビューの結果（Claude の返答の中の JSON）を読む。読めなければ「承認しない」
+export function readReview(text) {
+  const m = String(text || '').match(/\{[\s\S]*"verdict"[\s\S]*\}/);
+  if (!m) return { verdict: 'unknown', blocking: ['レビューの結果を読み取れなかった'], notes: [] };
+  try {
+    const j = JSON.parse(m[0]);
+    const verdict = j.verdict === 'approve' ? 'approve' : 'changes';
+    const arr = (v) => (Array.isArray(v) ? v.map((x) => safeText(typeof x === 'string' ? x : JSON.stringify(x), 300)).slice(0, 10) : []);
+    return { verdict, blocking: arr(j.blocking), notes: arr(j.notes) };
+  } catch { return { verdict: 'unknown', blocking: ['レビューの結果を読み取れなかった'], notes: [] }; }
+}
+// 自動マージしてよいか。理由つき（すべて満たしたときだけ ok）
+export function autoMergeDecision({ claudeOk, testOk, review, changed = [], lines = 0, diff = '', labels = [] }) {
+  const why = [];
+  if (!claudeOk) why.push('Claude Code が最後まで終わらなかった');
+  if (!testOk) why.push('npm test が成功していない');
+  if (!review || review.verdict !== 'approve') why.push(`独立レビューが承認していない（${review && review.blocking && review.blocking.length ? review.blocking.join('／') : 'レビューの結果なし'}）`);
+  else if (review.blocking && review.blocking.length) why.push(`独立レビューの重大な指摘：${review.blocking.join('／')}`);
+  const prot = protectedPaths(changed);
+  if (prot.length) why.push(`人の確認が必要なファイルを変えている（${prot.join(', ')}）`);
+  if (lines > MAX_AUTO_LINES) why.push(`変更が大きすぎる（${lines}行・上限${MAX_AUTO_LINES}行）`);
+  if (secretInDiff(diff)) why.push('追加した行に秘密らしい文字列がある');
+  if ((labels || []).includes('自動マージしない')) why.push('チケットに「自動マージしない」ラベルが付いている');
+  return { ok: why.length === 0, why };
 }

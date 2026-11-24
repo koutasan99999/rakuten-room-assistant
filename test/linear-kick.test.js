@@ -58,11 +58,14 @@ test('QStash の署名が無い・違う呼び出しは断る。鍵が未設定�
   globalThis.fetch = g.f;
   const env2 = { ...env, GH_DISPATCH_TOKEN: TOKEN };
   const r1 = await call(env2, { 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm1' });
-  assert.equal(r1.data.start, true);
+  assert.equal(r1.data.start, true, JSON.stringify(r1.data));
   assert.ok(!r1.text.includes(TOKEN));
   assert.equal(g.calls.filter((c) => c.method === 'POST').length, 1);
   assert.match((await call(env2, { 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm1' })).data.skipped, /再送/);
   assert.match((await call(env2, { 'upstash-signature': qsig('cur'), 'upstash-message-id': 'm2' })).data.skipped, /4分以内/);
   assert.equal(g.calls.filter((c) => c.method === 'POST').length, 1, '二重に起動しない');
-  assert.equal((await kv.getJson('linear-kick:last')).start, true);
+  const st = await kv.getJson('linear-kick:stats');
+  assert.equal(st.started, 1, '起動は1回だけ'); assert.ok(st.calls >= 4, '呼ばれたことは毎回残す（断った・鍵が無い・重複も）'); assert.equal(st.rejected, 3);
+  assert.match((await kv.getJson('linear-kick:last')).why, /4分以内/);
+  assert.ok(!JSON.stringify(await kv.getJson('linear-kick:last')).includes(TOKEN), '記録に鍵の値を残さない');
 });

@@ -1,5 +1,7 @@
 # Linear → Claude Code → PR の自動連携（KOT-6・2026-11-19）
-# ChatGPT（かみさま）が Linear にチケットを作る → この定期実行が承認済みのチケットを見つける → Claude Code が作業ブランチで実装 → npm test → PR（自動マージなし）
+# ChatGPT（かみさま）が Linear にチケットを作る → この定期実行が承認済みのチケットを見つける → Claude Code が作業ブランチで実装 → npm test → PR
+# → 独立レビュー（別の Claude）→ 自動マージの条件の確認 → 最新 main との整合 → Preview の成功 → マージ → 本番反映の確認 → Linear と開発管理画面に報告
+# 2026-11-24 社長の承認（KOT-14）：安全性が確認された通常のコード変更は、自動でマージし本番へ反映する。条件を1つでも満たさなければマージせず、理由を報告する
 #
 # 既存の claude.yml（Issue・コメントの @claude）はそのまま。bot・GitHub App からの依頼を受けない設定（allowed_bots なし）も変えない。
 # このワークフローは「信頼できる起動（定期実行・リポジトリの管理者の手動実行）」の中で Linear の内容を確かめ、Claude Code を直接動かす。
@@ -9,7 +11,8 @@
 #   - 同じチケットのPRが開いていない
 # 秘密の値：LINEAR_API_KEY（Linear の個人のAPIキー・KOTチームだけ・読み書き）と CLAUDE_CODE_OAUTH_TOKEN は Secrets にだけ置く。
 #   Claude Code の段階には CLAUDE_CODE_OAUTH_TOKEN しか渡さない（Linear の鍵・GitHub の書き込みの鍵は渡さない）。
-# しないこと：main への直接の push・マージ・本番へのデプロイ・Instagram や楽天ROOMへの投稿。.github/ の変更は受け付けない。
+# しないこと：main への直接の push・条件を満たさない変更のマージ・Instagram や楽天ROOMへの投稿。.github/ の変更は受け付けない。
+# 自動マージしない変更（人の確認）：自動開発の仕組み（.github/・scripts/linear-claude/・CLAUDE.md）・予算（lib/budget.js）・権限と秘密・依存関係・デプロイの設定（scripts/linear-claude/lib.mjs の PROTECTED_PATHS）
 # 費用：公開リポジトリの GitHub Actions は無料。Claude は CLAUDE_CODE_OAUTH_TOKEN（定額プラン）。Linear API は1回の確認で数回だけ呼ぶ（上限に余裕がある）
 # 定期実行の注意：GitHub の schedule は数分〜それ以上遅れ、飛ばされることもある（11/20 は取り込み後の定期実行が1回だけ）。main にあるこのファイルだけが定期実行される（docs/linear-claude.md）
 # 2026-11-20：QStash が5分ごとに /api/linear-kick を呼び、workflow_dispatch で起動する（主）。GitHub の schedule は予備。
@@ -93,16 +96,19 @@ jobs:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           GH_TOKEN: ${{ github.token }}
           ONLY_ISSUE: ${{ inputs.issue }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/linear-claude/cli.mjs pick
 
   work:
     needs: pick
     if: needs.pick.outputs.found == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 110
     permissions:
       contents: write
       pull-requests: write
+      statuses: read
     env:
       ISSUE_ID: ${{ needs.pick.outputs.issue_id }}
       IDENTIFIER: ${{ needs.pick.outputs.identifier }}
@@ -154,6 +160,12 @@ jobs:
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: 開発管理画面に記録（開発を始めた）
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node "$LC/report.mjs" "$IDENTIFIER" implement running "Claude Code が実装しています" || true
+
       - name: Claude Code が実装する
         id: claude
         timeout-minutes: 40
@@ -194,6 +206,14 @@ jobs:
           set -e
           tail -n 15 "$RUNNER_TEMP/test.log"
           node "$LC/steps.mjs" test-result "$RUNNER_TEMP/test.log" "$code" >> "$GITHUB_ENV"
+      - name: 開発管理画面に記録（実装・テスト）
+        if: always()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          node "$LC/report.mjs" "$IDENTIFIER" implement "$([ "$CLAUDE_OK" = true ] && echo done || echo failed)" "${CLAUDE_ERROR:-実装した}" || true
+          node "$LC/report.mjs" "$IDENTIFIER" test "$([ "$TEST_OK" = true ] && echo done || echo failed)" "${TEST_TEXT:-テストの結果なし}" || true
 
       - name: commit と push（作業ブランチだけ）
         env:
@@ -218,6 +238,123 @@ jobs:
           url=$(gh pr create --base main --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md" $draft)
           echo "PR：$url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "PR_URL=$url" >> "$GITHUB_ENV"
+
+      # ---- ここから自動マージ（2026-11-24 社長の承認・KOT-14）。条件を1つでも満たさなければマージしない ----
+      - name: 独立レビュー（別の Claude・差分と変更後のコードを読むだけ）
+        id: review
+        if: steps.pr.outputs.url != '' && env.CLAUDE_OK == 'true' && env.TEST_OK == 'true'
+        timeout-minutes: 15
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff "$BASE_SHA"..HEAD > "$RUNNER_TEMP/diff.patch"
+          node "$LC/steps.mjs" review-prompt "$RUNNER_TEMP/issue.json" "$RUNNER_TEMP/diff.patch" > "$RUNNER_TEMP/review-prompt.md"
+          set +e
+          claude -p --output-format json --max-turns 40 \
+            --allowedTools "Read,Glob,Grep" \
+            --disallowedTools "Edit,Write,Bash,WebFetch,WebSearch,TodoWrite" \
+            < "$RUNNER_TEMP/review-prompt.md" > "$RUNNER_TEMP/review-raw.json" 2> /dev/null
+          set -e
+          node "$LC/steps.mjs" review-result "$RUNNER_TEMP/review-raw.json" "$RUNNER_TEMP/review.json" "$RUNNER_TEMP/review.md" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/review.md"
+          gh pr comment "$PR_URL" --body-file "$RUNNER_TEMP/review.md" || true
+          git checkout -- . 2>/dev/null || true
+
+      - name: 自動マージの判定（テスト・レビュー・変更の範囲・大きさ・秘密）
+        if: steps.pr.outputs.url != ''
+        run: |
+          [ -f "$RUNNER_TEMP/diff.patch" ] || git diff "$BASE_SHA"..HEAD > "$RUNNER_TEMP/diff.patch"
+          git diff --name-only "$BASE_SHA"..HEAD > "$RUNNER_TEMP/changed-all.txt"
+          [ -f "$RUNNER_TEMP/review.json" ] || echo '{"verdict":"unknown","blocking":["レビューを実行していない（テストか実装が失敗）"]}' > "$RUNNER_TEMP/review.json"
+          node "$LC/steps.mjs" auto-merge-check "$RUNNER_TEMP/changed-all.txt" "$RUNNER_TEMP/diff.patch" "$RUNNER_TEMP/review.json" "$RUNNER_TEMP/issue.json" >> "$GITHUB_ENV"
+          echo "REVIEW_TEXT=$(node -e "const r=require(process.argv[1]);console.log((r.verdict==='approve'?'承認':r.verdict==='changes'?'直す必要あり':'判定できず')+(r.blocking&&r.blocking.length?'（'+r.blocking.join('／').slice(0,150)+'）':''))" "$RUNNER_TEMP/review.json" | tr -d '\n')" >> "$GITHUB_ENV"
+
+      - name: 最新 main との整合（競合の確認。main が進んでいれば取り込んでテストをやり直す）
+        if: env.AUTO_MERGE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch -q --depth=200 origin main
+          if git merge-base --is-ancestor origin/main HEAD; then echo "main は進んでいない（そのまま）"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge --no-edit -q origin/main; then
+            git merge --abort || true
+            { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=最新の main と競合した（人の確認が必要）"; } >> "$GITHUB_ENV"; exit 0
+          fi
+          set +e; npm test > "$RUNNER_TEMP/test2.log" 2>&1; code=$?; set -e
+          tail -n 8 "$RUNNER_TEMP/test2.log"
+          if [ "$code" != "0" ]; then { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=最新の main を取り込むと npm test が失敗した"; } >> "$GITHUB_ENV"; exit 0; fi
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Preview（Vercel）の成功を待つ
+        if: env.AUTO_MERGE == 'true'
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          for i in $(seq 1 70); do
+            st=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | select(.context=="Vercel")][0].state' 2>/dev/null || echo "")
+            echo "Preview：${st:-まだ}"
+            if [ "$st" = "success" ]; then exit 0; fi
+            if [ "$st" = "failure" ] || [ "$st" = "error" ]; then { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=Vercel の Preview が失敗した"; } >> "$GITHUB_ENV"; exit 0; fi
+            sleep 15
+          done
+          { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=Vercel の Preview の結果が17分以内に出なかった"; } >> "$GITHUB_ENV"
+
+      - name: マージ（squash・確かめたコミットのときだけ）
+        id: merge
+        if: env.AUTO_MERGE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          num="${PR_URL##*/}"
+          sha=$(git rev-parse HEAD)
+          if out=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${num}/merge" -f merge_method=squash -f sha="$sha" --jq .sha 2>&1); then
+            echo "マージした：$out"; echo "sha=$out" >> "$GITHUB_OUTPUT"; echo "MERGE_SHA=$out" >> "$GITHUB_ENV"
+          else
+            echo "$out"; { echo "AUTO_MERGE=false"; echo "AUTO_MERGE_WHY=マージできなかった（$(echo "$out" | tr -d '\n' | cut -c1-150)）"; } >> "$GITHUB_ENV"
+          fi
+
+      - name: 本番反映の確認（マージしたコミットが本番で動いているか・画面とAPI）
+        id: prod
+        if: steps.merge.outputs.sha != ''
+        timeout-minutes: 25
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+        run: |
+          base="${WORKER_URL%/}"
+          [ -n "$base" ] || { echo "PROD_WHY=本番のURL（WORKER_URL）が未設定" >> "$GITHUB_ENV"; exit 0; }
+          for i in $(seq 1 80); do
+            c=$(curl -s --max-time 10 "$base/api/version" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).commit||'')}catch{console.log('')}})")
+            echo "本番のコミット：${c:-読めない}"
+            if [ "$c" = "$MERGE_SHA" ]; then break; fi
+            sleep 15
+          done
+          if [ "$c" != "$MERGE_SHA" ]; then echo "PROD_WHY=本番がマージしたコミットに20分以内に切り替わらなかった（Vercel の本番デプロイを確認）" >> "$GITHUB_ENV"; exit 0; fi
+          echo "PROD_COMMIT=$c" >> "$GITHUB_ENV"
+          fail=""
+          code=$(curl -s -o "$RUNNER_TEMP/v2.html" -w '%{http_code}' --max-time 15 "$base/v2/index.html?t=$(date +%s)"); [ "$code" = "200" ] && grep -q 'app.js?v=' "$RUNNER_TEMP/v2.html" || fail="$fail 画面（/v2/）が開けない（$code）"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$base/api/v2"); [ "$code" = "401" ] || fail="$fail /api/v2 の応答がおかしい（$code）"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$base/api/linear-kick"); [ "$code" = "401" ] || fail="$fail /api/linear-kick の応答がおかしい（$code）"
+          if [ -n "$fail" ]; then echo "PROD_WHY=本番の確認に失敗：$fail" >> "$GITHUB_ENV"; else echo "PROD_OK=true" >> "$GITHUB_ENV"; echo "本番の確認：画面と API が正常"; fi
+
+      - name: 開発管理画面に記録（PR・レビュー・マージ・本番）
+        if: always()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          [ -n "${PR_URL:-}" ] && node "$LC/report.mjs" "$IDENTIFIER" pr done "PRを作った" "$PR_URL" || true
+          [ -n "${REVIEW_VERDICT:-}" ] && node "$LC/report.mjs" "$IDENTIFIER" review "$([ "$REVIEW_VERDICT" = approve ] && echo done || echo failed)" "${REVIEW_TEXT:-}" || true
+          if [ -n "${MERGE_SHA:-}" ]; then node "$LC/report.mjs" "$IDENTIFIER" merge done "マージした（${MERGE_SHA:0:7}）" || true
+          elif [ -n "${PR_URL:-}" ]; then node "$LC/report.mjs" "$IDENTIFIER" merge waiting "自動マージしなかった：${AUTO_MERGE_WHY:-条件を満たさない}" || true; fi
+          if [ "${PROD_OK:-}" = true ]; then node "$LC/report.mjs" "$IDENTIFIER" deploy done "本番のコミット ${PROD_COMMIT:0:7}" && node "$LC/report.mjs" "$IDENTIFIER" prodcheck done "画面と API の確認に成功" || true
+          elif [ -n "${MERGE_SHA:-}" ]; then node "$LC/report.mjs" "$IDENTIFIER" prodcheck failed "${PROD_WHY:-本番の確認ができなかった}" || true; fi
 
       # どこで止まっても Linear に結果を書く（「Claude処理中」のまま放置しない）
       - name: Linear に結果を書く
@@ -226,9 +363,15 @@ jobs:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           PR_URL: ${{ steps.pr.outputs.url }}
           JOB_STATUS: ${{ job.status }}
+          W: ${{ secrets.WORKER_URL }}
+          CS: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -n "$PR_URL" ] && [ "$TEST_OK" = "true" ] && [ "$CLAUDE_OK" = "true" ] && [ "$JOB_STATUS" = "success" ]; then
-            export RESULT=success
+          if [ -n "${MERGE_SHA:-}" ] && [ "${PROD_OK:-}" = "true" ]; then
+            export RESULT=deployed
+          elif [ -n "${MERGE_SHA:-}" ]; then
+            export RESULT=prod-failed; export REASON="${PROD_WHY:-本番の確認ができなかった}"
+          elif [ -n "$PR_URL" ] && [ "$TEST_OK" = "true" ] && [ "$CLAUDE_OK" = "true" ]; then
+            export RESULT=pr; export REASON="${AUTO_MERGE_WHY:-自動マージの条件を満たさなかった}"
           else
             export RESULT=failure
             if [ -z "${REASON:-}" ]; then
@@ -241,4 +384,5 @@ jobs:
           fi
           echo "結果：$RESULT ${REASON:-}"
           node "$LC/cli.mjs" finish
-          if [ "$RESULT" != "success" ]; then echo "::error::${REASON}"; exit 1; fi
+          WORKER_URL="$W" CRON_SECRET="$CS" node "$LC/report.mjs" "$IDENTIFIER" finish "$([ "$RESULT" = deployed ] && echo done || ([ "$RESULT" = pr ] && echo waiting || echo failed))" "$RESULT ${REASON:-}" || true
+          if [ "$RESULT" = "failure" ] || [ "$RESULT" = "prod-failed" ]; then echo "::error::${REASON}"; exit 1; fi
