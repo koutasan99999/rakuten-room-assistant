@@ -40,12 +40,24 @@
     }, function () { $('top-status').textContent = '通信できませんでした（次に自動で読み直します）'; });
   }
 
+  // 案件の内訳（実態どおり：進む／社長の承認待ち／画像待ちなどを分けて出す。承認待ちは「進行中」に数えない）
+  function caseLine(s) {
+    var m = s.summary || { total: s.cases.length, advancing: s.cases.filter(function (c) { return !c.wait; }).length, approval: 0, image: 0, budget: 0, error: 0 };
+    var parts = [];
+    if (m.running) parts.push('実行中' + m.running + '件');
+    if (m.queued) parts.push('次の定期実行で進む' + m.queued + '件');
+    if (m.approval) parts.push('社長の承認待ち（完成品の枠待ち）' + m.approval + '件');
+    if (m.image) parts.push('画像待ち' + m.image + '件');
+    if (m.budget) parts.push('予算・残高待ち' + m.budget + '件');
+    if (m.error) parts.push('エラー・保留' + m.error + '件');
+    return '案件' + m.total + '件：' + parts.join('／') + (m.advancing ? '' : '（いま進められる案件は0件。理由は下の案件ごとの表示）');
+  }
   function render() {
     var s = state;
     var working = s.staff.filter(function (x) { return x.status === 'work'; })[0];
     var active = s.cases.filter(function (c) { return !c.wait; }).length;
     if (s.quota) { $('top-status').textContent = 'OpenAIの残高がないため、AIを使う仕事を止めています。残高が戻ったら自動で続きから再開します（次に確かめる時刻 ' + hm(s.quota.until) + '）'; } else
-    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? '案件' + s.cases.length + '件を進行中（' + active + '件が次の定期実行で進みます）' : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
+    $('top-status').textContent = working ? working.name + 'が仕事中' : s.cases.length ? caseLine(s) : s.blocked ? '今日のAIの費用の上限に達しました。明日0時に戻ったら再開します' : s.idle || '次の定期実行で新しい仕事を始めます';
     $('badge-sets').textContent = s.waiting ? String(s.waiting) : '';
     $('badge-pr').textContent = s.pr && s.pr.counts.approval ? String(s.pr.counts.approval) : '';
     var todo = todoItems(); $('badge-todo').textContent = todo.length ? String(todo.length) : '';
