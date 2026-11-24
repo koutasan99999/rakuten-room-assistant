@@ -135,8 +135,10 @@
     box.textContent = '';
     if (!R || !R.stopped) { box.hidden = true; return; }
     box.hidden = false;
-    box.appendChild(el('p', 'field', '新規ROOM商品紹介を停止中（' + R.since + ' から）'));
-    box.appendChild(el('p', 'hint', R.reason + '。作りかけの案件と完成品は消さずに残しています。既存の完成品の販売改善と、ROOM以外で稼ぐ仕事は続けています。'));
+    var more = el('details', 'room-stop-more'); // KOT-18：帯は1行にして、理由は開いたときだけ
+    more.appendChild(el('summary', null, '新規ROOM商品紹介：停止中（' + R.since + ' から）'));
+    more.appendChild(el('p', 'hint', R.reason + '。作りかけの案件と完成品は消さずに残しています。既存の完成品の販売改善と、ROOM以外で稼ぐ仕事は続けています。'));
+    box.appendChild(more);
     box.appendChild(btn('新規紹介を再開する', 'btn ghost small-ghost', function () {
       var w = prompt('新規ROOM商品紹介を再開します。よければ「再開する」と入力してください', '');
       if (w === null) return;
@@ -213,44 +215,137 @@
     c.appendChild(el('p', 'hint', '直近の実行：' + n + '件（費用はすべて0円）' + (n ? '' : '。まだ実行されていない（次の定期実行で、データが変わった部署だけ動く）')));
     (D.log || []).slice(0, 10).forEach(function (l) { c.appendChild(el('p', 'hint', String(l.at).slice(5, 16).replace('T', ' ') + ' ' + nameOf(l.dept) + '：' + l.title + '（' + l.summary + '）')); });
     box.appendChild(c);
-    var q = el('div', 'card'); q.appendChild(el('p', 'field', '部署別の改善キュー（優先順）'));
-    if (!(D.queue || []).length) q.appendChild(el('p', 'hint', 'キューは空（成果物がまだ無い、または改善点が見つかっていない）'));
-    (D.queue || []).slice(0, 12).forEach(function (x) { q.appendChild(el('p', 'hint', x.rank + '. ' + x.deptName + '：' + x.task + '（' + x.needLabel + '）' + (x.why ? ' 根拠：' + x.why : ''))); });
-    box.appendChild(q);
-    var i = el('div', 'card'); i.appendChild(el('p', 'field', '全8部署の仕事の棚卸し'));
+    var i = el('div', 'card'); i.appendChild(el('p', 'field', '全8部署の仕事の棚卸し・実装状況'));
     (D.inventory || []).forEach(function (x) { i.appendChild(el('p', 'hint', x.deptName + '：' + x.task + '【' + KL[x.kind] + '】' + (x.impl ? '' : '（未実装）') + (x.note ? ' ' + x.note : ''))); });
     box.appendChild(i);
   }
+  // 折りたたみ（初期は閉じる）。KOT-18：summary は短く、長文は本文に置く
+  function fold(title, sub) {
+    var d = el('details', 'card fold-card');
+    var s = el('summary', null, title); if (sub) s.appendChild(el('small', 'sub', sub));
+    d.appendChild(s);
+    var body = el('div', 'fold-body'); d.appendChild(body);
+    d.body = body; return d;
+  }
+  function clip(t, n) { t = String(t == null ? '' : t); return t.length > n ? t.slice(0, n) + '…' : t; }
+  function ventureGo(x, dec) { return function () { var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || ''); api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderBiz); }); }; }
+  var NEED_CLS = { free: 'free', ai: 'ai', owner: 'owner', external: 'ext' };
+  var NEED_SHORT = { free: '無料で自動', ai: 'AI予算が要る', owner: '社長の操作', external: '外部データが要る' };
+  // 冒頭：実利益・目標・投稿できる在庫・社長の判断待ち（具体的な案件と次の操作）
+  function bizTop(box) {
+    var P = state.profit, V = state.ventures;
+    var profit = P && P.totals ? P.totals.profit : null, target = P ? P.target : 30000;
+    var postable = state.kpi && state.kpi.current ? state.kpi.current.postable : null;
+    var reviews = V ? V.items.filter(function (x) { return x.status === 'review'; }) : [];
+    var waitSets = (state.sets || []).filter(function (x) { return x.status === 'waiting'; });
+    var ownerQ = ((state.deptWork && state.deptWork.queue) || []).filter(function (x) { return x.need === 'owner'; });
+    var total = reviews.length + waitSets.length;
+    var c = el('div', 'card biz-top');
+    var g = el('div', 'kpi-grid');
+    [['実利益', profit == null ? '未計測' : yen(profit), profit == null], ['月の目標', target.toLocaleString('ja-JP') + '円', false], ['投稿できる在庫', postable == null ? '未取得' : postable + '件', postable == null], ['社長の判断待ち', total + '件', false]].forEach(function (x) {
+      var d = el('div', 'kpi' + (x[2] ? ' none' : '')); d.appendChild(el('small', null, x[0])); d.appendChild(el('b', null, x[1])); g.appendChild(d);
+    });
+    c.appendChild(g);
+    c.appendChild(el('p', 'hint', '実利益は社長が登録した確定報酬と費用だけで計算（未登録は未計測）。目標は保証ではありません'));
+    box.appendChild(c);
+    var w = el('div', 'card');
+    w.appendChild(el('p', 'field', '社長の判断待ち（' + total + '件）'));
+    if (!total) w.appendChild(el('p', 'hint', '今、社長の判断が必要な案件はありません'));
+    reviews.slice(0, 5).forEach(function (x) {
+      var r = el('div', 'wait-row'); r.appendChild(el('p', 'wait-title', clip(x.title, 40))); r.appendChild(el('p', 'hint', (x.stream === 'venture' ? '新規副業' : x.stream === 'growth' ? '集客・販促' : 'デジタル商品') + 'の案。次の操作：採用・保留・却下を選ぶ（中身は下の各カードで確認）'));
+      var row = el('div', 'row'); row.appendChild(btn('採用', 'btn small', ventureGo(x, 'adopt'))); row.appendChild(btn('保留', 'btn ghost small-ghost', ventureGo(x, 'hold'))); row.appendChild(btn('却下', 'btn ghost small-ghost', ventureGo(x, 'reject')));
+      r.appendChild(row); w.appendChild(r);
+    });
+    if (waitSets.length) {
+      var r2 = el('div', 'wait-row'); r2.appendChild(el('p', 'wait-title', 'ROOMの完成品の確認待ち ' + waitSets.length + '件（例：' + clip(waitSets[0].title, 24) + '）'));
+      r2.appendChild(el('p', 'hint', '次の操作：「完成品」タブで内容を見て採用・修正依頼'));
+      r2.appendChild(btn('完成品タブを開く', 'btn small', function () { switchTab('sets'); })); w.appendChild(r2);
+    }
+    if (ownerQ.length) w.appendChild(el('p', 'hint', '社長の操作が要る改善：' + ownerQ.length + '件（下の「改善キュー」）'));
+    box.appendChild(w);
+  }
+  // 4つの流れ（ROOM・新規副業・集客販促・デジタル商品）：件数・状態・次の行動だけ短く。詳細は折りたたみ
+  function bizStreams(box) {
+    var V = state.ventures, D = V.dash, st = state.roomStop;
+    var rc = el('div', 'card stream-card');
+    rc.appendChild(el('p', 'field', 'ROOM（楽天ROOM商品紹介）'));
+    rc.appendChild(el('p', 'hint', '状態：' + (st && st.stopped ? '新規紹介は停止中（社長の再開待ち）' : '稼働中') + '／在庫：確認待ち ' + D.inventory.waiting + '・採用済み未投稿 ' + D.inventory.adopted + '・投稿済み ' + D.inventory.posted));
+    rc.appendChild(el('p', 'next', '次の行動：' + (D.inventory.waiting ? '完成品の確認' : D.inventory.adopted ? '採用済みをInstagramとROOMに投稿（社長が手で）' : st && st.stopped ? '既存の完成品の販売改善（停止中のまま）' : 'AIが新しい完成品を作る')));
+    box.appendChild(rc);
+    ['venture', 'growth', 'digital'].forEach(function (k) {
+      var S = V.streams[k], n = S.counts, card = el('div', 'card stream-card');
+      card.appendChild(el('p', 'field', S.label));
+      card.appendChild(el('p', 'hint', '作成中 ' + n.active + '・判断待ち ' + n.review + '・採用 ' + n.adopted + '・保留 ' + n.hold + '・却下 ' + n.rejected + '・止まった ' + n.stopped));
+      card.appendChild(el('p', 'next', '次の行動：' + (n.review ? '社長が判断（上の「判断待ち」）' : n.stopped ? '止まった案を「もう一度」で再開（社長）' : n.active ? 'AIが作成中' : 'AIが次の案を作る（20時間に1回まで）')));
+      var items = V.items.filter(function (x) { return x.stream === k; }).slice(0, 6);
+      var d = el('details', 'fold-in'); d.appendChild(el('summary', null, '詳細（案 ' + items.length + '件・費用・流れ）'));
+      d.appendChild(el('p', 'hint', '今日のAI費用 ' + yen(S.spentToday) + '（上限 ' + S.dayCapYen + '円）／新しい案は' + (S.lastDiscoverAt ? '直近 ' + day(S.lastDiscoverAt) + ' ' + hm(S.lastDiscoverAt) : 'まだ作っていない')));
+      d.appendChild(el('p', 'hint', '流れ：' + S.stages.map(function (s) { return nameOf(s.agent) + '「' + s.task + '」'; }).join(' → ')));
+      items.forEach(function (x) { d.appendChild(bizItem(x)); });
+      card.appendChild(d); box.appendChild(card);
+    });
+  }
+  // 8部署：部署名・最終実行・成果物・次の行動を短い行で
+  function bizDepts(box) {
+    var D = state.deptWork || {}, log = D.log || [], q = D.queue || [];
+    var c = el('div', 'card'); c.appendChild(el('p', 'field', '8部署の成果'));
+    state.staff.forEach(function (s) {
+      var i = s.indep || {}, l = log.filter(function (x) { return x.dept === s.id; })[0], nq = q.filter(function (x) { return x.dept === s.id; })[0];
+      var at = l ? l.at : i.last ? i.last.at : null;
+      var out = l ? l.title : i.last ? i.last.text : '成果物はまだありません';
+      var next = nq ? nq.task : i.next ? i.next : '待機：' + (i.wait || '今は担当の仕事がない');
+      var d = el('details', 'dept-row');
+      var sm = el('summary'); sm.appendChild(el('b', null, s.name)); sm.appendChild(el('span', 'dt', at ? day(at) + ' ' + hm(at) : '未実行'));
+      sm.appendChild(el('span', 'dl', '成果：' + clip(out, 28))); sm.appendChild(el('span', 'dl nx', '次：' + clip(next, 28))); d.appendChild(sm);
+      d.appendChild(el('p', 'hint', '成果物：' + out + (l && l.summary ? '（' + l.summary + '）' : '')));
+      d.appendChild(el('p', 'hint', '次の行動：' + next + (nq ? '（' + nq.needLabel + '）' : '')));
+      if (i.last) d.appendChild(el('p', 'hint', '最後の独立した仕事：' + day(i.last.at) + ' ' + hm(i.last.at) + '「' + (i.last.text || '') + '」（' + i.last.count + '件）'));
+      c.appendChild(d);
+    });
+    box.appendChild(c);
+  }
+  // 改善キュー：担当・優先度・状態・次の行動。無料で処理できるものと社長の操作が要るものを区別
+  function bizQueue(box) {
+    var D = state.deptWork; if (!D) return;
+    var q = D.queue || [];
+    var c = el('div', 'card'); c.appendChild(el('p', 'field', '改善キュー（優先順）'));
+    var nf = q.filter(function (x) { return x.need === 'free'; }).length, no = q.filter(function (x) { return x.need === 'owner'; }).length;
+    c.appendChild(el('p', 'hint', q.length ? '無料で自動処理 ' + nf + '件・社長の操作が要る ' + no + '件・そのほか ' + (q.length - nf - no) + '件' : 'キューは空（成果物がまだ無い、または改善点が見つかっていない）'));
+    q.slice(0, 12).forEach(function (x) {
+      var d = el('details', 'q-row'); var sm = el('summary');
+      sm.appendChild(el('span', 'rk', String(x.rank))); sm.appendChild(el('span', 'qn', x.deptName));
+      sm.appendChild(el('span', 'pill need-' + NEED_CLS[x.need], NEED_SHORT[x.need] || x.need));
+      sm.appendChild(el('span', 'qt', clip(x.task, 44))); d.appendChild(sm);
+      d.appendChild(el('p', 'hint', '次の行動：' + x.task)); d.appendChild(el('p', 'hint', '状態：' + x.needLabel + (x.need === 'owner' ? '（社長が操作するまで進まない）' : x.need === 'free' ? '（AI・予算を使わず自動で進む）' : '')));
+      if (x.why) d.appendChild(el('p', 'hint', '根拠：' + x.why));
+      c.appendChild(d);
+    });
+    box.appendChild(c);
+  }
   function renderBiz() {
     var box = $('biz'); box.textContent = '';
-    renderProfit(box);
-    var V = state.ventures; if (!V) { box.appendChild(el('p', 'hint', '事業のデータを読み込めませんでした')); return; }
+    var V = state.ventures;
+    if (!V) { box.appendChild(el('p', 'hint', '事業のデータを読み込めませんでした')); var pf = fold('収益の分析'); renderProfit(pf.body); box.appendChild(pf); return; }
+    bizTop(box);
+    bizStreams(box);
+    bizDepts(box);
+    bizQueue(box);
     var D = V.dash, nv = function (v) { return v == null ? '未計測' : v; };
-    var c = el('div', 'card');
-    c.appendChild(el('p', 'field', '経営ダッシュボード（成果物と売上の指標）'));
-    c.appendChild(el('p', 'hint', '成果物 ' + D.artifacts + '件・社長の判断待ち ' + D.ownerWaiting + '件・販売ページの下書き ' + D.salesPageDrafts + '件・note等の原稿の下書き ' + D.noteDrafts + '件・集客の実験案 ' + D.experiments + '件・これらにかけたAI費用 ' + yen(D.spentTotalYen)));
-    c.appendChild(el('p', 'hint', '売上に近い数字：閲覧 ' + nv(D.funnel && D.funnel.views) + '・プロフィール ' + nv(D.funnel && D.funnel.profileVisits) + '・ROOMへの流入 ' + nv(D.funnel && D.funnel.roomClicks) + '・売上 ' + nv(D.funnel && D.funnel.sales) + '（社長の登録だけ。無いものは未計測）'));
-    c.appendChild(el('p', 'hint', 'ROOMの完成品（未投稿の在庫）：確認待ち ' + D.inventory.waiting + '・採用済みで未投稿 ' + D.inventory.adopted + '・投稿済み ' + D.inventory.posted));
-    if (V.rank.length) c.appendChild(el('p', 'hint', '新規副業の優先順（低コスト・手間が少ない・再現性。収益の予測は点に使わない）：' + V.rank.map(function (r, i) { return (i + 1) + '. ' + r.title + '（' + r.priority + '点）'; }).join(' ／ ')));
-    box.appendChild(c);
-    var order = ['venture', 'growth', 'digital'];
-    order.forEach(function (k) {
-      var S = V.streams[k]; var card = el('div', 'card');
-      card.appendChild(el('p', 'field', S.label));
-      var n = S.counts;
-      card.appendChild(el('p', 'hint', '作成中 ' + n.active + '・判断待ち ' + n.review + '・採用 ' + n.adopted + '・保留 ' + n.hold + '・却下 ' + n.rejected + '・止まった ' + n.stopped + '／今日のAI費用 ' + yen(S.spentToday) + '（上限 ' + S.dayCapYen + '円）／新しい案は' + (S.lastDiscoverAt ? '直近 ' + day(S.lastDiscoverAt) + ' ' + hm(S.lastDiscoverAt) : 'まだ作っていない') + '（20時間に1回まで）'));
-      card.appendChild(el('p', 'hint', '流れ：' + S.stages.map(function (s) { return nameOf(s.agent) + '「' + s.task + '」'; }).join(' → ')));
-      V.items.filter(function (x) { return x.stream === k; }).slice(0, 6).forEach(function (x) { card.appendChild(bizItem(x)); });
-      box.appendChild(card);
-    });
+    var f1 = fold('経営ダッシュボードの詳細', '成果物 ' + D.artifacts + '件');
+    f1.body.appendChild(el('p', 'hint', '成果物 ' + D.artifacts + '件・社長の判断待ち ' + D.ownerWaiting + '件・販売ページの下書き ' + D.salesPageDrafts + '件・note等の原稿の下書き ' + D.noteDrafts + '件・集客の実験案 ' + D.experiments + '件・これらにかけたAI費用 ' + yen(D.spentTotalYen)));
+    f1.body.appendChild(el('p', 'hint', '売上に近い数字：閲覧 ' + nv(D.funnel && D.funnel.views) + '・プロフィール ' + nv(D.funnel && D.funnel.profileVisits) + '・ROOMへの流入 ' + nv(D.funnel && D.funnel.roomClicks) + '・売上 ' + nv(D.funnel && D.funnel.sales) + '（社長の登録だけ。無いものは未計測）'));
+    if (V.rank.length) f1.body.appendChild(el('p', 'hint', '新規副業の優先順（低コスト・手間が少ない・再現性。収益の予測は点に使わない）：' + V.rank.map(function (r, i) { return (i + 1) + '. ' + r.title + '（' + r.priority + '点）'; }).join(' ／ ')));
+    box.appendChild(f1);
+    var f2 = fold('収益の分析・販促カレンダー・成果登録', '不足条件・月3万円の逆算・投稿ごとの数字・週次・手法'); renderProfit(f2.body); box.appendChild(f2);
+    var f3 = fold('実行ログ・棚卸し・不足条件', '長文。必要なときだけ開く'); renderDeptWork(f3.body); box.appendChild(f3);
     var dc = el('div', 'card'); dc.appendChild(el('p', 'field', '部署ごとの独立した仕事（最後にした仕事・成果物・次に着手できる仕事・待機の理由）'));
     state.staff.forEach(function (s) {
       var i = s.indep || {}; var p = el('p', 'hint');
       p.textContent = s.name + '：' + (i.last ? '最後の仕事 ' + day(i.last.at) + ' ' + hm(i.last.at) + '「' + (i.last.text || '') + '」（' + i.last.count + '件）' : '独立した仕事はまだしていない') + '／' + (i.next ? '次に着手：' + i.next : '待機の理由：' + (i.wait || '今は担当の仕事がない'));
       dc.appendChild(p);
     });
-    box.appendChild(dc);
-    if (V.runs.length) { var rc = el('div', 'card'); rc.appendChild(el('p', 'field', '実行ログ（直近）')); V.runs.slice(0, 10).forEach(function (r) { rc.appendChild(el('p', 'hint', day(r.at) + ' ' + hm(r.at) + ' ' + nameOf(r.agent) + '：' + r.text + (r.yen ? '（' + yen(r.yen) + '）' : '（0円）') + (r.ok ? '' : '［失敗］'))); }); box.appendChild(rc); }
+    f3.body.appendChild(dc);
+    if (V.runs.length) { var rc = el('div', 'card'); rc.appendChild(el('p', 'field', '実行ログ（直近）')); V.runs.slice(0, 10).forEach(function (r) { rc.appendChild(el('p', 'hint', day(r.at) + ' ' + hm(r.at) + ' ' + nameOf(r.agent) + '：' + r.text + (r.yen ? '（' + yen(r.yen) + '）' : '（0円）') + (r.ok ? '' : '［失敗］'))); }); f3.body.appendChild(rc); }
   }
   function bizItem(x) {
     var d = el('details', 'biz-item'); var sm = el('summary', null, x.title + '【' + BIZ_STATUS[x.status] + '】' + (x.priority != null ? '・' + x.priority + '点' : '')); d.appendChild(sm);
@@ -266,7 +361,7 @@
     x.log.forEach(function (l) { add(day(l.at) + ' ' + hm(l.at) + ' ' + nameOf(l.by) + '：' + l.text); });
     if (x.decision) add('判断：' + x.decision.label + (x.decision.why ? '（' + x.decision.why + '）' : ''));
     var row = el('div', 'row');
-    var go = function (dec) { return function () { var w = dec === 'adopt' ? '' : (prompt('理由（任意・次の案づくりに活かします）', '') || ''); api({ action: 'ventureDecide', id: x.id, decision: dec, why: w }).then(function (r) { if (r.status !== 200) alert((r.data && r.data.error) || 'できませんでした'); refresh().then(renderBiz); }); }; };
+    var go = function (dec) { return ventureGo(x, dec); };
     if (x.status === 'review') { row.appendChild(btn('採用', 'btn small', go('adopt'))); row.appendChild(btn('保留', 'btn ghost small-ghost', go('hold'))); row.appendChild(btn('却下', 'btn ghost small-ghost', go('reject'))); }
     if (x.status === 'stopped') row.appendChild(btn('もう一度', 'btn small', go('retry')));
     if (row.children.length) d.appendChild(row);
