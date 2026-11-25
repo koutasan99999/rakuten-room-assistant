@@ -10,7 +10,7 @@ import { installFetchMock, aiReply, json } from './mock.js';
 
 let mock;
 afterEach(() => { if (mock) mock.restore(); mock = null; });
-const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw', VENTURES_FROZEN: '0' }; // 凍結（KOT-25）を外した状態で、仕組み自体が壊れていないことを確かめる
+const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw', VENTURES_FROZEN: '0', VENTURE_DISCOVERY: 'on' }; // 凍結（KOT-25）・発掘の停止（KOT-24）を外した状態で、仕組み自体が壊れていないことを確かめる
 
 const IDEA = { title: '家計簿テンプレートの販売', category: 'デジタルテンプレート', whyChosen: '在庫を持たず、既存のROOMとは別の客層', customer: '家計を見直したい個人', problem: '家計簿が続かない', product: '表計算のテンプレート', channel: '外部のテンプレート販売サイト', revenueModel: '単品販売', revenueAssumption: '月3件売れると仮定（確定値ではない）', marketKeyword: '家計簿', competitorsNote: '未確認', initialCostYen: 0, monthlyCostYen: 0, ownerHoursPerWeek: 2, aiDoes: ['原稿・表の設計'], ownerDoes: ['出品'], risks: { terms: '販売サイトの規約を確認', copyright: '素材は自作', medical: '関係なし' }, minExperiment: '1商品を出品して2週間の反応を見る', success: '2週間で3件', withdraw: '2週間で0件なら撤退', repeatability: 4 };
 const GROWTH = { title: 'プロフィールからROOMへの導線を1本に絞る', funnelStage: 'プロフィール', hypothesis: '導線が複数あり迷う', basisFacts: ['閲覧は未計測'], experiment: { what: 'プロフィールのリンクを1つにする', days: 7, metric: 'ROOMへの流入', success: '流入が増える', ownerSteps: ['プロフィールを編集'] }, drafts: { posts: [{ caption: '暮らしの小さな工夫を紹介します。#PR' }], replies: [{ situation: '商品名を聞かれたとき', reply: 'コメントありがとうございます。商品はプロフィールのリンクからご覧いただけます。' }] }, risks: 'PR表記を入れる' };
