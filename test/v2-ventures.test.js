@@ -10,7 +10,7 @@ import { installFetchMock, aiReply, json } from './mock.js';
 
 let mock;
 afterEach(() => { if (mock) mock.restore(); mock = null; });
-const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw' };
+const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw', VENTURE_DISCOVERY: 'on' }; // KOT-24：新規副業の発掘は既定で止まる。この流れの試験だけ社長の判断で戻した状態にする
 
 const IDEA = { title: '家計簿テンプレートの販売', category: 'デジタルテンプレート', whyChosen: '在庫を持たず、既存のROOMとは別の客層', customer: '家計を見直したい個人', problem: '家計簿が続かない', product: '表計算のテンプレート', channel: '外部のテンプレート販売サイト', revenueModel: '単品販売', revenueAssumption: '月3件売れると仮定（確定値ではない）', marketKeyword: '家計簿', competitorsNote: '未確認', initialCostYen: 0, monthlyCostYen: 0, ownerHoursPerWeek: 2, aiDoes: ['原稿・表の設計'], ownerDoes: ['出品'], risks: { terms: '販売サイトの規約を確認', copyright: '素材は自作', medical: '関係なし' }, minExperiment: '1商品を出品して2週間の反応を見る', success: '2週間で3件', withdraw: '2週間で0件なら撤退', repeatability: 4 };
 const GROWTH = { title: 'プロフィールからROOMへの導線を1本に絞る', funnelStage: 'プロフィール', hypothesis: '導線が複数あり迷う', basisFacts: ['閲覧は未計測'], experiment: { what: 'プロフィールのリンクを1つにする', days: 7, metric: 'ROOMへの流入', success: '流入が増える', ownerSteps: ['プロフィールを編集'] }, drafts: { posts: [{ caption: '暮らしの小さな工夫を紹介します。#PR' }], replies: [{ situation: '商品名を聞かれたとき', reply: 'コメントありがとうございます。商品はプロフィールのリンクからご覧いただけます。' }] }, risks: 'PR表記を入れる' };
@@ -80,26 +80,26 @@ test('ROOMの仕事が全部止まっていても（承認待ち5件・案件0�
 test('上限：新しい案は間隔・作りかけ・判断待ちの数で止まり、無限に作らない。重複は入れない', async () => {
   mock = installFetchMock({ rakuten, openai: ai });
   const kv = memoryKv();
-  const first = await X.venturesWork('planner', { kv });
+  const first = await X.venturesWork('planner', { kv, env: ENV });
   assert.equal(first.kind, 'venture-idea');
   await isolated(() => first.run({ kv, env: ENV }));
-  const again = await X.venturesWork('planner', { kv });
+  const again = await X.venturesWork('planner', { kv, env: ENV });
   assert.ok(!again.task, '同じ日に2回は作らない');
   const s = await kv.getJson('v2:ventures');
   // 同じ案をもう一度出させても重複で入らない
   s.last.venture = '2000-01-01T00:00:00.000Z'; await kv.setJson('v2:ventures', s);
-  const w2 = await X.venturesWork('planner', { kv });
+  const w2 = await X.venturesWork('planner', { kv, env: ENV });
   assert.equal(w2.kind, 'venture-idea');
   const r2 = (await isolated(() => w2.run({ kv, env: ENV }))).result;
   assert.match(r2.done, /重複|入れる案は無かった/);
   assert.equal((await kv.getJson('v2:ventures')).items.filter((x) => x.stream === 'venture').length, 1);
   // 判断待ちが上限なら新しい案は作らず、理由を示す
   const t = await kv.getJson('v2:ventures'); t.items = Array.from({ length: X.MAX_REVIEW }, (_, i) => ({ ...t.items[0], id: `r${i}`, title: `案${i}あいうえお${i}`, status: 'review', stage: '' })); t.last.venture = '2000-01-01T00:00:00.000Z'; await kv.setJson('v2:ventures', t);
-  const w3 = await X.venturesWork('planner', { kv });
+  const w3 = await X.venturesWork('planner', { kv, env: ENV });
   assert.ok(w3.none && /判断待ちの案が4件/.test(w3.none), w3.none);
   // 1日の費用の上限
   const u = await kv.getJson('v2:ventures'); u.items = []; u.spent = { venture: { [new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)]: X.DAY_CAP_YEN } }; await kv.setJson('v2:ventures', u);
-  const w4 = await X.venturesWork('planner', { kv });
+  const w4 = await X.venturesWork('planner', { kv, env: ENV });
   assert.ok(w4.none && /上限/.test(w4.none), w4.none);
 });
 
@@ -118,7 +118,7 @@ test('監査：規約違反（自動いいね・要約転載）・収益の断�
   assert.match(it.decision.why, /作業時間|リスク/);
   // 次の案づくりに「却下の理由」が渡る
   mock = installFetchMock({ rakuten, openai: (body) => { assert.match(JSON.stringify(body), /監査が不合格/); return aiReply({ ideas: [] }); } });
-  const p = await X.venturesWork('planner', { kv });
+  const p = await X.venturesWork('planner', { kv, env: ENV });
   await isolated(() => p.run({ kv, env: ENV }));
 });
 
@@ -126,7 +126,7 @@ test('失敗：3回失敗した案は止まり、無限にやり直さない。�
   mock = installFetchMock({ rakuten, openai: () => aiReply({ headline: '' }) });
   const kv = memoryKv();
   await kv.setJson('v2:ventures', { items: [{ id: 'v1', stream: 'venture', title: '案', status: 'active', stage: 'proto', createdAt: new Date().toISOString(), tries: {}, data: IDEA, sources: [], artifacts: [], log: [] }] });
-  for (let i = 0; i < 4; i++) { const w = await X.venturesWork('designer', { kv }); if (w.task) await isolated(() => w.run({ kv, env: ENV })); }
+  for (let i = 0; i < 4; i++) { const w = await X.venturesWork('designer', { kv, env: ENV }); if (w.task) await isolated(() => w.run({ kv, env: ENV })); }
   const it = (await kv.getJson('v2:ventures')).items[0];
   assert.equal(it.status, 'stopped');
   assert.equal(it.tries.proto, X.MAX_TRIES);

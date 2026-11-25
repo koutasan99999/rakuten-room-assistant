@@ -10,6 +10,7 @@ import * as Post from '../lib/v2/post.js';
 import * as Pr from '../lib/v2/pr.js';
 import * as Reach from '../lib/v2/reach.js';
 import * as Growth from '../lib/v2/growth.js';
+import * as Competitor from '../lib/v2/competitor.js';
 import * as Ventures from '../lib/v2/ventures.js';
 import * as Profit from '../lib/v2/profit.js';
 import { review as commentReview, withReview } from '../lib/comment-log.js';
@@ -42,7 +43,13 @@ export default async function handler(req, res, env = process.env) {
     if (action === 'room')return send(res, 200, await V.markRoom(kv, { id: String(body.id || ''), code: body.code, done: body.done !== false }));
     if (action === 'request') return send(res, 200, { requests: await V.addRequest(kv, { text: body.text, url: body.url }) });
     if (action === 'sales') return send(res, 200, { sales: await V.setSales(kv, { month: body.month, yen: body.yen }) });
-    if (action === 'prAdd') return send(res, 200, { target: await Pr.addTarget(kv, { url: body.url, caption: body.caption, handle: body.handle, note: body.note }) });
+    // 競合の観測の登録（社長が公開ページで見た内容。出典URL・取得日・事実・推測を分けて入れる。外部へは何もしない）
+    if (action === 'competitorAdd') {
+      let o; try { o = await Competitor.addObservation(kv, body.observation || {}); } catch (e) { return send(res, 400, { error: e.message }); }
+      await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が競合の観測を登録した（${o.account || o.sourceUrl.slice(0, 40)}・${o.fetchedAt}）` });
+      return send(res, 200, { observation: o, state: await Competitor.competitorState(kv) });
+    }
+    if (action === 'prAdd')return send(res, 200, { target: await Pr.addTarget(kv, { url: body.url, caption: body.caption, handle: body.handle, note: body.note }) });
     if (action === 'prDecide') {
       const d = await Pr.decideDraft(kv, { id: String(body.id || ''), action: String(body.decision || ''), note: body.note });
       await V.record(kv, { agent: 'owner', type: 'owner', text: `社長が @${d.handle || '不明'} へのコメント案を「${Pr.STATUS_LABEL[d.status]}」にした` });
