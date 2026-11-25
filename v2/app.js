@@ -4,7 +4,7 @@
   var PASS_KEY = 'room-passcode'; // 1.0と同じ合言葉
   var SEEN_KEY = 'v2-seen-notice';
   var state = null, seenAt = '', openSet = null, tab = 'office';
-  var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f', owner: '#c49a00' };
+  var COLOR = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', owner: '#c49a00' };
   // 担当中＝今この瞬間に処理しているときだけ（2026-11-16）。ほかは理由ごとに分ける
   var ST_LABEL = { work: '仕事中', queued: '順番待ち（続けて進めます）', handoff: '引き継ぎ中', approval: '承認待ち', error: 'エラー・再試行待ち', budget: '予算待ち', wait: '画像待ち', idle: '仕事なし' };
   var WAIT_LABEL = { image: '画像待ち', budget: '予算待ち', retry: '再試行待ち', quota: 'OpenAIの残高待ち', slot: '完成品の枠待ち（企画と商品は保存済み）', hold: '保留（商品が6点に足りない。24時間後にもう一度探す）', stopped: '停止中（新規ROOM商品紹介の停止・社長の再開待ち）' };
@@ -21,23 +21,54 @@
   function pct(n) { return n == null ? '未集計' : n + '%'; }
   function nameOf(id) { if (id === 'owner') return '社長'; var s = state && state.staff.filter(function (x) { return x.id === id; })[0]; return s ? s.name : id; }
 
-  function api(body) {
-    return fetch('../api/v2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-app-passcode': pass() }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); });
+  // 通信：20秒で打ち切る（KOT-27）。読み取り（state）だけ、通信の失敗なら最大2回まで読み直す。書き込みは二重に実行しないので読み直さない
+  var API_TIMEOUT = 20000;
+  function api(body, opts) {
+    var tries = opts && opts.retry ? 3 : 1, timeoutMs = (opts && opts.timeout) || API_TIMEOUT;
+    function once(n) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+      return fetch('../api/v2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-app-passcode': pass() }, body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined })
+        .then(function (r) { return r.json().then(function (d) { if (timer) clearTimeout(timer); return { status: r.status, data: d }; }); })
+        .catch(function (e) { if (timer) clearTimeout(timer); if (n + 1 < tries) return new Promise(function (ok) { setTimeout(ok, 800 * (n + 1)); }).then(function () { return once(n + 1); }); throw e; });
+    }
+    return once(0);
   }
   function askPass() { $('pass').hidden = false; $('pass-input').focus(); }
   $('pass-form').addEventListener('submit', function (e) { e.preventDefault(); store(PASS_KEY, $('pass-input').value.trim()); $('pass').hidden = true; refresh(); });
 
+  // 起動時は軽い状態（オフィス・社員・案件・お金）だけ先に取り、事業・成果などを含む全体はそのあとで取る（KOT-27）。
+  // 取得中にもう一度呼ばれても通信は1本にまとめる。古い状態を新しいものと偽らないよう、全体がそろうまでは詳細タブに「読み込み中」と出す
+  var inflight = null, lastGoodAt = 0;
+  function apply(r) {
+    if (r.status === 401) { askPass(); return false; }
+    if (r.status !== 200 || !r.data.configured) { $('top-status').textContent = (r.data && r.data.error) || '読み込めませんでした'; return false; }
+    var prev = state; state = r.data; lastGoodAt = Date.now();
+    // 新しく届いた引き継ぎの記録だけ、書類が飛ぶ（架空の動きはしない）
+    if (prev) state.events.filter(function (e) { return e.type === 'handoff' && e.at > seenAt; }).reverse().forEach(function (e) { Office.handoff(e.agent, e.to); });
+    seenAt = state.events[0] ? state.events[0].at : seenAt;
+    render();
+    return true;
+  }
+  function failed() {
+    var age = lastGoodAt ? '（最後に読み込めたのは ' + hm(new Date(lastGoodAt).toISOString()) + '。いまの表示は古い可能性があります）' : '';
+    $('top-status').textContent = '通信できませんでした。次に自動で読み直します' + age;
+  }
   function refresh() {
-    return api({ action: 'state' }).then(function (r) {
-      if (r.status === 401) return askPass();
-      if (r.status !== 200 || !r.data.configured) { $('top-status').textContent = (r.data && r.data.error) || '読み込めませんでした'; return; }
-      var prev = state; state = r.data;
-      // 新しく届いた引き継ぎの記録だけ、書類が飛ぶ（架空の動きはしない）
-      if (prev) state.events.filter(function (e) { return e.type === 'handoff' && e.at > seenAt; }).reverse().forEach(function (e) { Office.handoff(e.agent, e.to); });
-      seenAt = state.events[0] ? state.events[0].at : seenAt;
-      render();
-    }, function () { $('top-status').textContent = '通信できませんでした（次に自動で読み直します）'; });
+    if (inflight) return inflight;
+    var first = !state;
+    var p = (first ? api({ action: 'state', light: true }, { retry: true, timeout: 12000 }).then(function (r) { return apply(r) ? api({ action: 'state' }, { retry: true }).then(apply) : false; })
+      : api({ action: 'state' }, { retry: true }).then(apply)).then(function () {}, failed);
+    inflight = p.then(function () { inflight = null; }, function () { inflight = null; });
+    return p;
+  }
+  var DETAIL_TABS = ['sets', 'todo', 'money', 'pr', 'biz'];
+  function detailReady(k) {
+    if (DETAIL_TABS.indexOf(k) < 0) return true;
+    var box = $('tab-' + k);
+    if (!state || !state.partial) { var n = box && box.querySelector('.v2-loading'); if (n) n.remove(); return true; }
+    if (box && !box.querySelector('.v2-loading')) box.insertBefore(el('p', 'hint v2-loading', '詳しい情報を読み込み中です（数秒かかることがあります）'), box.firstChild);
+    return false;
   }
 
   // 案件の内訳（実態どおり：進む／社長の承認待ち／画像待ちなどを分けて出す。承認待ちは「進行中」に数えない）
@@ -65,6 +96,7 @@
     notice(); roomStopBar();
     Office.update(s.staff);
     renderCrew(); renderCases(); renderFlow();
+    if (!detailReady(tab)) return;
     if (tab === 'sets' && !openSet) renderSets();
     if (tab === 'todo') renderTodo();
     if (tab === 'money') renderMoney();
@@ -191,8 +223,8 @@
     }));
     box.appendChild(cc);
     var wc = el('div', 'card');
-    wc.appendChild(el('p', 'field', '週ごとの見直し（7日に1回・鑑定がコードの計算で行う・0円）'));
-    if (!P.reviews.length) wc.appendChild(el('p', 'hint', 'まだ見直していない（次の定期実行で鑑定が行う）'));
+    wc.appendChild(el('p', 'field', '週ごとの見直し（7日に1回・広報がコードの計算で行う・0円）'));
+    if (!P.reviews.length) wc.appendChild(el('p', 'hint', 'まだ見直していない（次の定期実行で広報が行う）'));
     P.reviews.forEach(function (r) { wc.appendChild(el('p', 'hint', r.week + '：いちばん詰まっている段階「' + r.bottleneck + '」（' + r.evidence + '）→ 次の検証「' + r.nextTest + '」・担当 ' + r.deptName + '・成果物 ' + r.deliverable + '・やめる条件 ' + r.stopCondition)); });
     box.appendChild(wc);
     var mc = el('div', 'card');
@@ -808,10 +840,7 @@
     box.appendChild(s);
   }
 
-  // ---- ポスト：社長が「ただ調べてほしい」スクショを入れる（鑑定が商品の候補を抜き出し、バイヤーが楽天で探す。投稿セットは作らない） ----
-  var postBusy = false, postMsg = '';
-  var LV = { same: '同一商品確認済み', maybe: '同一商品の可能性あり', similar: '類似商品', none: '未特定' };
-  // 端末で縮小してから送る（長い辺1280px・JPEG）
+  // ---- ポスト（スクショから持ち物を調べる）：2026-11-25 停止（社長の指示・KOT-25/26。担当の鑑定も廃止）。画面の入口は外した。サーバー側でも受け付けない ----
   function shrink(file) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
@@ -825,70 +854,7 @@
       img.src = URL.createObjectURL(file);
     });
   }
-  function renderPost() {
-    var box = $('post'); box.textContent = '';
-    var c = el('div', 'card');
-    c.appendChild(el('p', 'field', '調べてほしいスクショを入れる'));
-    c.appendChild(el('p', 'hint', 'Instagram・ストーリーズ・YouTube・テレビなどのスクショ。鑑定が身につけている物の候補を見つけ、バイヤーが楽天で探します（1枚およそ1〜2円）。人物は画像からは判断しないので、分かればメモに書いてください。'));
-    var fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.id = 'post-file'; c.appendChild(fi);
-    var note = el('input'); note.type = 'text'; note.id = 'post-note'; note.placeholder = 'メモ（任意）：例）紅しょうがの帽子とTシャツ'; c.appendChild(note);
-    var go = btn(postBusy ? '鑑定が調べています（30秒ほど）…' : 'ポストに入れて調べる', 'btn', function () {
-      if (postBusy) return;
-      var f = fi.files && fi.files[0];
-      if (!f) { postMsg = '画像を選んでください'; renderPost(); return; }
-      postBusy = true; postMsg = ''; renderPost();
-      shrink(f).then(function (dataUrl) { return api({ action: 'post', image: dataUrl, note: note.value }); }).then(function (r) {
-        postBusy = false;
-        if (r.status !== 200) postMsg = (r.data && r.data.error) || '調べられませんでした';
-        refresh(); renderPost();
-      }, function (e) { postBusy = false; postMsg = e.message; renderPost(); });
-    });
-    go.disabled = postBusy; c.appendChild(go);
-    if (postMsg) c.appendChild(el('p', 'hint warn', postMsg));
-    box.appendChild(c);
-    var list = el('div'); box.appendChild(list);
-    api({ action: 'posts' }).then(function (r) {
-      var posts = (r.data && r.data.posts) || [];
-      if (!posts.length) { list.appendChild(el('p', 'card hint', 'まだポストに入れたスクショはありません。')); return; }
-      posts.forEach(function (p) { list.appendChild(postCard(p)); });
-    });
-  }
-  function postCard(p) {
-    var c = el('div', 'card post');
-    var head = el('div', 'p-row');
-    var im = el('img', 'post-img'); im.src = '..' + p.image; im.alt = 'スクショ'; head.appendChild(im);
-    var t = el('div');
-    t.appendChild(el('p', 'p-name', p.note ? '社長のメモ：' + p.note : 'メモなし（人物は未確認）'));
-    t.appendChild(el('p', 'hint', day(p.at) + ' ' + hm(p.at) + '・' + ({ running: '調査中', done: '調査済み', error: '止まった' })[p.status] + (p.yen ? '・' + yen(p.yen) : '')));
-    head.appendChild(t); c.appendChild(head);
-    if (p.status === 'error') c.appendChild(el('p', 'hint warn', p.error || '調べられませんでした'));
-    if (p.lookNote) c.appendChild(el('p', 'hint', '鑑定の注意：' + p.lookNote));
-    (p.candidates || []).forEach(function (cd) {
-      var d = el('details', 'cand');
-      var sm = el('summary'); sm.appendChild(el('span', 'pill lv-' + (cd.level || 'none'), LV[cd.level] || '未特定')); sm.appendChild(document.createTextNode(' ' + (cd.who ? cd.who + '：' : '') + cd.category + (cd.color ? '（' + cd.color + '）' : ''))); d.appendChild(sm);
-      var facts = [];
-      if (cd.visibleText) facts.push('読めた文字：' + cd.visibleText);
-      if (cd.logo) facts.push('ロゴ：' + cd.logo);
-      if (cd.print) facts.push('プリント：' + cd.print);
-      if (cd.material) facts.push('素材：' + cd.material);
-      if (cd.features && cd.features.length) facts.push('特徴：' + cd.features.join('・'));
-      facts.forEach(function (x) { d.appendChild(el('p', 'hint', x)); });
-      if (!cd.visibleText) d.appendChild(el('p', 'hint', 'ブランドの文字やロゴが読めないため、同じ商品とは言えません。下は見た目の種類・色で探した似た商品です。'));
-      (cd.matches || []).forEach(function (m) {
-        var row = el('div', 'p-row match');
-        var mi = el('img'); mi.src = m.image; mi.alt = ''; row.appendChild(mi);
-        var mt = el('div'); mt.appendChild(el('p', 'p-name small', m.name.slice(0, 60))); mt.appendChild(el('p', 'hint', Number(m.price).toLocaleString('ja-JP') + '円・' + m.shop + '・' + m.label));
-        mt.appendChild(el('p', 'hint', '根拠：' + m.why));
-        var a = el('a', 'link', '楽天で見る'); a.href = m.url; a.target = '_blank'; a.rel = 'noopener'; mt.appendChild(a);
-        row.appendChild(mt); d.appendChild(row);
-      });
-      if (!(cd.matches || []).length) d.appendChild(el('p', 'hint', '楽天で見つかりませんでした（未特定）'));
-      c.appendChild(d);
-    });
-    c.appendChild(btn('このスクショを消す', 'btn ghost small-ghost', function () { api({ action: 'postDelete', id: p.id }).then(renderPost); }));
-    return c;
-  }
-
+  function renderPost() { var box = $('post'); box.textContent = ''; box.appendChild(el('p', 'hint', 'ポスト（スクショから持ち物を調べる機能）は停止しています。')); }
   // ---- 広報：Instagramの交流（コメント案は社長の承認制。アプリは送らない） ----
   var prMsg = '';
   function renderPr() {
@@ -1004,6 +970,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     ['office', 'sets', 'todo', 'post', 'pr', 'biz', 'money', 'dev'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
+    if (!detailReady(t)) return;
     if (t === 'biz') renderBiz();
     if (t === 'dev') renderDev();
     if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost(); if (t === 'pr') renderPr();

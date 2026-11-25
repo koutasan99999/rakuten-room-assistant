@@ -3,6 +3,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryKv } from '../lib/kv.js';
 import * as P from '../lib/v2/profit.js';
+import * as KPI from '../lib/v2/kpi.js';
 import * as V from '../lib/v2/company.js';
 import v2api from '../server/v2.js';
 import { installFetchMock } from './mock.js';
@@ -76,22 +77,20 @@ test('不足条件：実データで判定し、売上が無ければ「成約�
   assert.equal(f.totals.profit, 45); assert.equal(f.recentViews30, 300);
 });
 
-test('週ごとの見直し：鑑定が7日に1回だけ行い、詰まっている段階・担当・成果物・やめる条件を決めて引き継ぐ（AI 0回・新規ROOM紹介は止まったまま）', async () => {
+test('週ごとの見直し：広報（2026-11-25 鑑定から移管）が7日に1回だけ行い、詰まっている段階・担当・成果物・やめる条件を決めて引き継ぐ（AI 0回・新規ROOM紹介は止まったまま）', async () => {
   noAi();
   const kv = memoryKv();
   assert.equal((await V.roomStopState(kv)).stopped, true);
-  // 今日の成果の数字は記録済みにしておく（鑑定のほかの仕事を先に済ませる）
-  let w = await V.findWork('appraiser', { kv, env: ENV });
-  if (w.kind !== 'profit-review') { await w.run({ env: ENV }); w = await V.findWork('appraiser', { kv, env: ENV }); }
+  await (await KPI.kpiWork(kv)).run(); // 今日の成果の数字は記録済みにする
+  let w = await P.reviewWork(kv, () => P.gatherFacts(kv, ENV));
   assert.equal(w.kind, 'profit-review');
   assert.equal(w.est, 0);
   const r = await w.run({ env: ENV });
   assert.match(r.done, /計測/);
-  assert.equal(r.handoff, 'appraiser');
+  assert.equal(r.handoff, 'pr');
   const rv = (await kv.getJson(P.PROFIT_KEYS.reviews))[0];
   for (const k of ['bottleneck', 'evidence', 'nextTest', 'dept', 'deliverable', 'stopCondition']) assert.ok(rv[k], k);
-  const again = await V.findWork('appraiser', { kv, env: ENV });
-  assert.notEqual(again.kind, 'profit-review', '7日以内はもう一度しない');
+  assert.equal(await P.reviewWork(kv, () => P.gatherFacts(kv, ENV)), null, '7日以内はもう一度しない');
   assert.equal((await V.roomStopState(kv)).stopped, true, '見直しで停止は解除しない');
   // 数字が入ると、詰まっている段階が変わる（CTRが低い → ライターへ）
   const f = { perfPosts: 2, totals: { views: 1000, clicks: 2, ctr: 0.002, orders: null, cvr: null }, reverse: { need: {} }, missing: [], salesMonth: 0 };

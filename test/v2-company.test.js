@@ -392,7 +392,8 @@ test('広報（常設）：交流候補の投稿にコメント案→監査が�
   for (const [n, h] of [[3, 'shop_b'], [4, 'shop_c'], [5, 'shop_d']]) await add(n, h);
   assert.equal((await call(v2api, { action: 'prAdd', url: 'https://www.instagram.com/p/POST9abc/', caption: '' }, undefined, E)).status, 400, '投稿の文章が無いものは入れない');
   await kv.del(`budget:month:${today().slice(0, 7)}`); await kv.incrFloat(`budget:month:${today().slice(0, 7)}`, 900);
-  for (let i = 0; i < 5; i++) await run(kv, { ...ENV, V2_THEMES: '' });
+  // 最後の回の終わりに書いた案は、次の回で監査が採点する（回の時間の上限があるため。負荷の高いときに起きる）。採点待ちが無くなるまで回す（最大8回）
+  for (let i = 0; i < 8; i++) { await run(kv, { ...ENV, V2_THEMES: '' }); if (i >= 4 && !(await V.officeState(kv, ENV)).pr.drafts.some((x) => x.status === 'audit')) break; }
   const st = await V.officeState(kv, ENV);
   const d = st.pr.drafts;
   assert.ok(d.length >= 1, 'コメント案ができた');

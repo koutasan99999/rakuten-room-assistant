@@ -98,7 +98,8 @@ test('合格候補の消費：実際に投稿セットに入った候補だけ�
 
 test('発掘の切り口：楽天だけで確かめられる7つと、追加の情報源が要る4つを分ける。蓄えに少ない切り口から順に担当する', async () => {
   const { ANGLES, ACTIVE_ANGLES, chooseAngle, seasonWords, UNSOURCED_CLAIM } = await import('../lib/buyer-angles.js');
-  assert.equal(ANGLES.length, 11);
+  assert.equal(ANGLES.length, 10);
+  assert.ok(!ANGLES.some((a) => a.id === 'celebrity'), '芸能人の切り口は廃止（KOT-25）');
   assert.deepEqual(ACTIVE_ANGLES.map((a) => a.id), ['classic', 'new_label', 'old_model', 'season', 'sale', 'unique', 'gift']);
   assert.ok(ANGLES.filter((a) => !a.rakutenOnly).every((a) => a.needs), '追加の情報源が要る切り口は、何が要るかを書いてある');
   assert.equal(chooseAngle([], 0).id, 'classic');
