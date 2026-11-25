@@ -21,23 +21,54 @@
   function pct(n) { return n == null ? '未集計' : n + '%'; }
   function nameOf(id) { if (id === 'owner') return '社長'; var s = state && state.staff.filter(function (x) { return x.id === id; })[0]; return s ? s.name : id; }
 
-  function api(body) {
-    return fetch('../api/v2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-app-passcode': pass() }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); });
+  // 通信：20秒で打ち切る（KOT-27）。読み取り（state）だけ、通信の失敗なら最大2回まで読み直す。書き込みは二重に実行しないので読み直さない
+  var API_TIMEOUT = 20000;
+  function api(body, opts) {
+    var tries = opts && opts.retry ? 3 : 1, timeoutMs = (opts && opts.timeout) || API_TIMEOUT;
+    function once(n) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+      return fetch('../api/v2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-app-passcode': pass() }, body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined })
+        .then(function (r) { return r.json().then(function (d) { if (timer) clearTimeout(timer); return { status: r.status, data: d }; }); })
+        .catch(function (e) { if (timer) clearTimeout(timer); if (n + 1 < tries) return new Promise(function (ok) { setTimeout(ok, 800 * (n + 1)); }).then(function () { return once(n + 1); }); throw e; });
+    }
+    return once(0);
   }
   function askPass() { $('pass').hidden = false; $('pass-input').focus(); }
   $('pass-form').addEventListener('submit', function (e) { e.preventDefault(); store(PASS_KEY, $('pass-input').value.trim()); $('pass').hidden = true; refresh(); });
 
+  // 起動時は軽い状態（オフィス・社員・案件・お金）だけ先に取り、事業・成果などを含む全体はそのあとで取る（KOT-27）。
+  // 取得中にもう一度呼ばれても通信は1本にまとめる。古い状態を新しいものと偽らないよう、全体がそろうまでは詳細タブに「読み込み中」と出す
+  var inflight = null, lastGoodAt = 0;
+  function apply(r) {
+    if (r.status === 401) { askPass(); return false; }
+    if (r.status !== 200 || !r.data.configured) { $('top-status').textContent = (r.data && r.data.error) || '読み込めませんでした'; return false; }
+    var prev = state; state = r.data; lastGoodAt = Date.now();
+    // 新しく届いた引き継ぎの記録だけ、書類が飛ぶ（架空の動きはしない）
+    if (prev) state.events.filter(function (e) { return e.type === 'handoff' && e.at > seenAt; }).reverse().forEach(function (e) { Office.handoff(e.agent, e.to); });
+    seenAt = state.events[0] ? state.events[0].at : seenAt;
+    render();
+    return true;
+  }
+  function failed() {
+    var age = lastGoodAt ? '（最後に読み込めたのは ' + hm(new Date(lastGoodAt).toISOString()) + '。いまの表示は古い可能性があります）' : '';
+    $('top-status').textContent = '通信できませんでした。次に自動で読み直します' + age;
+  }
   function refresh() {
-    return api({ action: 'state' }).then(function (r) {
-      if (r.status === 401) return askPass();
-      if (r.status !== 200 || !r.data.configured) { $('top-status').textContent = (r.data && r.data.error) || '読み込めませんでした'; return; }
-      var prev = state; state = r.data;
-      // 新しく届いた引き継ぎの記録だけ、書類が飛ぶ（架空の動きはしない）
-      if (prev) state.events.filter(function (e) { return e.type === 'handoff' && e.at > seenAt; }).reverse().forEach(function (e) { Office.handoff(e.agent, e.to); });
-      seenAt = state.events[0] ? state.events[0].at : seenAt;
-      render();
-    }, function () { $('top-status').textContent = '通信できませんでした（次に自動で読み直します）'; });
+    if (inflight) return inflight;
+    var first = !state;
+    var p = (first ? api({ action: 'state', light: true }, { retry: true, timeout: 12000 }).then(function (r) { return apply(r) ? api({ action: 'state' }, { retry: true }).then(apply) : false; })
+      : api({ action: 'state' }, { retry: true }).then(apply)).then(function () {}, failed);
+    inflight = p.then(function () { inflight = null; }, function () { inflight = null; });
+    return p;
+  }
+  var DETAIL_TABS = ['sets', 'todo', 'money', 'pr', 'biz'];
+  function detailReady(k) {
+    if (DETAIL_TABS.indexOf(k) < 0) return true;
+    var box = $('tab-' + k);
+    if (!state || !state.partial) { var n = box && box.querySelector('.v2-loading'); if (n) n.remove(); return true; }
+    if (box && !box.querySelector('.v2-loading')) box.insertBefore(el('p', 'hint v2-loading', '詳しい情報を読み込み中です（数秒かかることがあります）'), box.firstChild);
+    return false;
   }
 
   // 案件の内訳（実態どおり：進む／社長の承認待ち／画像待ちなどを分けて出す。承認待ちは「進行中」に数えない）
@@ -65,6 +96,7 @@
     notice(); roomStopBar();
     Office.update(s.staff);
     renderCrew(); renderCases(); renderFlow();
+    if (!detailReady(tab)) return;
     if (tab === 'sets' && !openSet) renderSets();
     if (tab === 'todo') renderTodo();
     if (tab === 'money') renderMoney();
@@ -1004,6 +1036,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     ['office', 'sets', 'todo', 'post', 'pr', 'biz', 'money', 'dev'].forEach(function (k) { $('tab-' + k).hidden = k !== t; });
     if (!state) return;
+    if (!detailReady(t)) return;
     if (t === 'biz') renderBiz();
     if (t === 'dev') renderDev();
     if (t === 'sets') renderSets(); if (t === 'todo') renderTodo(); if (t === 'money') renderMoney(); if (t === 'post') renderPost(); if (t === 'pr') renderPr();

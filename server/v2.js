@@ -31,7 +31,7 @@ export default async function handler(req, res, env = process.env) {
   const body = await readBody(req);
   const action = String(body.action || 'state');
   try {
-    if (action === 'state') return send(res, 200, { configured: true, ...(await V.officeState(kv, env)) });
+    if (action === 'state') return send(res, 200, { configured: true, ...(await V.officeState(kv, env, { light: body.light === true })) });
     if (action === 'set') { const s = await V.getSet(kv, body.id); return s ? send(res, 200, { set: s }) : send(res, 404, { error: 'その完成品はありません' }); }
     if (action === 'decide') return send(res, 200, await V.decide(kv, { id: String(body.id || ''), action: String(body.decision || ''), note: body.note }));
     if (action === 'post') return send(res, 200, { post: await Post.submitPost(kv, env, { image: body.image, note: body.note, referer: requestReferer(req, env) }) });
