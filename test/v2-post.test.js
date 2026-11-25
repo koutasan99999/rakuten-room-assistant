@@ -11,7 +11,7 @@ import { installFetchMock, json, aiReply, TINY_PNG } from './mock.js';
 
 let mock;
 afterEach(() => { if (mock) mock.restore(); mock = null; });
-const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw', __noWait: true };
+const ENV = { OPENAI_API_KEY: 'sk-test', RAKUTEN_APP_ID: 'app', APP_PASSCODE: 'pw', __noWait: true, POST_LOOKUP: 'on' }; // 停止中（2026-11-25）。仕組みの試験だけ戻した状態で行う
 const ritem = (code, name, price) => ({ itemCode: code, itemName: name, itemPrice: price, itemUrl: `https://item.rakuten.co.jp/s/${code.replace(/\W/g, '')}/`, mediumImageUrls: ['https://thumbnail.image.rakuten.co.jp/x.jpg'], shopName: 'ショップ', itemCaption: name, reviewCount: 10, reviewAverage: 4 });
 let lastUser = null;
 function fetchMock() {
@@ -26,6 +26,16 @@ function fetchMock() {
 }
 const call = async (body, env) => { const req = { method: 'POST', url: '/api/v2', headers: { 'x-app-passcode': 'pw' }, body }; const res = { statusCode: 0, setHeader() {}, end(b) { this.body = b; } }; await withUsage(() => v2api(req, res, env)); return { status: res.statusCode, data: JSON.parse(res.body) }; };
 const IMG = `data:image/png;base64,${TINY_PNG}`;
+
+test('ポストは停止中（2026-11-25・社長の指示）：既定では受け付けず、AIも楽天も呼ばない。保存済みの一覧は読める', async () => {
+  let called = 0;
+  mock = installFetchMock({ rakuten: () => { called++; return new Response('{}'); }, openai: () => { called++; throw new Error('AIは呼ばない'); } });
+  const kv = memoryKv(); const env = { ...ENV, POST_LOOKUP: '', __kv: kv };
+  const r = await call({ action: 'post', image: IMG, note: 'x' }, env);
+  assert.equal(r.status, 400); assert.match(r.data.error, /停止/);
+  assert.equal(called, 0);
+  assert.equal((await call({ action: 'posts' }, env)).status, 200);
+});
 
 test('ポスト：鑑定が候補を抜き出し、バイヤーが楽天で探し、型番の一致＝同一／文字の一致＝可能性あり／見た目だけ＝類似／見つからない＝未特定 と根拠つきで返す', async () => {
   mock = fetchMock();
@@ -43,9 +53,8 @@ test('ポスト：鑑定が候補を抜き出し、バイヤーが楽天で探�
   assert.ok((await spent(kv)).month > 0, '費用を記録');
   const list = (await call({ action: 'posts' }, env)).data.posts; assert.equal(list[0].id, p.id);
   const st = await V.officeState(kv, env);
-  assert.ok(st.events.some((e) => e.agent === 'appraiser' && e.type === 'done'));
-  assert.ok(st.events.some((e) => e.agent === 'appraiser' && e.to === 'buyer'));
-  assert.ok(st.staff.find((s) => s.id === 'appraiser'), '社員「鑑定」がいる');
+  assert.ok(st.events.some((e) => e.agent === 'appraiser' && e.type === 'done'), '過去の記録の担当名は残る');
+  assert.ok(!st.staff.find((s) => s.id === 'appraiser'), '社員「鑑定」は廃止（2026-11-25）');
   await call({ action: 'postDelete', id: p.id }, env);
   assert.equal((await call({ action: 'posts' }, env)).data.posts.length, 0, '消せる');
 });

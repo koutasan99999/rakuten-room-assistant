@@ -14,12 +14,12 @@ afterEach(() => { if (mock) mock.restore(); mock = null; });
 test('新規副業の発掘は既定で止まる（実行の入口）。VENTURE_DISCOVERY=on で戻せる。保存データは消えない', async () => {
   const kv = memoryKv();
   const off = await X.venturesWork('planner', { kv, env: {} });
-  assert.ok(!off.task && /止めている/.test(off.none), off.none);
+  assert.ok(!off.task && /止めている|凍結/.test(off.none), off.none);
   await kv.setJson('v2:ventures', { items: [{ id: 'v1', stream: 'venture', title: '既存の案', status: 'active', stage: 'research', createdAt: new Date().toISOString(), tries: {}, data: {}, sources: [], artifacts: [], log: [] }] });
   const buyer = await X.venturesWork('buyer', { kv, env: {} });
   assert.ok(!buyer.task, '作りかけの副業も進めない');
   assert.equal((await kv.getJson('v2:ventures')).items.length, 1, '履歴は消さない');
-  const on = await X.venturesWork('planner', { kv: memoryKv(), env: { VENTURE_DISCOVERY: 'on' } });
+  const on = await X.venturesWork('planner', { kv: memoryKv(), env: { VENTURE_DISCOVERY: 'on', VENTURES_FROZEN: '0' } });
   assert.equal(on.kind, 'venture-idea');
   // 集客の実験・デジタル商品は変えていない
   assert.equal((await X.venturesWork('pr', { kv: memoryKv(), env: {} })).kind, 'growth-hypothesis');
@@ -27,7 +27,7 @@ test('新規副業の発掘は既定で止まる（実行の入口）。VENTURE_
 });
 
 test('全現役職種に10項目の役割定義がある。旧版（役職名だけ）は不合格・新版は合格', () => {
-  for (const role of ['planner', 'buyer', 'auditor', 'writer', 'editor', 'designer', 'pr', 'appraiser']) {
+  for (const role of ['planner', 'buyer', 'auditor', 'writer', 'editor', 'designer', 'pr']) {
     const old = P.scorePrompt(P.legacyPrompt(role));
     const now = P.scorePrompt(P.withRole(role, '本文'));
     assert.equal(old.ok, false, role);
@@ -51,7 +51,8 @@ test('実際にAIへ渡る指示に役割定義が入っている（企画・バ
   if (w && w.run) await isolated(() => w.run({ kv, env })).catch(() => {});
   assert.ok(seen.length >= 1, 'AIが呼ばれた');
   assert.ok(seen.every((s) => P.scorePrompt(s).ok), '全ての指示に役割定義がある');
-  assert.ok(V.STAFF.length >= 8);
+  assert.equal(V.STAFF.length, 7, '鑑定を廃止（2026-11-25）して7職種');
+  assert.ok(!V.STAFF.some((s) => s.id === 'appraiser'));
 });
 
 test('競合の観測：出典URL・取得日・事実が必要。架空・一般論・売上の断定は入らない', async () => {

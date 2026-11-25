@@ -4,9 +4,9 @@
 (function () {
   'use strict';
   var W = 192, H = 240;
-  var OUTFIT = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b', appraiser: '#3b6e8f' };
-  var DESK = { buyer: [34, 86], auditor: [158, 86], planner: [34, 128], writer: [158, 128], editor: [34, 170], designer: [158, 170], pr: [96, 196], appraiser: [150, 50] };
-  var LOUNGE = { buyer: [130, 214], auditor: [146, 214], planner: [162, 214], writer: [178, 214], editor: [138, 230], designer: [154, 230], pr: [170, 230], appraiser: [186, 230] };
+  var OUTFIT = { buyer: '#2f6f9f', auditor: '#3d7a4f', planner: '#a0522d', writer: '#7b4fa0', editor: '#b5893a', designer: '#c0504d', pr: '#2b2b2b' };
+  var DESK = { buyer: [34, 86], auditor: [158, 86], planner: [34, 128], writer: [158, 128], editor: [34, 170], designer: [158, 170], pr: [96, 196] };
+  var LOUNGE = { buyer: [130, 214], auditor: [146, 214], planner: [162, 214], writer: [178, 214], editor: [138, 230], designer: [154, 230], pr: [170, 230] };
   var BEAR = [
     '.oo......oo.',
     'occo....occo',

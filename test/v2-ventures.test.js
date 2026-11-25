@@ -69,7 +69,7 @@ test('ROOMの仕事が全部止まっていても（承認待ち5件・案件0�
   assert.ok(d.manuscript.draftOnly && d.manuscript.needsReview.length >= 1);
   // 8部署すべてが、独立した仕事をした（「仕事なし」の部署が残らない）
   const workedBy = Object.keys(st.depts);
-  for (const a of ['buyer', 'auditor', 'planner', 'editor', 'designer', 'writer', 'pr', 'appraiser']) assert.ok(workedBy.includes(a), `${a} が独立した仕事をしていない`);
+  for (const a of ['buyer', 'auditor', 'planner', 'editor', 'designer', 'writer', 'pr']) assert.ok(workedBy.includes(a), `${a} が独立した仕事をしていない`);
   assert.ok(st.dash.artifacts >= 10);
   assert.equal(st.dash.inventory.waiting, 5);
   // 承認待ちの完成品は動かしていない（勝手に通さない）

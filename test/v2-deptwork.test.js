@@ -30,7 +30,7 @@ test('バイヤー：商品の報酬・欠損・重複を比べる。料率は�
   assert.ok(await D.productCompareWork(kv), '公式の料率が登録されたら比べ直す');
 });
 
-test('企画・ライター・デザイナー・編集・広報・鑑定：それぞれ具体的な成果物と部署別キューを作る', async () => {
+test('企画・ライター・デザイナー・編集・広報・監査（優先順位）：それぞれ具体的な成果物と部署別キューを作る', async () => {
   const kv = memoryKv();
   const bad = set('b', { caption: '短い', hashtags: [], image: null, products: prod(6).map((p) => ({ ...p, room: '' })) });
   await seed(kv, [set('a', { title: 'スマホスタンド比較' }), set('c', { title: 'スマホスタンド比較まとめ' }), bad]);

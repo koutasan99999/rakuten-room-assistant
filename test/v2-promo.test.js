@@ -27,7 +27,7 @@ test('販売促進キュー：既存の完成品1件について、6人が順に
     assert.ok(r.done && !r.fail);
     handoffs.push(r.handoff);
   }
-  assert.deepEqual(handoffs, ['writer', 'designer', 'pr', 'auditor', 'appraiser', undefined]);
+  assert.deepEqual(handoffs, ['writer', 'designer', 'pr', 'auditor', 'pr', undefined]);
   const kit = await kv.getJson('v2:promo:a');
   assert.equal(kit.status, 'done');
   assert.ok(kit.audit.ok);

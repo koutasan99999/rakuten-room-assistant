@@ -29,16 +29,12 @@ test('成果の数字：投稿できる完成品・投稿済み・実ファイ�
   await kv.setJson('v2:perf', [{ views: 300, roomClicks: 4 }, { views: 120 }]);
   k = await KPI.computeKpi(kv);
   assert.equal(k.views, 420); assert.equal(k.roomClicks, 4);
-  const w = await V.findWork('appraiser', { kv, env: {} });
+  const w = await KPI.kpiWork(kv); // 2026-11-25 鑑定の廃止で、成果の数字の記録は広報の仕事（findWork('pr') から呼ぶ）
   assert.equal(w.kind, 'kpi'); assert.equal(w.est, 0);
   const r = await w.run();
   assert.match(r.done, /投稿できる完成品2件・投稿済み1件・リールの動画1本・ROOMへの流入4/);
-  let again = await V.findWork('appraiser', { kv, env: {} });
-  assert.notEqual(again.kind, 'kpi', '同じ日に数字が変わらなければ仕事にしない');
-  if (again.kind === 'profit-review') { await again.run(); again = await V.findWork('appraiser', { kv, env: {} }); } // 次は週ごとの見直し（KOT-13・7日に1回）
-  if (again.kind === 'measure-gap') { await again.run(); again = await V.findWork('appraiser', { kv, env: {} }); } // 次は計測不足の整理（KOT-16・状況が変わったときだけ）
-  if (again.kind === 'priority-queue') { await again.run(); again = await V.findWork('appraiser', { kv, env: {} }); } // 次は部署別の改善の優先順位（KOT-17・成果物が変わったときだけ）
-  assert.ok(again.none, '同じ日に数字が変わらず、見直しも済んでいれば仕事にしない');
+  assert.equal(await KPI.kpiWork(kv), null, '同じ日に数字が変わらなければ仕事にしない');
+  assert.ok(!(await V.findWork('appraiser', { kv, env: {} })).task, '廃止した鑑定には仕事が来ない');
   const st = await V.officeState(kv, {});
   assert.equal(st.kpi.current.postable, 2);
   assert.equal(st.kpi.history.length, 1);
